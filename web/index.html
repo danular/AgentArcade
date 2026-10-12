@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Agent Arcade</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo" id="logo"></span>
+        <span>Agent Arcade</span>
+      </div>
+      <div class="side-scroll">
+        <div class="side-head">
+          <span>Workspaces</span>
+          <button class="icon-btn" id="add-workspace" title="Add a project folder"></button>
+        </div>
+        <nav id="workspaces"></nav>
+        <div class="side-head">
+          <span>Agents</span>
+          <span class="side-head-actions">
+            <button class="icon-btn" id="refresh" title="Check accounts again"></button>
+            <button class="icon-btn" id="add-account" title="Add account"></button>
+          </span>
+        </div>
+        <nav id="agents"></nav>
+      </div>
+      <div class="side-foot">
+        <button class="text-btn" id="edit-agents">Edit agent list</button>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="crumb">
+          <span class="crumb-name" id="ws-name"></span>
+          <span class="crumb-path" id="ws-path"></span>
+        </div>
+        <div class="top-actions">
+          <button class="ghost-btn" id="open-unity"></button>
+          <button class="ghost-btn" id="open-folder"></button>
+          <button class="ghost-btn" id="sync"></button>
+          <button class="ghost-btn" id="history" title="Earlier chats in your projects"></button>
+          <button class="primary-btn" id="new-agent"></button>
+        </div>
+      </header>
+      <section class="stage">
+        <div class="empty" id="empty"></div>
+        <div class="grid" id="grid" hidden></div>
+      </section>
+    </main>
+  </div>
+  <div id="toasts"></div>
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="vendor/addon-unicode11.js"></script>
+  <script src="vendor/addon-web-links.js"></script>
+  <script src="vendor/addon-webgl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
