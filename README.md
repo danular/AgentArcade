@@ -8,6 +8,7 @@ A Windows app that runs your AI coding agents side by side on one project: Claud
 - Each pane shows the chat's title: the one the agent gives it, or else your first message. Double-click the title to rename it.
 - The sidebar lists each project's running agents. The arrow next to a project hides them, and the arrow next to Agents hides the whole agent list (it then shows how many are running).
 - Drag a pane by its header onto another pane to swap their places in the grid.
+- Drop files or images on a pane to paste their paths into the agent's prompt. Claude Code and Codex attach pasted image paths; Gemini gets them as `@path`. Images dragged from a browser are saved to `%TEMP%\AgentArcade\drops` first.
 - History lists every chat per project, including projects you removed from the sidebar. Resume continues a chat: Claude Code reopens exactly that chat; the other agents open their own resume list. Only titles, folders and times are kept (`history.json`); the chats themselves stay in each agent's own files.
 - A pane's ⋯ menu pastes a "save progress" prompt (writes `HANDOFF.md`) and a "continue" prompt, so the next agent can pick up where the last one stopped.
 

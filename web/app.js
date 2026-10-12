@@ -719,6 +719,91 @@ function pastePrompt(session, text) {
   toast('Prompt pasted. Press Enter in the pane to send it.');
 }
 
+// ---------- dropping files and images on a pane ----------
+
+// Dropped files are pasted as paths; Claude Code and Codex attach pasted image paths, Gemini reads @paths.
+let fileTarget = null;
+
+function setFileTarget(session) {
+  if (session === fileTarget) return;
+  fileTarget?.el.classList.remove('drop-target');
+  session?.el.classList.add('drop-target');
+  fileTarget = session;
+}
+
+function paneAt(event) {
+  const pane = event.target.closest?.('.pane');
+  const session = pane && sessions.get(pane.dataset.session);
+  return session && session.running ? session : null;
+}
+
+function pastePaths(session, paths) {
+  if (!session?.running || !paths.length) return;
+  const gemini = (agentOf(accountOf(session.key))?.command || '').toLowerCase() === 'gemini';
+  paths.forEach((path, i) => {
+    if (i) session.term.paste(' ');
+    session.term.paste(gemini ? '@' + path.replace(/\\/g, '/').replace(/ /g, '\\ ') : /\s/.test(path) ? `"${path}"` : path);
+  });
+  session.term.paste(' ');
+  session.term.focus();
+}
+
+function saveImage(session, file) {
+  if (file.size > 30 * 1024 * 1024) return toast(`${file.name || 'That image'} is larger than 30 MB.`, 'error');
+  const reader = new FileReader();
+  reader.onload = () => send({ type: 'saveImage', session: session.id, name: file.name || 'image.png', data: String(reader.result).split(',')[1] || '' });
+  reader.readAsDataURL(file);
+}
+
+// The C# side found paths for the files that exist on disk; images without one (from a browser) are saved first.
+function filesDropped(message) {
+  const session = sessions.get(message.session);
+  if (!session) return;
+  const files = session.droppedFiles || [];
+  session.droppedFiles = null;
+  pastePaths(session, message.paths || []);
+  const names = (message.paths || []).map(path => path.split(/[\\/]/).pop().toLowerCase());
+  for (const file of files) {
+    if (names.includes((file.name || '').toLowerCase())) continue;
+    if (file.type.startsWith('image/')) saveImage(session, file);
+    else toast(`${file.name || 'That item'} has no file on disk to point the agent at.`, 'error');
+  }
+}
+
+document.addEventListener('dragover', event => {
+  // Never let WebView2 open a dropped file in place of the app, which would stop every agent.
+  event.preventDefault();
+  const session = drag ? null : paneAt(event);
+  event.dataTransfer.dropEffect = session ? 'copy' : 'none';
+  setFileTarget(session);
+});
+
+document.addEventListener('dragleave', event => {
+  if (!event.relatedTarget) setFileTarget(null);
+});
+
+document.addEventListener('drop', event => {
+  event.preventDefault();
+  setFileTarget(null);
+  const session = paneAt(event);
+  if (!session) return;
+  const files = [...event.dataTransfer.files];
+  if (files.length) {
+    if (bridge?.postMessageWithAdditionalObjects) {
+      session.droppedFiles = files;
+      bridge.postMessageWithAdditionalObjects({ type: 'dropFiles', session: session.id }, event.dataTransfer.files);
+    } else {
+      files.filter(file => file.type.startsWith('image/')).forEach(file => saveImage(session, file));
+    }
+    return;
+  }
+  const text = event.dataTransfer.getData('text/plain');
+  if (text) {
+    session.term.paste(text);
+    session.term.focus();
+  }
+});
+
 function paneMenu(session, anchor) {
   const items = [];
   if (isChat(session)) {
@@ -1200,6 +1285,9 @@ if (bridge) {
       }
       case 'output':
         sessions.get(message.session)?.term.write(message.data);
+        break;
+      case 'dropped':
+        filesDropped(message);
         break;
       case 'exit':
         sessionEnded(message);

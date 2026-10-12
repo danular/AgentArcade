@@ -172,6 +172,16 @@ sealed class MainForm : Form
                 case "input":
                     if (_sessions.TryGetValue(id, out var target)) target.Pty.Write(Json.Str(m, "data"));
                     break;
+                case "dropFiles":
+                    // Files dropped on a pane arrive as WebView2 file objects, which know their path on disk.
+                    var paths = new List<string>();
+                    foreach (var item in e.AdditionalObjects ?? Enumerable.Empty<object>())
+                        if (item is CoreWebView2File file && !string.IsNullOrEmpty(file.Path)) paths.Add(file.Path);
+                    Post(new { type = "dropped", session = id, paths });
+                    break;
+                case "saveImage":
+                    SaveDroppedImage(id, Json.Str(m, "name"), Json.Str(m, "data"));
+                    break;
                 case "resize":
                     if (_sessions.TryGetValue(id, out var sized)) sized.Pty.Resize(Int(m, "cols"), Int(m, "rows"));
                     break;
@@ -640,6 +650,26 @@ sealed class MainForm : Form
                 };
             }),
         });
+    }
+
+    static readonly string[] ImageExtensions = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
+
+    // An image dragged from a browser has no file on disk, so it is saved to the temp folder first.
+    void SaveDroppedImage(string session, string name, string data)
+    {
+        var extension = Path.GetExtension(name).ToLowerInvariant();
+        if (!ImageExtensions.Contains(extension)) extension = ".png";
+        var bytes = Convert.FromBase64String(data);
+        if (bytes.Length == 0 || bytes.Length > 30 * 1024 * 1024)
+        {
+            Toast("That image is empty or larger than 30 MB.", "error");
+            return;
+        }
+        var folder = Path.Combine(Path.GetTempPath(), "AgentArcade", "drops");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, "image-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..6] + extension);
+        File.WriteAllBytes(path, bytes);
+        Post(new { type = "dropped", session, paths = new[] { path } });
     }
 
     void Toast(string text, string kind = "info") => Post(new { type = "toast", text, kind });
