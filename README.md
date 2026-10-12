@@ -6,6 +6,7 @@ A Windows app that runs your AI coding agents side by side on one project: Claud
 - Extra accounts (for example a second Claude subscription) get their own folder, and the sidebar shows which email each account uses.
 - Workspaces are your project folders. Agents always start in the selected one.
 - Each pane shows the chat's title: the one the agent gives it, or else your first message. Double-click the title to rename it.
+- The sidebar lists each project's running agents. The arrow next to a project hides them, and the arrow next to Agents hides the whole agent list (it then shows how many are running).
 - Drag a pane by its header onto another pane to swap their places in the grid.
 - History lists every chat per project, including projects you removed from the sidebar. Resume continues a chat: Claude Code reopens exactly that chat; the other agents open their own resume list. Only titles, folders and times are kept (`history.json`); the chats themselves stay in each agent's own files.
 - A pane's ⋯ menu pastes a "save progress" prompt (writes `HANDOFF.md`) and a "continue" prompt, so the next agent can pick up where the last one stopped.
@@ -34,6 +35,7 @@ To try a change without installing: `dotnet run`. To run the built-in checks: `A
 | `MainForm.cs` | The window: hosts the web page and passes messages between it and the agents |
 | `Pty.cs` | Runs an agent in a Windows pseudo console (ConPTY) |
 | `Backend.cs` | Settings, agent list, accounts, sign-in checks, chat history, Windows Terminal launcher, shared instructions |
-| `web/` | The interface (`index.html`, `app.css`, `app.js`) and xterm.js in `web/vendor` (MIT licence) |
+| `web/` | The interface (`index.html`, `app.css`, `app.js`, `icon.png`) and xterm.js in `web/vendor` (MIT licence) |
+| `app.ico` | The app icon (the exe, window and taskbar) |
 
 Settings, the agent list (`agents.json`), extra accounts, chat history (`history.json`) and a log live in `%LOCALAPPDATA%\AgentArcade`.

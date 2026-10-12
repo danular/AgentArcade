@@ -39,6 +39,8 @@ sealed class MainForm : Form
     public MainForm()
     {
         Text = AppName;
+        // The exe carries app.ico (ApplicationIcon); the title bar and taskbar use the same one.
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(960, 620);
         Size = new Size(1500, 900);

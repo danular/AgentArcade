@@ -85,7 +85,7 @@ static class SelfCheck
         }
 
         var web = Path.Combine(AppContext.BaseDirectory, "web");
-        Check("web-page", File.Exists(Path.Combine(web, "index.html")) && File.Exists(Path.Combine(web, "vendor", "xterm.js")), web);
+        Check("web-page", File.Exists(Path.Combine(web, "index.html")) && File.Exists(Path.Combine(web, "vendor", "xterm.js")) && File.Exists(Path.Combine(web, "icon.png")), web);
 
         try
         {
