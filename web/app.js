@@ -1029,8 +1029,10 @@ const agentName = session => agentOf(accountOf(session.key))?.name || 'The agent
 function watchTurn(session, data) {
   clearAttention(session);
   if (REPORTS.test(data)) return;
-  // Keys went to the dialog on screen, so once it leaves the screen it was answered (Remote.dialogAppeared).
+  // Keys went to the dialog on screen, so once it leaves the screen it was answered (Remote.dialogAppeared), and a
+  // phone's expect may not reach the dialog that follows (Remote.dialogInput).
   if (session.dialog) session.dialog.input = true;
+  Remote.dialogInput(session.asked, session.seq);
   if (data.includes('\r')) {
     session.armed = Date.now();
     session.turnStartedAt = session.armed;
@@ -1083,7 +1085,9 @@ const DOT_CLASS = { working: 'dot working', needsYou: 'dot needs', done: 'dot on
 // sidebar every time a status changes could swallow a click that is halfway through.
 function refreshDots() {
   for (const session of sessions.values()) {
-    const status = session.running ? paneStatus(session, screenParts(session)) : 'ended';
+    const screen = session.running ? screenParts(session) : null;
+    const status = screen ? paneStatus(session, screen) : 'ended';
+    noteDialog(session, screen, status);
     if (status === session.dotStatus) continue;
     session.dotStatus = status;
     session.el.querySelector('.pane-head .dot').className = DOT_CLASS[status];
@@ -2164,6 +2168,10 @@ const PALETTE = Remote.palette(THEME);
 const NOT_OPEN = "That agent isn't open on the PC any more.";
 const HAS_ENDED = 'That agent has ended. Resume it or start a new chat.';
 const BUSY = 'Agent Arcade is busy, try again.';
+// REMOTE_API.md's sentences for dialogChanged and dialogOpen (Remote.cs has the same ones for the fixtures).
+const DIALOG_CHANGED = 'The question on your PC changed, so nothing was sent. Check it and answer again.';
+const DIALOG_OPEN = 'The agent is asking a question on your PC, so nothing was typed. Answer it, or press Esc first.';
+const DIALOG_OPEN_TYPED = "The agent started asking a question on your PC, so Enter wasn't pressed.";
 // The C# side answers 503 after 10 s, counted from a little before the page gets the request; typing that
 // can't finish well before then could be typed twice when the phone tries again.
 const JOB_WAIT_MS = 8000;
@@ -2235,6 +2243,7 @@ function remoteSummary(session) {
   const screen = screenParts(session);
   const status = paneStatus(session, screen);
   const asking = status === 'needsYou';
+  noteDialog(session, screen, status);
   return {
     id: session.id,
     chat: session.chat || null,
@@ -2263,6 +2272,19 @@ function remoteSummary(session) {
     cols: session.term.cols,
     rows: session.term.rows,
   };
+}
+
+// The dialog the pane shows and the screen seq at which the PC first saw it (Remote.trackDialog), for expect. Noted
+// before every Session or Screen the phones get, so a phone whose screen showed a dialog never gets a false dialogChanged.
+function noteDialog(session, screen, status) {
+  session.asked = Remote.trackDialog(session.asked, status === 'needsYou' ? Remote.dialogKey(screen) : '', session.seq);
+}
+
+function lookAtDialog(session) {
+  const screen = screenParts(session);
+  const status = paneStatus(session, screen);
+  noteDialog(session, screen, status);
+  return { screen, status };
 }
 
 function safeSummary(session) {
@@ -2383,6 +2405,7 @@ function sendScreen(id) {
   watch.seq = session.seq;
   watch.at = Date.now();
   try {
+    lookAtDialog(session);
     send({ type: 'remoteScreen', screen: screenOf(session, watch.lines) });
   } catch { /* the pane is being closed */ }
 }
@@ -2452,8 +2475,22 @@ function notReady(agent) {
 function remoteGetScreen(message) {
   const session = sessions.get(message.id);
   if (!session) return remoteRefuse(404, NOT_OPEN, 'sessionNotFound');
+  lookAtDialog(session);
   return remoteOk(screenOf(session, clampLines(message.lines)));
 }
+
+// expect (REMOTE_API.md): the phone acted on what it saw. Checked when the request's turn comes, right before the first
+// key or character; a refusal when the pane shows something else now, else null. 1.0 phones send none.
+function expectProblem(session, expect) {
+  if (!expect || typeof expect !== 'object') return null;
+  const { screen, status } = lookAtDialog(session);
+  const asking = status === 'needsYou';
+  const pane = { asking, question: asking ? screen.question : null, dialogSeq: session.asked?.seq, seq: session.seq };
+  return Remote.expectRefused(expect, pane) ? remoteRefuse(409, DIALOG_CHANGED, 'dialogChanged') : null;
+}
+
+// The pane's Session status would be needsYou now.
+const asksNow = session => lookAtDialog(session).status === 'needsYou';
 
 // Typed like a paste at the PC, so titles, amber and "done" keep working through term.onData.
 function remoteInput(message) {
@@ -2462,6 +2499,11 @@ function remoteInput(message) {
   if (!session.running) return remoteRefuse(409, HAS_ENDED, 'sessionEnded');
   const text = typeof message.text === 'string' ? message.text.replace(CONTROL, '') : '';
   return inOrder(session, message, async ticket => {
+    const changed = expectProblem(session, message.expect);
+    if (changed) return changed;
+    // Never Enter on a dialog, for any phone: a message to an asking pane waits until it stops asking (the phone
+    // presses Esc first). Text for a dialog's own field comes with submit false, then keys ["enter"].
+    if (message.submit === true && asksNow(session)) return remoteRefuse(409, DIALOG_OPEN, 'dialogOpen');
     if (text) {
       // Typed on the phone, so it may name the chat (trackPrompt) although it arrives as a paste.
       session.phoneTyping = true;
@@ -2471,6 +2513,8 @@ function remoteInput(message) {
     await wait(150);
     if (ticket.cancelled) return remoteRefuse(503, BUSY, 'busy');
     if (!session.running) return remoteRefuse(409, HAS_ENDED, 'sessionEnded');
+    // It started asking in those 150 ms: the text is there, but Enter would answer the dialog.
+    if (asksNow(session)) return remoteRefuse(409, DIALOG_OPEN_TYPED, 'dialogOpen', { typed: true });
     session.term.input('\r');
     return remoteOk();
   }, message.submit === true ? 150 : 0);
@@ -2485,6 +2529,9 @@ function remoteKeys(message) {
   const unknown = keys.findIndex(name => Remote.keySequence(name, false) === null);
   if (unknown >= 0) return remoteRefuse(400, `Unknown key: ${Remote.cut(String(keys[unknown]).replace(CONTROL, ''), 40)}`, 'unknownKey');
   return inOrder(session, message, async ticket => {
+    // Only the first key is checked: the rest are the user's own sequence, such as down then enter.
+    const changed = expectProblem(session, message.expect);
+    if (changed) return changed;
     for (const [i, name] of keys.entries()) {
       if (i) await wait(40);
       if (ticket.cancelled) return remoteRefuse(503, BUSY, 'busy');

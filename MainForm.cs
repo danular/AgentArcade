@@ -59,6 +59,8 @@ sealed class MainForm : Form, IRemoteHost
     // Phone remote. The page builds each pane's summary and screen; this side passes them on to the phones.
     readonly RemoteServer _remote;
     readonly OrderedDictionary<string, JsonElement> _summaries = new();
+    // Pane id -> its Session.question as the page wrote it (PageQuestion). UI thread only.
+    readonly Dictionary<string, string> _questions = new();
     readonly ConcurrentDictionary<string, PageRequest> _pageRequests = new();
     volatile bool _pageReady;
     // The run of the page that runs now (REMOTE_API.md, run): State, Session and Attention carry it. Set on the UI thread.
@@ -1352,6 +1354,7 @@ sealed class MainForm : Form, IRemoteHost
         FailPageRequests();
         foreach (var id in _summaries.Keys.ToList()) _remote.Closed(id);
         _summaries.Clear();
+        _questions.Clear();
         _remote.ForgetScreens();
         _run = RemoteModel.NewRun();
         if (_remote.Phones > 0) _remote.Send(new { type = "state", state = RemoteState() });
@@ -1369,6 +1372,7 @@ sealed class MainForm : Form, IRemoteHost
             {
                 if (item.ValueKind != JsonValueKind.String || item.GetString() is not { Length: > 0 } id) continue;
                 _summaries.Remove(id);
+                _questions.Remove(id);
                 _remote.Closed(id);
             }
         }
@@ -1380,6 +1384,7 @@ sealed class MainForm : Form, IRemoteHost
                 if (id.Length == 0) continue;
                 var summary = RemoteModel.Summary(session, _run);
                 _summaries[id] = summary;
+                RememberQuestion(id, session);
                 _remote.Send(new { type = "session", session = summary });
             }
         }
@@ -1390,11 +1395,28 @@ sealed class MainForm : Form, IRemoteHost
     {
         if (!body.TryGetProperty("sessions", out var sessions) || sessions.ValueKind != JsonValueKind.Array) return;
         _summaries.Clear();
+        _questions.Clear();
         foreach (var session in sessions.EnumerateArray())
         {
-            if (Json.Str(session, "id") is { Length: > 0 } id) _summaries[id] = RemoteModel.Summary(session, _run);
+            if (Json.Str(session, "id") is not { Length: > 0 } id) continue;
+            _summaries[id] = RemoteModel.Summary(session, _run);
+            RememberQuestion(id, session);
         }
     }
+
+    // A pane's question as the page wrote it, before TextGuard hid key-like text in it for the phone.
+    void RememberQuestion(string id, JsonElement session)
+    {
+        if (session.TryGetProperty("question", out var question) && question.ValueKind == JsonValueKind.String && question.GetString() is { } text)
+            _questions[id] = text;
+        else
+            _questions.Remove(id);
+    }
+
+    // The question for the page to compare a phone's expect with: the phone got it through TextGuard, the page has the
+    // text as it is, so a question that was hidden goes back to the page's own text.
+    string? PageQuestion(string? id, string? question)
+        => question != null && id != null && _questions.TryGetValue(id, out var raw) && raw != question && TextGuard.Redact(raw) == question ? raw : question;
 
     void RemoteReplied(JsonElement m)
     {
@@ -1431,12 +1453,24 @@ sealed class MainForm : Form, IRemoteHost
         foreach (var (name, value) in fields) message[name] = value;
         OnUi(() =>
         {
+            // Answered already (a page that started again answered it with 503): the new page must not type it.
+            if (request.Done.Task.IsCompleted) return;
             // A phone removed (or Phone remote switched off) after its request passed the token check gets nothing typed:
             // the removal happens before remoteCancel is queued, so a request posted after it is caught here.
             if (device != null && (!_remote.Running || !_remote.Devices.Exists(device)))
             {
                 request.Done.TrySetResult(_remote.Running ? RemoteReply.Fail(401, "notPaired", RemoteServer.NotPaired) : RemoteReply.Busy);
                 return;
+            }
+            if (message.GetValueOrDefault("expect") is RemoteExpect expect)
+            {
+                // The server checked the run on arrival; the page may have started again since.
+                if (expect.Run != null && expect.Run != _run)
+                {
+                    request.Done.TrySetResult(RemoteServer.RunChanged);
+                    return;
+                }
+                message["expect"] = new { question = PageQuestion(message.GetValueOrDefault("id") as string, expect.Question), seq = expect.Seq };
             }
             // remoteStatus also tells the page how many phones are connected. Counted as it goes out, so it can't overtake a newer count.
             if (type == "remoteStatus") message["phones"] = _remote.Phones;

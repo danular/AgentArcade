@@ -52,6 +52,10 @@ sealed record RemoteReply(int Status, JsonElement? Body = null, string? Error = 
     }
 }
 
+// What the phone saw when it sent keys or input (REMOTE_API.md, expect): the Session.question it has, the newest
+// Screen.seq of that pane and that Session's run (null when it sent none).
+sealed record RemoteExpect(string? Question, long Seq, string? Run);
+
 sealed record RemoteWatch(string Id, int Lines);
 
 // What the server needs from the window. It is called from the thread pool; the window does the work on its own thread.
@@ -717,7 +721,7 @@ static class RemoteModel
     public const int MinClientApi = 1;
 
     // What this PC does beyond contract 1.0 (hello.features). A name is listed only once it works end to end.
-    public static readonly string[] Features = ["errorCodes", "clientHeader"];
+    public static readonly string[] Features = ["errorCodes", "clientHeader", "run", "expect"];
 
     // REMOTE_API.md's error table: each code and the one status it comes with. Codes are never renamed or reused.
     static readonly Dictionary<string, int> Codes = new()
@@ -926,6 +930,36 @@ static class RemoteModel
     public static bool IsSessionId(string id) => SessionId.IsMatch(id);
 
     public static bool IsChatId(string id) => ChatId.IsMatch(id);
+
+    public const int MaxExpectQuestion = 1000;
+    public const long MaxExpectSeq = 9007199254740991;
+
+    // expect on keys and input (REMOTE_API.md): missing or null means none. Otherwise an object with question (a string
+    // of at most 1000 characters, null or missing), seq (written as a plain whole number from 0 to 2^53-1, so not
+    // 418.0, 4.18e2 or "418") and run (1 to 64 characters, or missing or null); other fields are ignored. False when
+    // it is there but not like that: 400 badRequest.
+    public static bool TryExpect(JsonElement body, out RemoteExpect? expect)
+    {
+        expect = null;
+        if (!body.TryGetProperty("expect", out var value) || value.ValueKind == JsonValueKind.Null) return true;
+        if (value.ValueKind != JsonValueKind.Object) return false;
+        string? question = null;
+        if (value.TryGetProperty("question", out var asked) && asked.ValueKind != JsonValueKind.Null)
+        {
+            if (asked.ValueKind != JsonValueKind.String || !RemoteServer.TryText(asked, out var text) || text.Length > MaxExpectQuestion) return false;
+            question = text;
+        }
+        if (!value.TryGetProperty("seq", out var number) || number.ValueKind != JsonValueKind.Number || !number.TryGetInt64(out var seq) || seq is < 0 or > MaxExpectSeq)
+            return false;
+        string? run = null;
+        if (value.TryGetProperty("run", out var given) && given.ValueKind != JsonValueKind.Null)
+        {
+            if (given.ValueKind != JsonValueKind.String || !RemoteServer.TryText(given, out var text) || text.Length is < 1 or > 64) return false;
+            run = text;
+        }
+        expect = new(question, seq, run);
+        return true;
+    }
 
     // The phone's X-Arcade-Client value (REMOTE_API.md), without the spaces around it; null when it is missing, sent
     // more than once, longer than 64 characters or not in the contract's form. It never fails a request and is never logged.
@@ -1247,6 +1281,15 @@ sealed class RemoteServer
     // Requests one phone may have waiting for the page, and connections one address may have open.
     const int MaxPageRequests = 4, MaxConnections = 8;
     public const string NotPaired = "This phone isn't paired any more. Pair it again on your PC.";
+    // REMOTE_API.md's sentences for the 1.1 codes. dialogChanged and dialogOpen are the page's (web/app.js); they are
+    // here for the contract fixtures.
+    public const string Denied = "Pairing was refused on your PC.";
+    public const string NotApproved = "Nobody allowed this phone on your PC in time. Press New code on your PC, scan again and click Allow.";
+    public const string DialogChanged = "The question on your PC changed, so nothing was sent. Check it and answer again.";
+    public const string DialogOpen = "The agent is asking a question on your PC, so nothing was typed. Answer it, or press Esc first.";
+    public const string DialogOpenTyped = "The agent started asking a question on your PC, so Enter wasn't pressed.";
+
+    public static readonly RemoteReply RunChanged = RemoteReply.Fail(409, "runChanged", "Agent Arcade started again on your PC, so nothing was sent. That agent isn't open any more.");
 
     static readonly RemoteReply Unknown = RemoteReply.Fail(404, "unknownRequest", "Unknown request.");
     static readonly RemoteReply Invalid = RemoteReply.Fail(400, "badRequest", "That request isn't valid.");
@@ -1844,12 +1887,24 @@ sealed class RemoteServer
         if (body == null) return problem!;
         string text;
         bool submit;
+        RemoteExpect? expect;
         using (body)
         {
-            if (!TryString(body.RootElement, "text", out text) || !TryBool(body.RootElement, "submit", out submit)) return Invalid;
+            if (!TryString(body.RootElement, "text", out text) || !TryBool(body.RootElement, "submit", out submit)
+                || !RemoteModel.TryExpect(body.RootElement, out expect)) return Invalid;
         }
         if (Encoding.UTF8.GetByteCount(text) > MaxText) return RemoteReply.Fail(413, "tooLarge", "That message is too long. Send at most 16 KB.");
-        return await AskPageAsync(device, "remoteInput", new() { ["id"] = id, ["text"] = text, ["submit"] = submit });
+        return await AskWithExpectAsync(device, "remoteInput", new() { ["id"] = id, ["text"] = text, ["submit"] = submit }, expect);
+    }
+
+    // Keys and input with the phone's expect: another run is refused on arrival (409 runChanged, nothing typed); the
+    // page checks the rest when the request's turn comes (REMOTE_API.md, expect). Without expect, as in 1.0.
+    Task<RemoteReply> AskWithExpectAsync(string device, string type, Dictionary<string, object?> fields, RemoteExpect? expect)
+    {
+        if (expect == null) return AskPageAsync(device, type, fields);
+        if (expect.Run != null && expect.Run != _host.Run) return Task.FromResult(RunChanged);
+        fields["expect"] = expect;
+        return AskPageAsync(device, type, fields);
     }
 
     async Task<RemoteReply> KeysAsync(HttpContext context, string device, string id)
@@ -1857,6 +1912,7 @@ sealed class RemoteServer
         var (body, problem) = await ReadBodyAsync(context);
         if (body == null) return problem!;
         var keys = new List<string>();
+        RemoteExpect? expect;
         using (body)
         {
             if (!body.RootElement.TryGetProperty("keys", out var list) || list.ValueKind != JsonValueKind.Array) return Invalid;
@@ -1867,8 +1923,9 @@ sealed class RemoteServer
                 if (!RemoteModel.IsKey(name)) return RemoteReply.Fail(400, "unknownKey", "Unknown key: " + RemoteModel.Cut(name.Length > 0 ? name : item.ValueKind.ToString(), 40));
                 keys.Add(name);
             }
+            if (!RemoteModel.TryExpect(body.RootElement, out expect)) return Invalid;
         }
-        return await AskPageAsync(device, "remoteKeys", new() { ["id"] = id, ["keys"] = keys });
+        return await AskWithExpectAsync(device, "remoteKeys", new() { ["id"] = id, ["keys"] = keys }, expect);
     }
 
     async Task<RemoteReply> RenameAsync(HttpContext context, string device, string id)
@@ -1923,7 +1980,7 @@ sealed class RemoteServer
     }
 
     // A string with a broken surrogate pair can't be read; it counts as invalid.
-    static bool TryText(JsonElement element, out string value)
+    internal static bool TryText(JsonElement element, out string value)
     {
         try
         {

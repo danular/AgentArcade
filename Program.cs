@@ -1184,6 +1184,7 @@ static class RemoteSelfCheck
                 "input reaches the page with the phone's device id; bad JSON 400, too long 413, unknown key 400, bad pane id 404, unknown route 404, start 201, "
                     + "a new project's name is trimmed and checked before it reaches the window");
 
+            await StaleDialogAsync(check, host, http, root, token);
             await WaitingForPageAsync(check, server, host, http, root, fingerprint);
 
             using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -1356,6 +1357,70 @@ static class RemoteSelfCheck
         {
             foreach (var client in held) client.Dispose();
         }
+    }
+
+    // expect on keys and input (REMOTE_API.md): what C# checks before anything reaches the page. A malformed expect is
+    // 400 and another run 409 runChanged, and then the page is never asked, so nothing is typed. A valid one goes to the
+    // page with the request, and the page's 409 dialogChanged reaches the phone with its code. The page's own comparison
+    // (question, the dialog's first seq, seq) is Remote.expectRefused, which tests/remote.test.js covers.
+    static async Task StaleDialogAsync(Action<string, bool, string> check, StubHost host, HttpClient http, string root, string token)
+    {
+        async Task<(HttpStatusCode Status, JsonElement Body, Dictionary<string, object?>? Asked)> Post(string path, string raw)
+        {
+            // Under the 20 requests a second a phone may send.
+            await Task.Delay(60);
+            var before = host.Requests.Count;
+            using var response = await Send(http, HttpMethod.Post, root + "sessions/s1/" + path, token, raw: raw);
+            var body = await Body(response);
+            return (response.StatusCode, body, host.Requests.Count > before ? host.Requests.Last().Fields : null);
+        }
+        Task<(HttpStatusCode Status, JsonElement Body, Dictionary<string, object?>? Asked)> Keys(string expect) => Post("keys", "{\"keys\":[\"1\"],\"expect\":" + expect + "}");
+
+        var malformed = new List<string>
+        {
+            "\"x\"", "[]", "5", "{}", "{\"question\":null}", "{\"seq\":418.0}", "{\"seq\":4.18e2}", "{\"seq\":\"418\"}", "{\"seq\":-1}", "{\"seq\":9007199254740992}",
+            "{\"seq\":1,\"question\":5}", "{\"seq\":1,\"question\":\"" + new string('x', 1001) + "\"}", "{\"seq\":1,\"run\":\"\"}", "{\"seq\":1,\"run\":\"" + new string('a', 65) + "\"}",
+            "{\"seq\":1,\"run\":7}",
+        };
+        var refused = new List<string>();
+        foreach (var expect in malformed)
+        {
+            var (status, body, asked) = await Keys(expect);
+            if (status != HttpStatusCode.BadRequest || Json.Str(body, "code") != "badRequest" || asked != null) refused.Add(expect.Length > 40 ? expect[..40] + "…" : expect);
+        }
+        var badInput = await Post("input", "{\"text\":\"x\",\"submit\":true,\"expect\":{\"seq\":\"1\"}}");
+
+        const string otherRun = "0000000000000000";
+        var staleKeys = await Keys("{\"question\":\"Do you want to proceed?\",\"seq\":418,\"run\":\"" + otherRun + "\"}");
+        var staleInput = await Post("input", "{\"text\":\"yes\",\"submit\":true,\"expect\":{\"question\":null,\"seq\":3,\"run\":\"" + otherRun + "\"}}");
+
+        var longest = new string('q', 1000) + "?";
+        var valid = await Keys("{\"question\":\"Do you want to proceed?\",\"seq\":418,\"run\":\"" + host.Run + "\",\"other\":[1]}");
+        var edge = await Keys("{\"question\":\"" + longest[1..] + "\",\"seq\":9007199254740991}");
+        var none = await Keys("null");
+        var input = await Post("input", "{\"text\":\"later\",\"submit\":false,\"expect\":{\"seq\":0,\"run\":null}}");
+
+        // The page saw another dialog: its refusal reaches the phone as it is, with the code.
+        host.Answers.Enqueue(RemoteReply.FromPage(409, null, RemoteServer.DialogChanged, "dialogChanged"));
+        var changed = await Keys("{\"question\":\"Do you want to proceed?\",\"seq\":417,\"run\":\"" + host.Run + "\"}");
+        host.Answers.Enqueue(RemoteReply.FromPage(409, JsonSerializer.SerializeToElement(new { typed = true }), RemoteServer.DialogOpenTyped, "dialogOpen"));
+        var typedInput = await Post("input", "{\"text\":\"go on\",\"submit\":true}");
+
+        check(
+            "stale-dialog-409",
+            refused.Count == 0 && badInput.Status == HttpStatusCode.BadRequest && badInput.Asked == null
+                && staleKeys is { Status: HttpStatusCode.Conflict, Asked: null } && Json.Str(staleKeys.Body, "code") == "runChanged"
+                && staleInput is { Status: HttpStatusCode.Conflict, Asked: null } && Json.Str(staleInput.Body, "code") == "runChanged"
+                && valid.Status == HttpStatusCode.OK && valid.Asked?["expect"] is RemoteExpect { Question: "Do you want to proceed?", Seq: 418 } sent && sent.Run == host.Run
+                && edge.Status == HttpStatusCode.OK && edge.Asked?["expect"] is RemoteExpect { Seq: 9007199254740991, Run: null } far && far.Question?.Length == 1000
+                && none.Status == HttpStatusCode.OK && none.Asked != null && !none.Asked.ContainsKey("expect")
+                && input.Status == HttpStatusCode.OK && input.Asked?["expect"] is RemoteExpect { Question: null, Seq: 0, Run: null }
+                && changed.Status == HttpStatusCode.Conflict && Json.Str(changed.Body, "code") == "dialogChanged" && Json.Str(changed.Body, "error") == RemoteServer.DialogChanged
+                && typedInput.Status == HttpStatusCode.Conflict && Json.Str(typedInput.Body, "code") == "dialogOpen" && typedInput.Body.TryGetProperty("typed", out var typed) && typed.GetBoolean(),
+            refused.Count == 0
+                ? "keys and input with an expect from another run get 409 runChanged and nothing reaches the page; " + malformed.Count + " malformed expects get 400; "
+                    + "a valid one goes to the page, whose dialogChanged and dialogOpen (typed) reach the phone with their codes (the page's comparison: tests/remote.test.js)"
+                : "not refused with 400: " + string.Join(" | ", refused));
     }
 
     // A phone may have 4 requests waiting for the page; removing it answers them at once.
@@ -1637,9 +1702,15 @@ static class RemoteSelfCheck
 
         public Task<(object State, object Chats)> SnapshotAsync() => Task.FromResult((State(), (object)new List<object>()));
 
+        // Every request that reached the page, with its fields, and the answers to give before the usual ok.
+        public ConcurrentQueue<(string Type, Dictionary<string, object?> Fields)> Requests { get; } = new();
+        public ConcurrentQueue<RemoteReply> Answers { get; } = new();
+
         public Task<RemoteReply> AskPageAsync(string device, string type, Dictionary<string, object?> fields)
         {
             Asked.Add((type, device));
+            Requests.Enqueue((type, fields));
+            if (Answers.TryDequeue(out var answer)) return Task.FromResult(answer);
             if (Hold is not { } hold) return Task.FromResult(RemoteReply.Ok(new { ok = true }));
             Interlocked.Increment(ref _held);
             return hold.Task;

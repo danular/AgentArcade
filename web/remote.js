@@ -325,6 +325,38 @@ const Remote = (() => {
     return true;
   }
 
+  // ---------- expect: what the phone saw (REMOTE_API.md) ----------
+
+  // The dialog of a pane whose status is needsYou: its question with its choices, as for Attention. Unlike dialogSig it
+  // also names a pane that asks only through the agent's own notification.
+  const dialogKey = screen => JSON.stringify([screen.question || '', (screen.choices || []).map(choice => `${choice.key} ${choice.label}`)]);
+
+  // The dialog a pane shows and the screen seq at which the PC first saw it. tracker is { key, seq, input, inputSeq } or
+  // null; key is dialogKey while the pane needs you, else ''; seq is the pane's screen seq now. Returns the tracker to
+  // keep. A dialog is new when its key changes, when it was gone at a look, or when keys went to the pane and the screen
+  // changed since: it may have been answered and asked again. Arrow keys inside one dialog renew it too, which can only
+  // make a phone answer again, never answer a dialog it didn't see.
+  function trackDialog(tracker, key, seq) {
+    if (!key) return null;
+    if (tracker && tracker.key === key && !(tracker.input && seq > tracker.inputSeq)) return tracker;
+    return { key, seq, input: false, inputSeq: 0 };
+  }
+
+  // Keys or text went to the pane at screen seq: from now on a changed screen may show a new dialog.
+  function dialogInput(tracker, seq) {
+    if (tracker && !tracker.input) Object.assign(tracker, { input: true, inputSeq: seq });
+  }
+
+  // Whether a phone's expect doesn't fit the pane as it is now (409 dialogChanged). pane: asking (its status would be
+  // needsYou), question (the Session's question now), dialogSeq (when this dialog was first seen), seq (its screen seq).
+  function expectRefused(expect, pane) {
+    const question = typeof expect.question === 'string' ? expect.question : null;
+    const now = pane.asking && typeof pane.question === 'string' ? pane.question : null;
+    if (question !== now) return true;
+    if (pane.asking && !(pane.dialogSeq <= expect.seq)) return true;
+    return !(expect.seq <= pane.seq);
+  }
+
   // OSC 9;4 progress (payload "4;state;percent"). null clears it; undefined means it isn't a progress report.
   function progress(data) {
     const match = /^4;(\d+)(?:;(\d*))?$/.exec(String(data));
@@ -450,7 +482,8 @@ const Remote = (() => {
 
   return {
     APPROVAL, cut, approval, asksOk, activity, plan, choices, findChoices, findMenu, picking, question, preview, parts,
-    dialogSig, dialogAppeared, claimDialog, progress, keySequence, palette, color256, serializeScreen,
+    dialogSig, dialogAppeared, claimDialog, dialogKey, trackDialog, dialogInput, expectRefused, progress, keySequence, palette, color256,
+    serializeScreen,
   };
 })();
 
