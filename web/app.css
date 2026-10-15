@@ -251,9 +251,6 @@ input[type="range"] { padding: 0; accent-color: var(--accent); border: 0; box-sh
 }
 .avatar.sm { width: 20px; height: 20px; font-size: 10px; border-radius: 6px; }
 .avatar.lg { width: 34px; height: 34px; font-size: 13px; border-radius: 10px; }
-.avatar.mark svg { width: 14px; height: 14px; }
-.avatar.mark.sm svg { width: 13px; height: 13px; }
-.avatar.mark.lg svg { width: 21px; height: 21px; }
 
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
 .dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(62, 207, 127, .15); }
