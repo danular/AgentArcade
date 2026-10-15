@@ -1,0 +1,15 @@
+{
+  "name": "agent-arcade-promo-video",
+  "private": true,
+  "description": "Renders the 30-second Agent Arcade promo from promo.html into MP4 files",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "ffmpeg-static": "5.2.0",
+    "puppeteer-core": "23.11.1"
+  },
+  "allowScripts": {
+    "ffmpeg-static@5.2.0": true
+  }
+}

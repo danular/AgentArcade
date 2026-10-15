@@ -3,3 +3,5 @@ obj/
 publish/
 *.user
 .vs/
+website/video/node_modules/
+website/video/out/
