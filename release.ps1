@@ -51,7 +51,7 @@ if (Test-Path $Apk) {
     Copy-Item $Apk (Join-Path (Split-Path $zip) 'AgentArcadeRemote.apk') -Force
     $apkFile = Get-Item $apkOut
     Write-Host $apkOut
-    Write-Host ("APK v{0}, built {1:d MMM yyyy HH:mm}, {2:0.0} MB" -f $apkVersion, $apkFile.LastWriteTime, ($apkFile.Length / 1MB))
+    Write-Host ("APK v{0}, built {1:d MMM yyyy HH:mm}, {2:0.0} MB" -f $apkVersion, $apkFile.LastWriteTime, ($apkFile.Length / 1e6))
     Write-Host "APK SHA-256 $((Get-FileHash $apkOut -Algorithm SHA256).Hash.ToLower())"
 } else {
     Write-Warning "No signed APK at $Apk. Without it this release has no AgentArcadeRemote.apk and the website's Android download fails."
