@@ -173,7 +173,7 @@ static class AgentStore
         {
             Name = "Gemini CLI",
             Command = "gemini",
-            LoginHint = "Choose \"Sign in with Google\" when Gemini starts. To change account later, type /auth inside Gemini.",
+            LoginHint = "Gemini CLI needs a paid Gemini API key or Code Assist Standard/Enterprise. Personal Google accounts: use Antigravity CLI.",
             Install = "npm install -g @google/gemini-cli",
             HomeVar = "GEMINI_CLI_HOME",
             AccountCheck = "gemini",
@@ -247,6 +247,7 @@ static class AgentStore
             agent.ResumeArgs ??= builtIn.ResumeArgs;
             agent.ImagesFolder ??= builtIn.ImagesFolder;
             agent.DefaultHome ??= builtIn.DefaultHome;
+            agent.LoginHint = CurrentHint(agent, builtIn);
         }
 
         List<string> offered;
@@ -280,6 +281,19 @@ static class AgentStore
         }
         return agents;
     }
+
+    // Built-in sign-in hints that stopped being true. agents.json keeps a copy of every hint, so one that is exactly an
+    // old built-in hint shows the current built-in one instead; a hint the user wrote stays.
+    public static readonly Dictionary<string, string[]> RetiredHints = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Google ended Gemini CLI's sign-in with personal Google accounts on 18 Jun 2026.
+        ["gemini"] = ["Choose \"Sign in with Google\" when Gemini starts. To change account later, type /auth inside Gemini."],
+    };
+
+    public static string CurrentHint(AgentDef agent, AgentDef builtIn)
+        => RetiredHints.TryGetValue(builtIn.Command, out var retired) && retired.Contains(agent.LoginHint, StringComparer.Ordinal)
+            ? builtIn.LoginHint
+            : agent.LoginHint;
 
     static void SaveOffered(IEnumerable<string> names)
         => File.WriteAllText(OfferedPath, JsonSerializer.Serialize(names.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), Json.Options));
@@ -855,10 +869,10 @@ static class Probe
     {
         var home = account.IsMain ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) : account.Home;
         var file = Path.Combine(home, ".gemini", "google_accounts.json");
-        if (!File.Exists(file)) return new AccountInfo(false, Note: "sign in on first start");
+        if (!File.Exists(file)) return new AccountInfo(false, Note: "API key or Code Assist: sign in on first start");
         using var doc = JsonDocument.Parse(File.ReadAllText(file));
         var email = Json.Str(doc.RootElement, "active");
-        return email.Length == 0 ? new AccountInfo(false, Note: "sign in on first start") : new AccountInfo(true, email);
+        return email.Length == 0 ? new AccountInfo(false, Note: "API key or Code Assist: sign in on first start") : new AccountInfo(true, email);
     }
 }
 

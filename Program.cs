@@ -162,6 +162,15 @@ static class SelfCheck
             Check("update-compare", false, ex.Message);
         }
 
+        // Gemini's old "Sign in with Google" hint is replaced in an existing agents.json; a hint the user wrote stays.
+        var geminiBuiltIn = AgentStore.Defaults().First(agent => agent.Command == "gemini");
+        var oldHint = new AgentDef { Name = "Gemini CLI", Command = "gemini", LoginHint = AgentStore.RetiredHints["gemini"][0] };
+        var ownHint = new AgentDef { Name = "Gemini CLI", Command = "gemini", LoginHint = AgentStore.RetiredHints["gemini"][0] + " (mine)" };
+        Check("gemini-hint",
+            AgentStore.CurrentHint(oldHint, geminiBuiltIn) == geminiBuiltIn.LoginHint && AgentStore.CurrentHint(ownHint, geminiBuiltIn) == ownHint.LoginHint
+                && geminiBuiltIn.LoginHint.Contains("Antigravity CLI", StringComparison.Ordinal),
+            "the old built-in hint becomes the API key / Code Assist one; an edited hint is kept");
+
         try
         {
             var ptyText = new System.Text.StringBuilder();
