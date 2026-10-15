@@ -24,7 +24,10 @@ foreach ($f in 'LICENSE.md', 'LICENSING.md', 'THIRD-PARTY-NOTICES.md') { Copy-It
 
 New-Item -ItemType Directory -Force (Split-Path $zip) | Out-Null
 if (Test-Path $zip) { Remove-Item $zip }
-Compress-Archive -Path $out -DestinationPath $zip -CompressionLevel Optimal
+# Windows tar (bsdtar) writes forward-slash paths; Compress-Archive in Windows PowerShell 5.1 writes backslashes,
+# which other unzip tools turn into flat file names.
+& (Join-Path $env:SystemRoot 'System32\tar.exe') -a -cf $zip -C $work $name
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 Write-Host $zip
 Write-Host "SHA-256 $hash"
