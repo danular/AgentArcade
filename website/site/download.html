@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Download | Agent Arcade</title>
+<meta name="description" content="Download Agent Arcade 1.3.1 for Windows 11. A self-contained zip from GitHub Releases, free for personal use.">
+<meta name="theme-color" content="#0c0c0e">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Download | Agent Arcade">
+<meta property="og:description" content="Download Agent Arcade 1.3.1 for Windows 11. A self-contained zip from GitHub Releases, free for personal use.">
+<meta property="og:image" content="assets/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/img/icon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="assets/img/icon-64.png">
+<link rel="apple-touch-icon" href="assets/img/icon-180.png">
+<link rel="preload" href="assets/fonts/source-serif-4-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="assets/img/icon-64.png" alt="" width="30" height="30">Agent Arcade</a>
+    <nav class="nav-links" aria-label="Main"><a href="phone.html">Phone</a><a href="voice.html">Voice<span class="pro-pill">Pro</span></a><a href="pricing.html">Pricing</a><a href="security.html">Security</a><a href="docs.html">Docs</a><a href="changelog.html">Changelog</a></nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost btn-sm" href="https://github.com/danular/AgentArcade">GitHub</a>
+      <a class="btn btn-accent btn-sm" href="download.html">Download</a>
+    </div>
+    <button class="menu-btn" type="button" aria-label="Menu" aria-expanded="false">&#9776;</button>
+  </div>
+</header>
+<main id="main">
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Download · v1.3.1 · 15 Oct 2026</p>
+    <h1>Get Agent Arcade for Windows</h1>
+    <p class="lead">One zip with everything inside, including the .NET runtime. Unzip it, start it, and add your first project folder.</p>
+    <div class="ctas"><a class="btn btn-accent" href="https://github.com/danular/AgentArcade/releases/latest/download/AgentArcade-win-x64.zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>Download AgentArcade-win-x64.zip</a><a class="btn btn-ghost" href="https://github.com/danular/AgentArcade/releases">All releases on GitHub</a></div>
+    <p class="meta">63 MB · Windows 11 x64 · self-contained · free for personal use</p>
+  </div>
+</section>
+
+<section class="section" style="padding-top:48px">
+  <div class="wrap docs">
+    <nav class="toc" aria-label="On this page"><a href="#install">Install</a><a href="#smartscreen">SmartScreen</a><a href="#verify">Check the file</a><a href="#agents">Get your agents</a><a href="#phone">Phone remote</a><a href="#requirements">Requirements</a><a href="#source">Build from source</a></nav>
+    <div class="prose">
+      <h2 id="install" style="margin-top:0">Install in three steps</h2>
+      <ol class="steps">
+        <li><div><b>Unzip it to a folder of your own,</b> for example <code>%LOCALAPPDATA%\Programs\AgentArcade</code>. Keep the files together: the app needs the <code>web</code> folder next to it. No administrator rights needed.</div></li>
+        <li><div><b>Start <code>AgentArcade.exe</code>.</b> Windows may warn you the first time; see <a href="#smartscreen">SmartScreen</a> below.</div></li>
+        <li><div><b>Add a project folder</b> in the sidebar and start an agent. A new install opens in your Documents folder until you add one.</div></li>
+      </ol>
+
+      <h2 id="smartscreen">If Windows says it "protected your PC"</h2>
+      <p>The download isn't code-signed yet, so Windows SmartScreen doesn't know it. Click <b>More info</b>, then <b>Run anyway</b>. Code signing is planned; until then you can check the file yourself, and the full source is public on <a href="https://github.com/danular/AgentArcade">GitHub</a>.</p>
+
+      <h2 id="verify">Check the file</h2>
+      <p>The SHA-256 of AgentArcade-1.3.1-win-x64.zip (the same file as AgentArcade-win-x64.zip):</p>
+      <div class="codeblock"><pre>2f4d6ef0bcfa4ba3c9fcc3e0668ebceb0d6be852f0ee257e1108d6a89141ee75</pre></div>
+      <p>In PowerShell, in the folder you downloaded it to:</p>
+      <div class="codeblock"><pre>Get-FileHash .\AgentArcade-win-x64.zip</pre></div>
+
+      <h2 id="agents">Get your agents</h2>
+      <p>Agent Arcade runs the official command-line agents. Click <b>Install</b> in the sidebar for any you don't have yet: it shows you the vendor's install command first, then runs it in a pane you can watch. Codex, Gemini CLI and GitHub Copilot CLI need <a href="https://nodejs.org">Node.js</a>; Cursor installs with its own PowerShell installer. Each agent then signs in through its own official login.</p>
+
+      <h2 id="phone">The phone remote</h2>
+      <p>Agent Arcade Remote for Android is in early access and not on Google Play yet. The PC side is already in this download: <b>Phone</b> at the bottom of the sidebar. <a href="phone.html">Read how it works</a>, or ask for early access in <a href="https://github.com/danular/AgentArcade/discussions">GitHub Discussions</a>.</p>
+
+      <h2 id="requirements">Requirements</h2>
+      <ul>
+        <li>Windows 11 on x64. Windows 10 and Windows on ARM aren't tested yet.</li>
+        <li>WebView2, which Windows 11 includes.</li>
+        <li>The agents you want to run, and their subscriptions.</li>
+        <li>For the phone remote: your Wi-Fi set to <i>Private</i> in Windows, or <a href="https://tailscale.com">Tailscale</a>.</li>
+      </ul>
+
+      <h2 id="source">Build from source</h2>
+      <p>With the .NET 10 SDK installed:</p>
+      <div class="codeblock"><pre>git clone https://github.com/danular/AgentArcade.git
+cd AgentArcade
+powershell -ExecutionPolicy Bypass -File install.ps1</pre></div>
+      <p>This publishes the app to <code>%LOCALAPPDATA%\Programs\AgentArcade</code> and adds a Start menu shortcut. <code>AgentArcade.exe --self-check</code> runs the built-in checks.</p>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="footer">
+  <div class="wrap">
+    <div class="foot-cols">
+      <div class="stack">
+        <a class="brand" href="index.html"><img src="assets/img/icon-64.png" alt="" width="30" height="30">Agent Arcade</a>
+        <p class="muted small">All your agents. One window. Free for personal use; Pro for work.</p>
+      </div>
+      <div><h4>Product</h4><ul><li><a href="download.html">Download</a></li><li><a href="phone.html">Phone remote</a></li><li><a href="voice.html">Voice</a></li><li><a href="pricing.html">Pricing</a></li><li><a href="changelog.html">Changelog</a></li></ul></div>
+      <div><h4>Resources</h4><ul><li><a href="docs.html">Docs</a></li><li><a href="security.html">Security</a></li><li><a href="pricing.html#need-pro">Do I need Pro?</a></li><li><a href="https://github.com/danular/AgentArcade">Source on GitHub</a></li></ul></div>
+      <div><h4>Community</h4><ul><li><a href="https://github.com/danular/AgentArcade/discussions">Discussions</a></li><li><a href="https://github.com/danular/AgentArcade/issues">Report a bug</a></li><li><a href="https://github.com/danular/AgentArcade/releases">All releases</a></li></ul></div>
+      <div><h4>Legal</h4><ul><li><a href="legal.html#license">License</a></li><li><a href="legal.html#privacy">Privacy</a></li><li><a href="legal.html#terms">Terms of sale</a></li><li><a href="legal.html#trademarks">Trademarks</a></li><li><a href="legal.html#imprint">Imprint</a></li></ul></div>
+    </div>
+    <p class="disclaimer">&copy; 2026 Agent Arcade. Agent Arcade is an independent product from the Netherlands. It is not affiliated with, endorsed by or sponsored by Anthropic, OpenAI, Google, GitHub, Microsoft, Anysphere or Tailscale. It runs those companies’ official command-line tools on your PC, and each tool stays under its maker’s terms and your own account. Claude and Claude Code are trademarks of Anthropic, PBC. OpenAI, ChatGPT and Codex are trademarks of OpenAI. Google and Gemini are trademarks of Google LLC. GitHub and GitHub Copilot are trademarks of GitHub, Inc. Cursor is a trademark of Anysphere, Inc. Tailscale is a trademark of Tailscale Inc. Windows is a trademark of Microsoft Corporation. Android is a trademark of Google LLC. All other trademarks belong to their owners.</p>
+  </div>
+</footer>
+<div class="mbar"><a class="btn btn-accent" href="download.html">Download</a><a class="btn btn-ghost" href="pricing.html">Pricing</a></div>
+<script src="assets/js/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+---
+title: Pricing
+description: Agent Arcade is free for personal use. Pro is EUR 25 per user per month (excl. VAT) for work, and includes Agent Arcade Voice.
+nav: pricing
+---
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Pricing</p>
+    <h1>Two plans and one rule</h1>
+    <p class="lead">If you're paid for the work, choose Pro. Everyone else uses Agent Arcade for free, with every feature, for as long as they like.</p>
+  </div>
+</section>
+
+<section class="section" style="padding-top:24px" id="plans">
+  <div class="wrap">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
+      <div class="toggle" role="group" aria-label="Billing period"><button type="button" data-set="period=month">Monthly</button><button type="button" data-set="period=year">Yearly</button></div>
+      <div class="toggle" role="group" aria-label="Show prices for"><button type="button" data-set="buyer=business">Business (excl. VAT)</button><button type="button" data-set="buyer=personal">Personal buyer (incl. VAT)</button></div>
+    </div>
+    <div class="plans">
+      <div class="card plan">
+        <p class="eyebrow">Personal</p>
+        <p class="price">EUR 0 <small>no account, no key, no time limit</small></p>
+        <p class="muted">For you, for yourself: learning, hobby projects, unpaid open source and your own content. Charities, schools and other noncommercial organisations too.</p>
+        <ul>
+          <li>All five built-in agents, plus any CLI agent you add</li>
+          <li>Self-arranging pane grid, status dots, notifications with click-to-jump, keep-awake</li>
+          <li>Per-project workspaces, history, extra accounts through each tool's official login</li>
+          <li>Side panel: Preview, Images, Changes, Console</li>
+          <li>{{remote}} for Android</li>
+          <li>No telemetry, no account with us</li>
+        </ul>
+        <div class="ctas"><a class="btn btn-primary" href="{{download}}">{{download_icon}}Download free</a></div>
+      </div>
+      <div class="card plan pro-edge" id="pro" data-prices>
+        <p class="eyebrow">Pro <span class="pro-pill">Recommended for work</span></p>
+        <p class="price"><span data-amount>EUR 25</span> <small data-unit>per user / month, excl. VAT</small></p>
+        <p class="muted">For any paid or organisational work: freelancers and ZZP'ers, employees (even if your employer doesn't pay), agencies and companies.</p>
+        <ul>
+          <li>Everything in Personal, with a commercial licence, per person, on all your PCs</li>
+          <li><b>{{voice}}</b>: local Whisper dictation tuned for prompting agents</li>
+          <li><b>Prompt Coach</b>: scores, rewrites and habit tracking</li>
+          <li>VAT invoices, with reverse charge for an EU VAT ID</li>
+          <li>Priority email support</li>
+        </ul>
+        <div class="note"><b>Pro checkout opens soon.</b> Need Pro for work before then, or want to know when it opens? Ask in <a href="{{discuss}}">GitHub Discussions</a>.</div>
+        <div class="ctas"><a class="btn btn-accent" href="{{discuss}}">Ask about Pro</a><a class="btn btn-ghost" href="voice.html">See Voice</a></div>
+      </div>
+    </div>
+    <div class="note callout" style="margin-top:20px"><span class="dot amber" style="margin-top:7px"></span><p><b>Your AI subscriptions are separate.</b> Pro doesn't include Claude, ChatGPT/Codex, Gemini, GitHub Copilot, Cursor or Tailscale plans. We sell no AI usage, no credits and no markup.</p></div>
+  </div>
+</section>
+
+<section class="section" id="need-pro" aria-labelledby="need-h">
+  <div class="wrap">
+    <div class="sec-head"><p class="eyebrow">Do I need Pro?</p><h2 id="need-h">Licences follow the work, not the PC</h2>
+      <p class="lead">Licences are per person. If you use Agent Arcade for work at all, you need Pro, and that seat also covers your evenings.</p></div>
+    <div class="who">
+      <div><span class="free">FREE</span><b>Student doing coursework</b></div>
+      <div><span class="free">FREE</span><b>Weekend hobby game, no sales</b></div>
+      <div><span class="free">FREE</span><b>Unpaid maintainer of an open-source library</b></div>
+      <div><span class="free">FREE</span><b>Charity, school or public body</b></div>
+      <div><span class="free">FREE FOR 30 DAYS</span><b>Side project that just made its first sale</b></div>
+      <div><span class="pro">PRO</span><b>ZZP developer building a client site</b></div>
+      <div><span class="pro">PRO</span><b>Employee using it at work</b><span class="muted small" style="font:inherit">The employer should buy the seat.</span></div>
+      <div><span class="pro">PRO × 6</span><b>Agency with 6 developers</b></div>
+      <div><span class="pro">PRO</span><b>Building a product that earns money</b></div>
+    </div>
+    <p class="muted small" style="margin-top:20px">The legal text is the <a href="{{license}}">PolyForm Noncommercial License 1.0.0</a>; <a href="{{licensing}}">LICENSING.md</a> explains it in plain words. Not sure? Ask in <a href="{{discuss}}">Discussions</a>.</p>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="bill-h">
+  <div class="wrap">
+    <div class="sec-head"><p class="eyebrow">Billing</p><h2 id="bill-h">The fine print, in plain words</h2></div>
+    <div class="faq">
+      <details><summary>Does Agent Arcade stop working if I don't pay?</summary><div><p>No. Agent Arcade works with no key and no sign-in, and never checks a licence. Commercial licensing works on trust. Only {{voice}} needs a Pro key.</p></div></details>
+      <details><summary>What do prices include?</summary><div><p>Prices exclude VAT. Dutch consumers pay EUR 30.25 per month (EUR 302.50 per year) including 21% VAT; your country's VAT is calculated at checkout. Businesses with a valid EU VAT ID pay no VAT (reverse charge).</p></div></details>
+      <details><summary>Can I pay yearly?</summary><div><p>Yes: EUR 250 per user per year, excl. VAT. That's two months free.</p></div></details>
+      <details><summary>How do I cancel?</summary><div><p>Online, any time, in the customer portal. Pro stays active until the end of the period you paid for. Consumers keep their legal 14-day right of withdrawal.</p></div></details>
+      <details><summary>We need 10+ seats or want to pay by invoice.</summary><div><p>Ask in <a href="{{discuss}}">Discussions</a> and we'll set it up.</p></div></details>
+      <details><summary>Students, teachers and open-source maintainers?</summary><div><p>Agent Arcade is already free for you. If you want {{voice}} too, ask: free Pro for coursework, teaching and unpaid open-source work is planned.</p></div></details>
+    </div>
+  </div>
+</section>

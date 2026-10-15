@@ -88,6 +88,7 @@ To run a test build next to the installed app, set `AGENT_ARCADE_HOME` to an emp
 | `web/` | The interface (`index.html`, `app.css`, `app.js`, `icon.png`), `remote.js` (what the phone sees: pane status, approvals, plans and screens read from the terminals) and xterm.js in `web/vendor` (MIT licence) |
 | `docs/phone-remote/` | The Android app's build plan and `REMOTE_API.md`, the contract between the PC and the phone |
 | `app.ico` | The app icon (the exe, window and taskbar) |
+| `website/` | The marketing website: `pages/` (content) → `python website/build.py` → `site/` (static HTML, no build tools needed to host it). `video/` renders the 30-second film (`promo.html`, `render.mjs`) and the social image |
 | `release.ps1` | Builds the self-contained zip for a GitHub release from the committed code, and prints its SHA-256 |
 
 Settings, the agent list (`agents.json`), extra accounts, chat history (`history.json`), paired phones (`remote.json`) and a log live in `%LOCALAPPDATA%\AgentArcade`.

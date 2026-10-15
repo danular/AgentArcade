@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Security and privacy | Agent Arcade</title>
+<meta name="description" content="What leaves your PC when you use Agent Arcade, how the phone remote is secured, and the honest limits.">
+<meta name="theme-color" content="#0c0c0e">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Security and privacy | Agent Arcade">
+<meta property="og:description" content="What leaves your PC when you use Agent Arcade, how the phone remote is secured, and the honest limits.">
+<meta property="og:image" content="assets/img/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/img/icon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="assets/img/icon-64.png">
+<link rel="apple-touch-icon" href="assets/img/icon-180.png">
+<link rel="preload" href="assets/fonts/source-serif-4-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html"><img src="assets/img/icon-64.png" alt="" width="30" height="30">Agent Arcade</a>
+    <nav class="nav-links" aria-label="Main"><a href="phone.html">Phone</a><a href="voice.html">Voice<span class="pro-pill">Pro</span></a><a href="pricing.html">Pricing</a><a href="security.html" aria-current="page">Security</a><a href="docs.html">Docs</a><a href="changelog.html">Changelog</a></nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost btn-sm" href="https://github.com/danular/AgentArcade">GitHub</a>
+      <a class="btn btn-accent btn-sm" href="download.html">Download</a>
+    </div>
+    <button class="menu-btn" type="button" aria-label="Menu" aria-expanded="false">&#9776;</button>
+  </div>
+</header>
+<main id="main">
+<section class="page-head">
+  <div class="wrap">
+    <p class="eyebrow">Security and privacy</p>
+    <h1>What leaves your PC</h1>
+    <p class="lead">Agent Arcade has no cloud of its own, no telemetry and no account with us. It never asks for, reads or stores your AI logins. Here is every flow, and the limits we know about.</p>
+  </div>
+</section>
+
+<section class="section" style="padding-top:24px" aria-labelledby="ledger-h">
+  <div class="wrap">
+    <h2 id="ledger-h" style="margin-bottom:24px">The ledger</h2>
+    <div class="tbl"><table class="ledger">
+      <tr><th scope="row">Agent Arcade itself</th><td>No telemetry, no analytics, no account with us. Internet traffic comes from the agents you run, and from vendor installers when you click Install.</td></tr>
+      <tr><th scope="row">Your AI logins</th><td>Stay with the AI tools. Each agent signs in through its own official flow. To show which account is active, Agent Arcade asks the tool itself; for Gemini CLI it reads the signed-in email address Gemini keeps on your PC. It never switches, pools or rotates accounts.</td></tr>
+      <tr><th scope="row">Extra accounts</th><td>A second Claude Code, Codex or Gemini CLI account gets its own folder (CLAUDE_CONFIG_DIR, CODEX_HOME, GEMINI_CLI_HOME). You sign in to each one yourself.</td></tr>
+      <tr><th scope="row">Chat history</th><td>On your PC only: each chat's title, agent, account, folder and times. Never the conversation itself. A title you don't type yourself comes from the agent's terminal title, so it can describe the topic.</td></tr>
+      <tr><th scope="row">Phone remote</th><td>Phone to PC only, over your network or Tailscale. Off until you turn it on.</td></tr>
+      <tr><th scope="row">Your agents</th><td>Talk to their own vendors under your accounts, exactly as they would in any terminal.</td></tr>
+      <tr><th scope="row">Agent Arcade Voice (Pro)</th><td>Audio stays in memory on your PC. Prompt history is a local file. Prompt Coach's Analyse sends prompt text through your own Claude Code sign-in, only when you press it.</td></tr>
+    </table></div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="remote-h">
+  <div class="wrap prose">
+    <h2 id="remote-h" style="margin-top:0">The phone remote, in detail</h2>
+    <ul>
+      <li><b>Off by default.</b> Agent Arcade listens on port 47821 only while Phone remote is on.</li>
+      <li><b>Local addresses only.</b> It accepts private-network IPv4 addresses and the 100.64.0.0/10 range Tailscale uses. Every other address is dropped before the TLS handshake, even if a port is forwarded.</li>
+      <li><b>HTTPS only (TLS 1.2 or 1.3).</b> The PC makes its own certificate once, kept in your Windows user certificate store with a key that can't be exported. The phone gets the certificate's fingerprint from the QR code and accepts nothing else.</li>
+      <li><b>Pairing codes</b> work once, for 10 minutes; five wrong codes cancel them.</li>
+      <li><b>Tokens.</b> Each phone gets its own token. The PC keeps only its SHA-256 hash in <code>remote.json</code>, and <b>Remove</b> in the Phone dialog cuts that phone off at once.</li>
+      <li><b>Limits on what a phone can do.</b> It can read, type, approve, start, stop, resume and rename inside your listed workspaces. It can't read files, change settings or see account logins.</li>
+      <li><b>Logs.</b> Tokens, pairing codes and terminal text are never written to the log.</li>
+    </ul>
+
+    <h2>Honest boundaries</h2>
+    <ul>
+      <li><b>Agents aren't sandboxed.</b> They run with your normal Windows permissions and can change or delete files, as they would in any terminal. You're responsible for what you let them do.</li>
+      <li><b>Agents share the project folder.</b> There's no per-agent git worktree isolation yet. The Changes tab shows every edit live.</li>
+      <li><b>Status detection is heuristic.</b> It reads the agents' English terminal text, so treat it as a strong signal, not a guarantee.</li>
+      <li><b>No independent audit</b> has been done. The source is public, so you can read it.</li>
+      <li><b>The download isn't code-signed yet.</b> Check its SHA-256 on the <a href="download.html#verify">download page</a>.</li>
+    </ul>
+
+    <h2>Check it yourself</h2>
+    <p>The source is on <a href="https://github.com/danular/AgentArcade">GitHub</a>. <code>AgentArcade.exe --self-check</code> runs the built-in checks, including the phone remote's TLS pinning, pairing limits and address filter, and writes the results to <code>%TEMP%\AgentArcade-selfcheck.txt</code>. <code>powercfg /requests</code> shows the keep-awake request while agents run.</p>
+
+    <h2>Report a vulnerability</h2>
+    <p>Please report security problems privately through GitHub: <a href="https://github.com/danular/AgentArcade/security/advisories/new">open a private security advisory</a>. Don't open a public issue for them.</p>
+  </div>
+</section>
+</main>
+<footer class="footer">
+  <div class="wrap">
+    <div class="foot-cols">
+      <div class="stack">
+        <a class="brand" href="index.html"><img src="assets/img/icon-64.png" alt="" width="30" height="30">Agent Arcade</a>
+        <p class="muted small">All your agents. One window. Free for personal use; Pro for work.</p>
+      </div>
+      <div><h4>Product</h4><ul><li><a href="download.html">Download</a></li><li><a href="phone.html">Phone remote</a></li><li><a href="voice.html">Voice</a></li><li><a href="pricing.html">Pricing</a></li><li><a href="changelog.html">Changelog</a></li></ul></div>
+      <div><h4>Resources</h4><ul><li><a href="docs.html">Docs</a></li><li><a href="security.html">Security</a></li><li><a href="pricing.html#need-pro">Do I need Pro?</a></li><li><a href="https://github.com/danular/AgentArcade">Source on GitHub</a></li></ul></div>
+      <div><h4>Community</h4><ul><li><a href="https://github.com/danular/AgentArcade/discussions">Discussions</a></li><li><a href="https://github.com/danular/AgentArcade/issues">Report a bug</a></li><li><a href="https://github.com/danular/AgentArcade/releases">All releases</a></li></ul></div>
+      <div><h4>Legal</h4><ul><li><a href="legal.html#license">License</a></li><li><a href="legal.html#privacy">Privacy</a></li><li><a href="legal.html#terms">Terms of sale</a></li><li><a href="legal.html#trademarks">Trademarks</a></li><li><a href="legal.html#imprint">Imprint</a></li></ul></div>
+    </div>
+    <p class="disclaimer">&copy; 2026 Agent Arcade. Agent Arcade is an independent product from the Netherlands. It is not affiliated with, endorsed by or sponsored by Anthropic, OpenAI, Google, GitHub, Microsoft, Anysphere or Tailscale. It runs those companies’ official command-line tools on your PC, and each tool stays under its maker’s terms and your own account. Claude and Claude Code are trademarks of Anthropic, PBC. OpenAI, ChatGPT and Codex are trademarks of OpenAI. Google and Gemini are trademarks of Google LLC. GitHub and GitHub Copilot are trademarks of GitHub, Inc. Cursor is a trademark of Anysphere, Inc. Tailscale is a trademark of Tailscale Inc. Windows is a trademark of Microsoft Corporation. Android is a trademark of Google LLC. All other trademarks belong to their owners.</p>
+  </div>
+</footer>
+<div class="mbar"><a class="btn btn-accent" href="download.html">Download</a><a class="btn btn-ghost" href="pricing.html">Pricing</a></div>
+<script src="assets/js/site.js"></script>
+</body>
+</html>

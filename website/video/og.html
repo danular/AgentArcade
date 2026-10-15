@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Arcade · social image</title>
+<!-- The 1200x630 social preview (site/assets/img/og.png). Render: node og.mjs -->
+<style>
+@font-face { font-family: "Inter"; font-weight: 500; src: url(../site/assets/fonts/inter-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 600; src: url(../site/assets/fonts/inter-latin-600-normal.woff2) format("woff2"); }
+@font-face { font-family: "Source Serif 4"; font-weight: 400; src: url(../site/assets/fonts/source-serif-4-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: "Cascadia Mono"; font-weight: 400; src: url(../site/assets/fonts/cascadia-mono-latin-400-normal.woff2) format("woff2"); }
+html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: #0c0c0e; color: #ececf1; font-family: Inter, sans-serif; }
+.wrap { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 330px; align-items: center; gap: 40px; padding: 0 80px; }
+.wrap::before { content: ""; position: absolute; right: -80px; top: 40px; width: 620px; height: 560px; background: linear-gradient(100deg, #ffd43b, #ff3d9a 30%, #b425ff 55%, #4b3bff 78%, #1fb8ff); filter: blur(90px); opacity: .22; border-radius: 40%; }
+.eb { font: 600 20px Inter; color: #9a9aa6; letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: center; gap: 14px; }
+h1 { font: 400 76px/1.04 "Source Serif 4", Georgia, serif; letter-spacing: -.01em; margin: 22px 0 26px; }
+h1 i { display: inline-block; width: 15px; height: 15px; border-radius: 50%; background: #f26b6b; box-shadow: 0 0 0 5px rgba(242,107,107,.25); margin-left: 4px; }
+.dots { display: flex; gap: 22px; font: 500 22px Inter; color: #9a9aa6; }
+.dots span { display: inline-flex; align-items: center; gap: 10px; }
+.dots b { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.meta { margin-top: 26px; font: 400 21px "Cascadia Mono", monospace; color: #f0a080; }
+.logo { position: relative; width: 300px; height: 300px; border-radius: 66px; overflow: hidden; box-shadow: 0 30px 70px rgba(0,0,0,.6); }
+.logo img { width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="position:relative">
+    <div class="eb">Agent Arcade · Windows</div>
+    <h1>All your agents.<br>One window<i></i></h1>
+    <div class="dots"><span><b style="background:#f08a3c"></b>working</span><span><b style="background:#f26b6b"></b>needs you</span><span><b style="background:#3ecf7f"></b>done</span></div>
+    <div class="meta">Free for personal use · github.com/danular/AgentArcade</div>
+  </div>
+  <div class="logo"><img src="../site/assets/img/icon-512.png" alt=""></div>
+</div>
+</body>
+</html>

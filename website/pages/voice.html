@@ -1,0 +1,91 @@
+---
+title: Voice
+description: Agent Arcade Voice is local Whisper dictation for Windows, tuned for prompting coding agents, with Prompt Coach. Included with Pro.
+nav: voice
+---
+<section class="page-head">
+  <div class="wrap feature" style="gap:48px">
+    <div class="f-text">
+      <p class="eyebrow">{{voice}} · <span class="pro-pill">Pro · Windows</span></p>
+      <h1>Talk, don't type.</h1>
+      <p class="lead">{{voice}} turns a minute of talking into a clean, code-aware prompt, transcribed by Whisper on your own PC. Included with Pro.</p>
+      <div class="ctas"><a class="btn btn-accent" href="pricing.html#pro">Get Pro</a><a class="btn btn-ghost" href="#how">How it works</a></div>
+      <p class="meta">Windows 11 x64 · not part of the free version</p>
+    </div>
+    <div class="f-vis">
+      <div class="card pro-edge" style="display:grid;gap:16px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">Space</span><span class="muted small">hold to talk, release to send</span></div>
+        <p class="eyebrow">What you said</p>
+        <p class="muted" style="font-family:var(--mono);font-size:.9rem"><s>Um, so,</s> add a retry to the <s>the</s> upload <s>uh</s> function and <s>um</s> log the status code</p>
+        <p class="eyebrow">What the agent gets</p>
+        <p style="font-family:var(--mono);font-size:.9rem">Add a retry to the upload function and log the status code.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="how" aria-labelledby="how-h">
+  <div class="wrap">
+    <div class="sec-head"><p class="eyebrow">How it works</p><h2 id="how-h">Click into a pane, hold the keys, talk</h2></div>
+    <ol class="steps" style="max-width:760px">
+      <li><div><b>Click into any text box:</b> a terminal running Claude Code, VS Code, a browser, anything.</div></li>
+      <li><div><b>Hold <span class="kbd">Ctrl</span> <span class="kbd">Shift</span> <span class="kbd">Space</span> and talk,</b> or tap it to start and tap again to stop. A small mic button works too, without stealing focus. <span class="kbd">Esc</span> cancels.</div></li>
+      <li><div><b>The cleaned text is pasted where your cursor was.</b> If no text box has focus, it goes on the clipboard instead.</div></li>
+    </ol>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="code-h">
+  <div class="wrap">
+    <div class="cards3">
+      <div class="card"><span class="dot done"></span><h3>Built for code</h3><p>Fillers and stutters go; npm, .env, C# and .NET stay as you write them. Add your own "wrong =&gt; Right" fixes for names Whisper gets wrong.</p></div>
+      <div class="card"><span class="dot done"></span><h3>Fast enough to keep talking</h3><p>Long prompts are transcribed while you talk. On our test laptop (Intel Core Ultra 7 155H, GPU), a one-minute prompt was typically ready about 2–3 seconds after stopping. Times vary with hardware.</p></div>
+      <div class="card"><span class="dot done"></span><h3>English and Dutch</h3><p>Both work without switching anything. Whisper large-v3-turbo runs on a Vulkan-capable GPU, or a smaller model on the CPU.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="coach-h">
+  <div class="wrap feature">
+    <div class="f-text">
+      <p class="eyebrow">Prompt Coach</p>
+      <h2 id="coach-h">Fewer corrections, round after round</h2>
+      <p class="muted">A prompt that needs correcting costs you another round. Voice can keep a local history of the prompts you dictate into AI agents. Prompt Coach shows your week: prompts, speaking pace, fillers, and whether the agent got it right first time.</p>
+      <p class="muted">Press <b>Analyse</b> for a score, tips and rewrites of your own prompts, and the habits to work on. Analysis runs only when you press the button, through your own Claude Code sign-in, and counts toward your own Claude usage. Turn history off or delete it at any time.</p>
+    </div>
+    <div class="f-vis">
+      <div class="mock"><pre class="term"><span class="w">This week</span>                       <span class="m">score</span> <span class="g">78</span><span class="m">/100</span>
+<span class="m">prompts</span> 64   <span class="m">pace</span> 142 wpm   <span class="m">fillers</span> 3.1%
+
+<span class="o">Habit</span>  Missing the file or function name
+<span class="m">  "fix the bug in the timer"</span>
+<span class="g">→</span> "Fix the off-by-one in LapTimer.Split()
+   when the race is paused."
+
+<span class="g">Focus for next week:</span> name the file first.</pre></div>
+      <p class="mono-cap">SAMPLE · PROMPT COACH</p>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="priv-h">
+  <div class="wrap">
+    <div class="sec-head"><p class="eyebrow">Privacy</p><h2 id="priv-h">Your voice stays on your PC</h2></div>
+    <div class="tbl"><table class="ledger">
+      <tr><th scope="row">Audio</th><td>Transcribed on your PC and kept in memory. Never uploaded, never saved to disk.</td></tr>
+      <tr><th scope="row">Prompt history</th><td>A local file on your PC, for Prompt Coach. On by default; turn it off or delete it any time.</td></tr>
+      <tr><th scope="row">Prompt Coach "Analyse"</th><td>Prompt text goes to Anthropic through your own Claude Code sign-in, only when you press Analyse.</td></tr>
+      <tr><th scope="row">Speech model</th><td>Downloaded once, the first time you start Voice.</td></tr>
+      <tr><th scope="row">Licence check</th><td>Planned with Pro checkout: your key is checked at most once a day, and dictation keeps working offline. Nothing else is sent.</td></tr>
+    </table></div>
+    <p class="muted small" style="margin-top:16px">Requirements: Windows 11 x64. A Vulkan-capable GPU for the fast model, otherwise the CPU. Prompt Coach's Analyse needs Claude Code installed and signed in. Pasting into windows that run as administrator doesn't work.</p>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <h2>Two apps for pros</h2>
+    <p class="lead">The agent cockpit for work, and a dictation app built for talking to agents. EUR 25 per user per month, excl. VAT.</p>
+    <div class="ctas" style="justify-content:center"><a class="btn btn-accent" href="pricing.html#pro">See Pro</a></div>
+  </div>
+</section>
