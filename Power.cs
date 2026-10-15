@@ -125,3 +125,35 @@ sealed class KeepAwake : IDisposable
     [DllImport("powrprof.dll")]
     static extern uint PowerReadACValueIndex(IntPtr rootKey, ref Guid scheme, ref Guid subgroup, ref Guid setting, out uint value);
 }
+
+// Whether someone is at the PC, for alerts: a pane counts as seen only while there was keyboard or mouse input in
+// the last 45 s and the session is unlocked (MainForm tracks the lock). Only the time is read, never what was typed.
+static class Presence
+{
+    public const int AwayMs = 45000;
+
+    // Milliseconds since the last keyboard or mouse input in this Windows session; 0 when Windows can't say.
+    public static long IdleMs() => TryIdleMs(out var idle) ? idle : 0;
+
+    public static bool TryIdleMs(out long idle)
+    {
+        idle = 0;
+        var info = new LastInputInfo { Size = (uint)Marshal.SizeOf<LastInputInfo>() };
+        if (!GetLastInputInfo(ref info)) return false;
+        // Both are GetTickCount values, which wrap after 49.7 days; the unsigned difference stays right across a wrap.
+        idle = unchecked((uint)Environment.TickCount - info.Time);
+        return true;
+    }
+
+    public static bool Away(bool locked) => locked || IdleMs() >= AwayMs;
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct LastInputInfo
+    {
+        public uint Size;
+        public uint Time;
+    }
+
+    [DllImport("user32.dll")]
+    static extern bool GetLastInputInfo(ref LastInputInfo info);
+}

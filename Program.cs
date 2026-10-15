@@ -114,6 +114,10 @@ static class SelfCheck
                 "a power request is held, replaced and let go; laptop " + laptop + ", on battery " + onBattery + ", lid sleeps " + lidSleeps);
         }
 
+        // Alerts treat a focused pane as unseen after 45 s without keyboard or mouse input, or while the PC is locked.
+        Check("presence", Presence.TryIdleMs(out var idle) && idle >= 0 && idle <= Environment.TickCount64 && Presence.Away(true),
+            "the time since the last keyboard or mouse input can be read (nothing about the input itself); a locked PC counts as away");
+
         try
         {
             var ptyText = new System.Text.StringBuilder();

@@ -965,6 +965,8 @@ const agentName = session => agentOf(accountOf(session.key))?.name || 'The agent
 function watchTurn(session, data) {
   clearAttention(session);
   if (REPORTS.test(data)) return;
+  // Keys went to the dialog on screen, so once it leaves the screen it was answered (Remote.dialogAppeared).
+  if (session.dialog) session.dialog.input = true;
   if (data.includes('\r')) {
     session.armed = Date.now();
     session.turnStartedAt = session.armed;
@@ -997,6 +999,11 @@ function outputArrived(session) {
 setInterval(() => {
   const now = Date.now();
   for (const session of sessions.values()) {
+    // A dialog needs you as soon as it shows, however soon after Enter: once per dialog. After a resize the same
+    // dialog can wrap differently, which isn't a new one.
+    if (session.running && Remote.dialogAppeared(session.dialog ||= {}, screenParts(session), now, now - (session.resizedAt || 0) < 2000)) {
+      needsYou(session, '', true);
+    }
     if (session.running && session.armed && session.busyStart && now - session.lastOutput > QUIET_MS &&
         session.lastOutput - session.busyStart >= MIN_WORK_MS) needsYou(session);
   }
@@ -1021,15 +1028,22 @@ function refreshDots() {
   }
 }
 
-function needsYou(session, text = '') {
+// claimed: the 1 s check already counted this dialog as new (Remote.dialogAppeared).
+function needsYou(session, text = '', claimed = false) {
   session.armed = 0;
   session.busyStart = 0;
-  if (Date.now() - (session.notifiedAt || 0) < 8000) return;
-  session.notifiedAt = Date.now();
   const own = String(text).replace(/[\x00-\x1f]/g, ' ').trim();
   const screen = screenParts(session);
-  const asks = own ? Remote.asksOk(own) : screen.asks || screen.choices.length > 0 || screen.menu;
+  // A dialog on screen makes any alert about it a needsYou.
+  const asks = screen.asking || (own ? Remote.asksOk(own) : screen.asks || screen.choices.length > 0 || screen.menu);
   const kind = asks ? 'needsYou' : 'done';
+  // needsYou goes once per dialog (its question and choices); done at most once per 8 s.
+  if (kind === 'needsYou') {
+    if (!claimed && !Remote.claimDialog(session.dialog ||= {}, screen, Date.now())) return;
+  } else {
+    if (Date.now() - (session.notifiedAt || 0) < 8000) return;
+    session.notifiedAt = Date.now();
+  }
   const message = Remote.cut(own, 200) ||
     (asks ? `${agentName(session)} needs your OK to continue.` : `${agentName(session)} is done and waiting for you.`);
   if (!seenOnPc(session)) {
@@ -1039,12 +1053,30 @@ function needsYou(session, text = '') {
     refreshDots();
     remoteSoon();
   }
-  notify(session, own.slice(0, 200) || attentionText(session));
+  // A menu without approval words still needs you, so the toast says so too.
+  notify(session, own.slice(0, 200) || (kind === 'needsYou' ? message : attentionText(session)));
   remoteAttention(session, kind, message, asks ? screen.question : null);
 }
 
-// Someone is looking at this pane on the PC right now.
-const seenOnPc = session => !session.el.hidden && document.hasFocus() && session.el.contains(document.activeElement);
+// Whether someone is at the PC, from the C# side (presence: every 5 s and on lock or unlock) and this page's own
+// keyboard and mouse events, which are newer than the last report. at: when the report came.
+const AWAY_MS = 45000;
+let presence = { idleMs: 0, locked: false, at: Date.now() };
+let pageInputAt = Date.now();
+for (const type of ['keydown', 'pointerdown', 'pointermove', 'wheel']) {
+  document.addEventListener(type, () => { pageInputAt = Date.now(); }, { capture: true, passive: true });
+}
+
+function presenceChanged(message) {
+  const idleMs = Number(message.idleMs);
+  presence = { idleMs: Number.isFinite(idleMs) && idleMs >= 0 ? idleMs : 0, locked: message.locked === true, at: Date.now() };
+}
+
+// Nobody touched the PC's keyboard or mouse for 45 s, or Windows is locked.
+const awayFromPc = () => presence.locked || Math.min(presence.idleMs + Date.now() - presence.at, Date.now() - pageInputAt) >= AWAY_MS;
+
+// Someone is looking at this pane on the PC right now: window and pane focused, input in the last 45 s, unlocked.
+const seenOnPc = session => !session.el.hidden && document.hasFocus() && session.el.contains(document.activeElement) && !awayFromPc();
 
 // The bottom of the screen shows whether the agent asks to run or change something.
 function attentionText(session) {
@@ -2822,6 +2854,9 @@ if (bridge) {
       }
       case 'focusSession':
         showSession(message.session);
+        break;
+      case 'presence':
+        presenceChanged(message);
         break;
       case 'dropped':
         filesDropped(message);
