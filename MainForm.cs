@@ -1542,6 +1542,7 @@ sealed class MainForm : Form, IRemoteHost
                 paired = device.Paired,
                 lastSeen = device.LastSeen,
                 connected = connected.Contains(device.Id),
+                client = device.Client,
             }),
             phones = _remote.Phones,
             awake = AwakeInfo(),

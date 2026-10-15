@@ -2689,7 +2689,7 @@ function renderPhone() {
     html += '<div class="phone-section"><span class="phone-label">Paired phones</span>' + devices.map(device =>
       `<div class="device-row"><span class="dot ${device.connected ? 'on' : 'off'}"></span>` +
       `<span class="hist-text"><span class="device-name ellipsis">${esc(device.name)}</span>` +
-      `<span class="hist-sub ellipsis">${esc(seenText(device))}</span></span>` +
+      `<span class="hist-sub ellipsis">${esc(seenText(device) + (device.client ? ' · ' + device.client : ''))}</span></span>` +
       `<button class="ghost-btn small" data-remove-device="${esc(device.id)}">Remove</button></div>`).join('') + '</div>';
   }
   body.innerHTML = html;

@@ -23,6 +23,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
 using QRCoder;
 
 namespace AgentArcade;
@@ -183,6 +184,8 @@ sealed class RemoteDevice
     public string TokenHash { get; set; } = "";
     public long Paired { get; set; }
     public long LastSeen { get; set; }
+    // The newest valid X-Arcade-Client the phone sent (REMOTE_API.md), for the Phone dialog; null when none came.
+    public string? Client { get; set; }
 }
 
 // The paired phones, in remote.json.
@@ -239,7 +242,7 @@ sealed class RemoteDevices
     }
 
     // A new phone and its token. The token goes to the phone once; only its hash stays here.
-    public (RemoteDevice Device, string Token) Add(string name)
+    public (RemoteDevice Device, string Token) Add(string name, string? client = null)
     {
         var token = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
         lock (_lock)
@@ -248,7 +251,7 @@ sealed class RemoteDevices
             do id = "d_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(3));
             while (_devices.Any(device => device.Id == id));
             var now = DateTimeOffset.Now.ToUnixTimeMilliseconds();
-            var added = new RemoteDevice { Id = id, Name = name, TokenHash = Hash(token), Paired = now, LastSeen = now };
+            var added = new RemoteDevice { Id = id, Name = name, TokenHash = Hash(token), Paired = now, LastSeen = now, Client = client };
             _devices.Add(added);
             try
             {
@@ -295,16 +298,20 @@ sealed class RemoteDevices
         }
     }
 
-    // Every request counts as seen; the file is written at most once a minute for it.
-    public void Seen(string id)
+    // Every request counts as seen; the file is written at most once a minute for it. client is the request's valid
+    // X-Arcade-Client, or null when it sent none: a new value is kept and saved at once. True when it changed.
+    public bool Seen(string id, string? client = null)
     {
         lock (_lock)
         {
             var device = _devices.FirstOrDefault(item => item.Id == id);
-            if (device == null) return;
+            if (device == null) return false;
             device.LastSeen = DateTimeOffset.Now.ToUnixTimeMilliseconds();
             _dirty = true;
-            if (Environment.TickCount64 - _savedAt > 60_000) TrySave();
+            var changed = client != null && client != device.Client;
+            if (changed) device.Client = client;
+            if (changed || Environment.TickCount64 - _savedAt > 60_000) TrySave();
+            return changed;
         }
     }
 
@@ -400,7 +407,7 @@ sealed class RemoteDevices
     }
 
     static RemoteDevice Copy(RemoteDevice device)
-        => new() { Id = device.Id, Name = device.Name, TokenHash = device.TokenHash, Paired = device.Paired, LastSeen = device.LastSeen };
+        => new() { Id = device.Id, Name = device.Name, TokenHash = device.TokenHash, Paired = device.Paired, LastSeen = device.LastSeen, Client = device.Client };
 }
 
 enum PairResult { Ok, None, Wrong, Expired, Used, Cancelled }
@@ -708,7 +715,7 @@ static class RemoteModel
     public const int MinClientApi = 1;
 
     // What this PC does beyond contract 1.0 (hello.features). A name is listed only once it works end to end.
-    public static readonly string[] Features = ["errorCodes"];
+    public static readonly string[] Features = ["errorCodes", "clientHeader"];
 
     // REMOTE_API.md's error table: each code and the one status it comes with. Codes are never renamed or reused.
     static readonly Dictionary<string, int> Codes = new()
@@ -739,6 +746,8 @@ static class RemoteModel
     static readonly HashSet<string> NamedKeys = ["enter", "esc", "tab", "shiftTab", "space", "up", "down", "left", "right", "backspace", "ctrlC"];
     static readonly Regex SessionId = new(@"^s[0-9]{1,9}\z", RegexOptions.CultureInvariant);
     static readonly Regex ChatId = new(@"^[A-Za-z0-9-]{1,100}\z", RegexOptions.CultureInvariant);
+    // X-Arcade-Client: AgentArcadeRemote/1.1.0 (1010099). ASCII only, so it is safe to show.
+    static readonly Regex ClientName = new(@"^[A-Za-z][A-Za-z0-9]{0,31}/[0-9A-Za-z.+-]{1,24}( \([0-9]{1,10}\))?\z", RegexOptions.CultureInvariant);
 
     public static string Pc => Environment.MachineName;
 
@@ -890,6 +899,15 @@ static class RemoteModel
     public static bool IsSessionId(string id) => SessionId.IsMatch(id);
 
     public static bool IsChatId(string id) => ChatId.IsMatch(id);
+
+    // The phone's X-Arcade-Client value (REMOTE_API.md), without the spaces around it; null when it is missing, sent
+    // more than once, longer than 64 characters or not in the contract's form. It never fails a request and is never logged.
+    public static string? Client(StringValues values)
+    {
+        if (values.Count != 1) return null;
+        var value = values[0]?.Trim(' ', '\t');
+        return value is { Length: > 0 and <= 64 } && ClientName.IsMatch(value) ? value : null;
+    }
 
     public static bool IsKey(string name)
         => NamedKeys.Contains(name) || (name.Length == 1 && name[0] is >= '0' and <= '9' or >= 'a' and <= 'z' or '/' or '?' or '!');
@@ -1673,7 +1691,8 @@ sealed class RemoteServer
             await WriteAsync(context, TooMany);
             return;
         }
-        Devices.Seen(device.Id);
+        // A new app version on the phone shows in the Phone dialog.
+        if (Devices.Seen(device.Id, RemoteModel.Client(request.Headers["X-Arcade-Client"]))) _host.RemoteChanged();
 
         if (get && path == "/api/v1/live")
         {
@@ -1759,7 +1778,7 @@ sealed class RemoteServer
             case PairResult.Cancelled:
                 return RemoteReply.Fail(403, "codeCancelled", "Too many wrong codes. Press New code on your PC and scan again.");
         }
-        var (added, token) = Devices.Add(name);
+        var (added, token) = Devices.Add(name, RemoteModel.Client(context.Request.Headers["X-Arcade-Client"]));
         _host.Log("Phone paired: " + name);
         _host.Paired(name);
         return RemoteReply.Ok(RemoteModel.PairAnswer(token, added.Id));

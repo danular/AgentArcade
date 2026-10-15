@@ -1089,7 +1089,7 @@ static class RemoteSelfCheck
                 "hello answers over TLS to a client that pins the fingerprint (AllowedHosts in the environment changes nothing); a wrong pin is refused");
 
             var code = server.NewCode();
-            using var pair = await Send(http, HttpMethod.Post, root + "pair", null, new { code, device = "Self‮ check\nphone" });
+            using var pair = await Send(http, HttpMethod.Post, root + "pair", null, new { code, device = "Self‮ check\nphone" }, client: [" AgentArcadeRemote/1.1.0 (1010099) "]);
             var pairBody = await Body(pair);
             var token = Json.Str(pairBody, "token");
             var deviceId = Json.Str(pairBody, "deviceId");
@@ -1109,6 +1109,29 @@ static class RemoteSelfCheck
                     && noToken.StatusCode == HttpStatusCode.Unauthorized
                     && !host.Logged.Any(line => line.Contains(token, StringComparison.Ordinal) || line.Contains(code, StringComparison.Ordinal)),
                 "pairing with the code gives a token that works; the code works once; a wrong token gets 401; no token or code in the log");
+
+            // X-Arcade-Client: kept with the phone from pairing on; a newer valid value replaces it, a bad or doubled one changes nothing.
+            var pairedWith = server.Devices.All().Single().Client;
+            using var newClient = await Send(http, HttpMethod.Get, root + "state", token, client: ["AgentArcadeRemote/1.1.1-dev (1010101)"]);
+            var updated = server.Devices.All().Single().Client;
+            using var bad = await Send(http, HttpMethod.Get, root + "state", token, client: ["Agent Arcade Remote/1.2"]);
+            using var doubled = await Send(http, HttpMethod.Get, root + "state", token, client: ["curl/8.10.1", "curl/8.10.2"]);
+            using var helloWith = await Send(http, HttpMethod.Get, root + "hello", null, client: ["curl/8.10.1"]);
+            check(
+                "remote-client-header",
+                pairedWith == "AgentArcadeRemote/1.1.0 (1010099)" && updated == "AgentArcadeRemote/1.1.1-dev (1010101)"
+                    && newClient.StatusCode == HttpStatusCode.OK && bad.StatusCode == HttpStatusCode.OK && doubled.StatusCode == HttpStatusCode.OK && helloWith.StatusCode == HttpStatusCode.OK
+                    && server.Devices.All().Single().Client == updated
+                    && RemoteModel.Client("AgentArcadeRemote/1.1.0-beta.2 (1010002)") != null && RemoteModel.Client("AgentArcadeRemote/1.1.0-beta.1-dev (1010001)") != null
+                    && RemoteModel.Client("curl/8.10.1") == "curl/8.10.1" && RemoteModel.Client("  curl/8.10.1\t") == "curl/8.10.1"
+                    && RemoteModel.Client(new Microsoft.Extensions.Primitives.StringValues(["curl/8.10.1", "curl/8.10.1"])) == null
+                    && RemoteModel.Client(Microsoft.Extensions.Primitives.StringValues.Empty) == null
+                    && new[] { "", "/1", "1a/1", "a/", "a/1 ()", "a/1 (12345678901)", "a/1\n", "a/1  (1)", "ä/1", "a/1,b/2", "a/1;x", "x/" + new string('1', 25), new string('a', 33) + "/1" }
+                        .All(value => RemoteModel.Client(value) == null)
+                    && RemoteModel.Client("a/" + new string('1', 24) + " (1234567890)") != null
+                    && RemoteModel.Client(new string('a', 32) + "/" + new string('1', 24) + " (1234567890)") == null
+                    && !host.Logged.Any(line => line.Contains("AgentArcadeRemote", StringComparison.Ordinal) || line.Contains("curl", StringComparison.Ordinal)),
+                "the phone's app version is kept from pairing on and the newest valid one shown; a bad or doubled header is ignored and never fails a request; it is never logged");
 
             using var input = await Send(http, HttpMethod.Post, root + "sessions/s1/input", token, new { text = "hi", submit = true });
             var inputBody = await Body(input);
@@ -1484,12 +1507,15 @@ static class RemoteSelfCheck
     };
 
     // expectContinue holds a large body back until the server asks for it, so its early 413 can't race the upload.
+    // client: X-Arcade-Client values; more than one goes as a list.
     static async Task<HttpResponseMessage> Send(
-        HttpClient http, HttpMethod method, string url, string? token, object? body = null, string? raw = null, bool expectContinue = false, string? forwardedFor = null)
+        HttpClient http, HttpMethod method, string url, string? token, object? body = null, string? raw = null, bool expectContinue = false, string? forwardedFor = null,
+        string[]? client = null)
     {
         using var request = new HttpRequestMessage(method, url);
         if (expectContinue) request.Headers.ExpectContinue = true;
         if (forwardedFor != null) request.Headers.Add("X-Forwarded-For", forwardedFor);
+        foreach (var value in client ?? []) request.Headers.TryAddWithoutValidation("X-Arcade-Client", value);
         if (token != null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         if (body != null || raw != null) request.Content = new StringContent(raw ?? JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         return await http.SendAsync(request);
