@@ -8,7 +8,7 @@ Free for personal use. Professional use needs Agent Arcade Pro (EUR 25 per user 
 
 ## Download
 
-1. Get `AgentArcade-<version>-win-x64.zip` from the [latest release](https://github.com/danular/AgentArcade/releases/latest). It runs on Windows 11 (x64) and needs nothing else installed: the .NET runtime is inside the zip.
+1. Download [AgentArcade-win-x64.zip](https://github.com/danular/AgentArcade/releases/latest/download/AgentArcade-win-x64.zip) (the newest version; all versions are on the [releases page](https://github.com/danular/AgentArcade/releases)). It runs on Windows 11 (x64) and needs nothing else installed: the .NET runtime is inside the zip.
 2. Unzip it to a folder of your own, for example `%LOCALAPPDATA%\Programs\AgentArcade`, and start `AgentArcade.exe`. Keep the files together: the app needs the `web` folder next to it.
 3. The download isn't code-signed yet, so Windows SmartScreen may say it "protected your PC". Click **More info** → **Run anyway**. Each release lists the zip's SHA-256 so you can check the file (`Get-FileHash .\AgentArcade-*.zip`).
 
