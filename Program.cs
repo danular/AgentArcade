@@ -476,6 +476,8 @@ static class SelfCheck
             catch { /* temp folder */ }
         }
 
+        GitSafetyCheck.Run(Check, lines.Add);
+
         RemoteSelfCheck.Run(Check);
 
         var editor = Locator.FindUnityEditor(settings.ProjectPath);
@@ -526,6 +528,220 @@ static class SelfCheck
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
     static extern bool AttachConsole(uint dwProcessId);
+}
+
+// The Changes tab against hostile repositories, in a temp folder. Nothing here reaches the network: every path to
+// another computer names aa-selfcheck.invalid and is refused before a git process starts.
+static class GitSafetyCheck
+{
+    const string Server = @"\\aa-selfcheck.invalid\share";
+
+    public static void Run(Action<string, bool, string> check, Action<string> info)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "AgentArcade-git-" + Environment.ProcessId);
+        try
+        {
+            Directory.CreateDirectory(root);
+            NetworkPaths(check, root);
+            var git = Locator.FindOnPath("git");
+            var hasGit = git != null && git.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+            Trust(check, root, hasGit);
+            if (hasGit) Hostile(check, root, git!);
+            else info("INFO git-hostile-config — git.exe isn't on PATH, so fsmonitor, filters and textconv weren't checked");
+        }
+        catch (Exception ex)
+        {
+            check("git-hostile-config", false, ex.GetType().Name + ": " + ex.Message);
+        }
+        finally
+        {
+            try
+            {
+                // git makes its object files read-only.
+                foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)) File.SetAttributes(file, FileAttributes.Normal);
+                Directory.Delete(root, true);
+            }
+            catch { /* temp folder */ }
+        }
+    }
+
+    // A repository made by hand (a valid one: HEAD, objects, refs) with extra lines in its config.
+    static string Repo(string root, string name, string config)
+    {
+        var dir = Path.Combine(root, name);
+        Directory.CreateDirectory(Path.Combine(dir, ".git", "objects"));
+        Directory.CreateDirectory(Path.Combine(dir, ".git", "refs", "heads"));
+        File.WriteAllText(Path.Combine(dir, ".git", "HEAD"), "ref: refs/heads/main\n");
+        File.WriteAllText(Path.Combine(dir, ".git", "config"), "[core]\n\trepositoryformatversion = 0\n\tbare = false\n" + config);
+        return dir;
+    }
+
+    // A value as git config writes it: quoted, with \ and " escaped.
+    static string Quote(string value) => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+
+    // What the Changes tab says for a project: "ran", "asked", or the refusal.
+    static string Outcome(string folder, string? trusted = null)
+    {
+        try
+        {
+            GitChanges.Status(folder, trusted);
+            return "ran";
+        }
+        catch (GitTrustNeeded)
+        {
+            return "asked";
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ex.Message;
+        }
+    }
+
+    // Every way a repository can name another computer is refused before git starts; image paths from pane text too.
+    static void NetworkPaths(Action<string, bool, string> check, string root)
+    {
+        var paths = ProjectFiles.IsNetworkPath(Server + @"\a.png") && ProjectFiles.IsNetworkPath("//aa-selfcheck.invalid/share/a.png")
+            && ProjectFiles.IsNetworkPath(@"\/aa-selfcheck.invalid\share") && ProjectFiles.IsNetworkPath(@"\\?\UNC\aa-selfcheck.invalid\share")
+            && ProjectFiles.IsNetworkPath(@"\??\UNC\aa-selfcheck.invalid\share") && ProjectFiles.IsNetworkPath(Path.GetFullPath(Server + @"\..\..\a.png"))
+            && !ProjectFiles.IsNetworkPath(@"C:\Projects\a.png") && !ProjectFiles.IsNetworkPath(@"\\?\C:\Projects\a.png")
+            && !ProjectFiles.IsNetworkPath("/Projects/a.png") && !ProjectFiles.IsNetworkPath("a.png");
+
+        var gitFile = Path.Combine(root, "gitfile");
+        Directory.CreateDirectory(gitFile);
+        File.WriteAllText(Path.Combine(gitFile, ".git"), "gitdir: //aa-selfcheck.invalid/share/repo.git\n");
+        var alternates = Repo(root, "alternates", "");
+        Directory.CreateDirectory(Path.Combine(alternates, ".git", "objects", "info"));
+        File.WriteAllText(Path.Combine(alternates, ".git", "objects", "info", "alternates"), Server + @"\objects" + "\n");
+        // An included file on this PC that includes one on another computer.
+        var nested = Repo(root, "nested", "[include]\n\tpath = local.gitconfig\n");
+        File.WriteAllText(Path.Combine(nested, ".git", "local.gitconfig"), "[include]\n\tpath = " + Quote(Server + @"\x") + "\n");
+
+        var before = GitChanges.Started;
+        var outcomes = new Dictionary<string, string>
+        {
+            ["includeIf"] = Outcome(Repo(root, "includeif", "[includeIf \"gitdir:C:/\"]\n\tpath = //aa-selfcheck.invalid/share/y\n")),
+            ["core.worktree"] = Outcome(Repo(root, "worktree", "[core]\n\tworktree = " + Quote(Server + @"\w") + "\n")),
+            ["core.excludesFile"] = Outcome(Repo(root, "excludes", "[core]\n\texcludesFile = " + Quote(Server + @"\ignore") + "\n")),
+            [".git file"] = Outcome(gitFile),
+            ["alternates"] = Outcome(alternates),
+            ["nested include"] = Outcome(nested),
+        };
+        var refused = outcomes.Where(item => !item.Value.Contains("network path", StringComparison.Ordinal)).Select(item => item.Key + ": " + item.Value).ToList();
+        check(
+            "git-network-config",
+            paths && refused.Count == 0 && GitChanges.Started == before,
+            refused.Count > 0 ? "not refused: " + string.Join("; ", refused)
+                : GitChanges.Started != before ? "git started anyway"
+                : !paths ? "a network path wasn't recognised"
+                : "includeIf, core.worktree, core.excludesFile, a .git file, alternates and a nested include on another computer are refused before git starts; "
+                    + "image paths like \\\\server\\share and //server/share are recognised");
+    }
+
+    // include.path or core.worktree: the tab asks once, per config.
+    static void Trust(Action<string, bool, string> check, string root, bool hasGit)
+    {
+        var repo = Repo(root, "trust", "[include]\n\tpath = extra.gitconfig\n[includeIf \"gitdir:never/\"]\n\tpath = other.gitconfig\n");
+        File.WriteAllText(Path.Combine(repo, ".git", "extra.gitconfig"), "[filter \"fromInclude\"]\n\tclean = nothing\n");
+        var first = GitConfigCheck.Inspect(repo);
+        var asked = Outcome(repo) == "asked" && Outcome(repo, new string('0', 64)) == "asked";
+        var ran = !hasGit || Outcome(repo, first.Config) == "ran";
+        File.AppendAllText(Path.Combine(repo, ".git", "config"), "[core]\n\tworktree = ..\n");
+        var changed = GitConfigCheck.Inspect(repo);
+        var again = Outcome(repo, first.Config) == "asked" && changed.Config != first.Config && changed.Uses.Count == 3;
+
+        // The parser reads what git reads: legacy and quoted sections, escapes, comments and continued lines; it stops
+        // where git stops.
+        var parsed = GitConfigCheck.Parse("\uFEFF[filter.Legacy]\n\tclean = a ; comment\n[filter \"Quo\\\"ted\"] process = \"b # not a comment\"\\\n  more\n"
+            + "[Core]\n\tFSMonitor\n[include]\npath = \"x\\\\y\"   \n");
+        var entries = parsed?.Select(entry => entry.Section + "|" + entry.Subsection + "|" + entry.Key + "|" + (entry.Value ?? "<true>")).ToList();
+        var parser = entries != null && entries.SequenceEqual([
+                "filter|legacy|clean|a", "filter|Quo\"ted|process|b # not a comment  more", "core||fsmonitor|<true>", "include||path|x\\y"])
+            && GitConfigCheck.Parse("[core]\n\tbad = \\q\n") == null && GitConfigCheck.Parse("[core\n") == null
+            && GitConfigCheck.Parse("[core]\n\tkey # comment\n") == null && GitConfigCheck.Parse("[core]\n\tx = \"open\n") == null;
+        check(
+            "git-trust",
+            first.NeedsTrust && first.Uses.Count == 2 && first.Filters.SequenceEqual(["fromInclude"]) && asked && ran && again && parser,
+            !parser ? "the config parser read: " + (entries == null ? "nothing" : string.Join(" / ", entries))
+                : "include.path and includeIf ask before git runs (filters in included files are switched off too); the stored answer lets git run "
+                    + (hasGit ? "" : "(not run: no git) ") + "until the config changes; the config parser reads what git reads");
+    }
+
+    // Repository A names a program for fsmonitor, filters and textconv, and .gitattributes applies them to every file.
+    static void Hostile(Action<string, bool, string> check, string root, string git)
+    {
+        var repo = Path.Combine(root, "hostile");
+        Directory.CreateDirectory(repo);
+        Git(git, repo, true, "init", "-q");
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "one\n");
+        File.WriteAllText(Path.Combine(repo, "second.txt"), "one\n");
+        Git(git, repo, true, "add", "-A");
+        Git(git, repo, true, "-c", "user.name=Self check", "-c", "user.email=self-check@localhost", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "first");
+
+        // Each program leaves a file when it runs. git runs them through its own sh, which reads paths with /.
+        var markers = new[] { "fsmonitor", "clean", "smudge", "process", "clean2", "textconv" }.ToDictionary(name => name, name => Path.Combine(root, name + ".ran"));
+        string Planted(string name) => Quote("echo x > '" + markers[name].Replace('\\', '/') + "'");
+        File.AppendAllText(Path.Combine(repo, ".git", "config"),
+            "[core]\n\tfsmonitor = " + Planted("fsmonitor") + "\n"
+            + "[filter \"evil\"]\n\tclean = " + Planted("clean") + "\n\tsmudge = " + Planted("smudge") + "\n\tprocess = " + Planted("process") + "\n"
+            + "[filter \"evil2\"]\n\tclean = " + Planted("clean2") + "\n"
+            + "[diff \"evil\"]\n\ttextconv = " + Planted("textconv") + "\n");
+        File.WriteAllText(Path.Combine(repo, ".gitattributes"), "* filter=evil diff=evil\nsecond.txt filter=evil2\n");
+        File.WriteAllText(Path.Combine(repo, "tracked.txt"), "two\n");
+        File.WriteAllText(Path.Combine(repo, "second.txt"), "two\n");
+        List<string> Ran()
+        {
+            var ran = markers.Where(item => File.Exists(item.Value)).Select(item => item.Key).ToList();
+            foreach (var name in ran) File.Delete(markers[name]);
+            return ran;
+        }
+
+        var (_, files, _) = GitChanges.Status(repo);
+        var modified = files.Where(file => file.Status == "modified").Select(file => file.Path).Order().ToList();
+        var diffs = modified.Select(path => GitChanges.Diff(repo, path, null, false).Text).ToList();
+        var ranProtected = Ran();
+        var listed = modified.SequenceEqual(["second.txt", "tracked.txt"]) && files.Any(file => file.Path == ".gitattributes")
+            && diffs.All(diff => diff.Contains("-one") && diff.Contains("+two"));
+
+        // A network include in the same repository is refused before any git process starts.
+        File.AppendAllText(Path.Combine(repo, ".git", "config"), "[include]\n\tpath = " + Quote(Server + @"\x") + "\n");
+        var before = GitChanges.Started;
+        var unc = Outcome(repo);
+        var uncRefused = unc.Contains("network path", StringComparison.Ordinal) && GitChanges.Started == before;
+
+        // Without the protection (plain git, the include taken out again) git runs them, so this check can see the hole.
+        var config = File.ReadAllText(Path.Combine(repo, ".git", "config"));
+        File.WriteAllText(Path.Combine(repo, ".git", "config"), config[..config.LastIndexOf("[include]", StringComparison.Ordinal)]);
+        Git(git, repo, false, "status");
+        Git(git, repo, false, "diff", "HEAD");
+        // second.txt's own filter works, so its diff gets as far as textconv.
+        Git(git, repo, false, "diff", "HEAD", "--", "second.txt");
+        var ranControl = Ran();
+
+        check(
+            "git-hostile-config",
+            listed && ranProtected.Count == 0 && uncRefused && ranControl.Count > 0,
+            (ranProtected.Count > 0 ? "RAN: " + string.Join(", ", ranProtected) + "; "
+                : listed ? "status and diff ran no fsmonitor, filter or textconv program; " : "status or diff went wrong; ")
+                + (uncRefused ? "a network include.path is refused before git starts; " : "a network include.path wasn't refused (" + unc + "); ")
+                + "plain git ran: " + (ranControl.Count == 0 ? "none of them either" : string.Join(", ", ranControl)));
+    }
+
+    static void Git(string git, string folder, bool mustWork, params string[] args)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo(git) { WorkingDirectory = folder, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true };
+        foreach (var arg in args) start.ArgumentList.Add(arg);
+        using var process = System.Diagnostics.Process.Start(start)!;
+        process.StandardInput.Close();
+        var output = process.StandardOutput.ReadToEndAsync();
+        var error = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(30_000))
+        {
+            try { process.Kill(true); } catch { /* ended */ }
+            throw new InvalidOperationException("git " + args[0] + " didn't end within 30 s");
+        }
+        Task.WaitAll(output, error);
+        if (mustWork && process.ExitCode != 0) throw new InvalidOperationException("git " + args[0] + " failed");
+    }
 }
 
 // Phone remote checks. They use a temp folder and their own throw-away certificate, never remote.json or the
