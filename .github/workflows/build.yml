@@ -1,0 +1,26 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Publish self-contained build
+        run: dotnet publish AgentArcade.csproj -c Release -r win-x64 --self-contained true -o publish
+      - name: Check the build has its web page
+        shell: pwsh
+        run: |
+          foreach ($f in 'publish/AgentArcade.exe', 'publish/web/index.html', 'publish/web/vendor/xterm.js') {
+            if (-not (Test-Path $f)) { throw "missing $f" }
+          }

@@ -1,6 +1,18 @@
+<img src="web/icon.png" alt="Agent Arcade icon" width="96" align="right">
+
 # Agent Arcade
 
 A Windows app that runs your AI coding agents side by side on one project: Claude Code, Codex (ChatGPT), Gemini CLI, GitHub Copilot CLI and Cursor, each in its own pane inside the app.
+
+Free for personal use. Professional use needs Agent Arcade Pro (EUR 25 per month, includes the voice dictation app); see [LICENSING.md](LICENSING.md).
+
+## Download
+
+1. Get `AgentArcade-<version>-win-x64.zip` from the [latest release](https://github.com/danular/AgentArcade/releases/latest). It runs on Windows 11 (x64) and needs nothing else installed: the .NET runtime is inside the zip.
+2. Unzip it to a folder of your own, for example `%LOCALAPPDATA%\Programs\AgentArcade`, and start `AgentArcade.exe`. Keep the files together: the app needs the `web` folder next to it.
+3. The download isn't code-signed yet, so Windows SmartScreen may say it "protected your PC". Click **More info** → **Run anyway**. Each release lists the zip's SHA-256 so you can check the file (`Get-FileHash .\AgentArcade-*.zip`).
+
+Then click **Install** in the sidebar for any agent you don't have yet. Building it yourself is described under [Build and install](#build-and-install).
 
 - Each agent signs in with its own official login. Agent Arcade never reads or stores passwords or login tokens.
 - Extra accounts (for example a second Claude subscription) get their own folder, and the sidebar shows which email each account uses.
@@ -76,5 +88,10 @@ To run a test build next to the installed app, set `AGENT_ARCADE_HOME` to an emp
 | `web/` | The interface (`index.html`, `app.css`, `app.js`, `icon.png`), `remote.js` (what the phone sees: pane status, approvals, plans and screens read from the terminals) and xterm.js in `web/vendor` (MIT licence) |
 | `docs/phone-remote/` | The Android app's build plan and `REMOTE_API.md`, the contract between the PC and the phone |
 | `app.ico` | The app icon (the exe, window and taskbar) |
+| `release.ps1` | Builds the self-contained zip for a GitHub release from the committed code, and prints its SHA-256 |
 
 Settings, the agent list (`agents.json`), extra accounts, chat history (`history.json`), paired phones (`remote.json`) and a log live in `%LOCALAPPDATA%\AgentArcade`.
+
+## License
+
+Agent Arcade is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md): free for personal and other noncommercial use. Professional use needs an Agent Arcade Pro subscription; [LICENSING.md](LICENSING.md) explains which one applies. Third-party components are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
