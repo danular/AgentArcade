@@ -373,7 +373,8 @@ sealed class MainForm : Form, IRemoteHost
                     if (m.TryGetProperty("screen", out var screen) && screen.ValueKind == JsonValueKind.Object) _remote.Screen(screen);
                     break;
                 case "remoteAttention":
-                    if (m.TryGetProperty("attention", out var attention) && attention.ValueKind == JsonValueKind.Object) _remote.Send(new { type = "attention", attention });
+                    if (m.TryGetProperty("attention", out var attention) && attention.ValueKind == JsonValueKind.Object)
+                        _remote.Send(new { type = "attention", attention = RemoteModel.Redacted(attention) });
                     break;
                 case "remoteReply":
                     RemoteReplied(m);
@@ -877,7 +878,8 @@ sealed class MainForm : Form, IRemoteHost
     {
         var chat = _history.FirstOrDefault(item => item.Id == chatId);
         if (chat == null) return;
-        title = string.Join(' ', title.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        // A key typed into a pane or into Rename never lands in history.json.
+        title = string.Join(' ', TextGuard.Redact(title).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         if (title.Length > 120) title = title[..120];
         if (chat.Title == title && chat.Named == (named && title.Length > 0)) return;
         chat.Title = title;
@@ -1232,8 +1234,9 @@ sealed class MainForm : Form, IRemoteHost
             {
                 var id = Json.Str(session, "id");
                 if (id.Length == 0) continue;
-                _summaries[id] = session.Clone();
-                _remote.Send(new { type = "session", session });
+                var redacted = RemoteModel.Redacted(session.Clone());
+                _summaries[id] = redacted;
+                _remote.Send(new { type = "session", session = redacted });
             }
         }
     }
@@ -1245,7 +1248,7 @@ sealed class MainForm : Form, IRemoteHost
         _summaries.Clear();
         foreach (var session in sessions.EnumerateArray())
         {
-            if (Json.Str(session, "id") is { Length: > 0 } id) _summaries[id] = session.Clone();
+            if (Json.Str(session, "id") is { Length: > 0 } id) _summaries[id] = RemoteModel.Redacted(session.Clone());
         }
     }
 

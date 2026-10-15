@@ -12,6 +12,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Text.Unicode;
 using Microsoft.AspNetCore.Builder;
@@ -777,7 +778,7 @@ static class RemoteModel
         accountName = chat.Account,
         workspace = chat.Workspace,
         // The same fallback as Session.title. named stays false.
-        title = chat.Title.Length > 0 ? chat.Title : "New chat",
+        title = chat.Title.Length > 0 ? TextGuard.Redact(chat.Title) : "New chat",
         named = chat.Named,
         startedAt = chat.Started.ToUnixTimeMilliseconds(),
         endedAt = chat.Ended?.ToUnixTimeMilliseconds(),
@@ -791,6 +792,41 @@ static class RemoteModel
         => history.OrderByDescending(chat => chat.LastActive).Take(300)
             .Select(chat => Chat(chat, agents.FirstOrDefault(agent => agent.Name == chat.Agent), sessionOf(chat)))
             .ToList();
+
+    // The fields the phone matches by; they are never changed.
+    static readonly HashSet<string> MatchFields = ["id", "chat", "account", "workspace"];
+
+    // A Session or Attention as the page built it, with TextGuard applied to its text (title, message, question,
+    // preview, plan and the rest), so a key typed or pasted into a pane doesn't reach the phone in a summary.
+    public static JsonElement Redacted(JsonElement item)
+    {
+        var raw = item.GetRawText();
+        if (TextGuard.Redact(raw) == raw) return item;
+        var node = JsonNode.Parse(raw);
+        RedactStrings(node);
+        return JsonSerializer.SerializeToElement(node, Wire);
+    }
+
+    static void RedactStrings(JsonNode? node)
+    {
+        if (node is JsonObject item)
+        {
+            foreach (var (name, child) in item.ToList())
+            {
+                if (MatchFields.Contains(name)) continue;
+                if (child is JsonValue value && value.TryGetValue<string>(out var text)) item[name] = TextGuard.Redact(text);
+                else RedactStrings(child);
+            }
+        }
+        else if (node is JsonArray list)
+        {
+            for (var i = 0; i < list.Count; i++)
+            {
+                if (list[i] is JsonValue value && value.TryGetValue<string>(out var text)) list[i] = TextGuard.Redact(text);
+                else RedactStrings(list[i]);
+            }
+        }
+    }
 
     public static bool IsSessionId(string id) => SessionId.IsMatch(id);
 

@@ -6,14 +6,29 @@ using System.Text.RegularExpressions;
 
 namespace AgentArcade;
 
+// Keys and tokens never reach a chat title, the log, a toast or the phone. Each kind keeps its prefix, so you can still
+// tell what it was (sk-proj-[hidden]); hiding twice changes nothing. web/app.js (TOKEN_SHAPE) mirrors this list.
 static class TextGuard
 {
-    static readonly Regex Token = new(@"sk-ant-[A-Za-z0-9_\-]+", RegexOptions.Compiled);
+    static readonly (Regex Pattern, string Hidden)[] Tokens =
+    [
+        (new(@"sk-ant-[A-Za-z0-9_\-]+", RegexOptions.Compiled), "sk-ant-[hidden]"),
+        (new(@"(?<![A-Za-z0-9_\-])sk-proj-[A-Za-z0-9_\-]{20,}", RegexOptions.Compiled), "sk-proj-[hidden]"),
+        (new(@"(?<![A-Za-z0-9_\-])sk-[A-Za-z0-9_\-]{20,}", RegexOptions.Compiled), "sk-[hidden]"),
+        (new(@"AIza[0-9A-Za-z_\-]{30,}", RegexOptions.Compiled), "AIza[hidden]"),
+        (new(@"\b(gh[pousr])_[A-Za-z0-9]{20,}", RegexOptions.Compiled), "$1_[hidden]"),
+        (new(@"github_pat_[A-Za-z0-9_]{20,}", RegexOptions.Compiled), "github_pat_[hidden]"),
+        (new(@"\b(xox[abeprs])-[A-Za-z0-9\-]{10,}", RegexOptions.Compiled), "$1-[hidden]"),
+        (new(@"\bAKIA[0-9A-Z]{16}\b", RegexOptions.Compiled), "AKIA[hidden]"),
+        // A JWT: header and payload are base64 JSON, so both start with eyJ.
+        (new(@"eyJ[A-Za-z0-9_\-]{5,}\.eyJ[A-Za-z0-9_\-]{5,}\.[A-Za-z0-9_\-]*", RegexOptions.Compiled), "eyJ[hidden]"),
+    ];
 
     public static string Redact(string? value)
     {
         if (string.IsNullOrEmpty(value)) return "";
-        return Token.Replace(value, "sk-ant-[hidden]");
+        foreach (var (pattern, hidden) in Tokens) value = pattern.Replace(value, hidden);
+        return value;
     }
 }
 
@@ -310,9 +325,31 @@ static class HistoryStore
         try
         {
             if (!File.Exists(FilePath)) return new();
-            return JsonSerializer.Deserialize<List<ChatRecord>>(File.ReadAllText(FilePath), Json.Options)?
+            var chats = JsonSerializer.Deserialize<List<ChatRecord>>(File.ReadAllText(FilePath), Json.Options)?
                 .Where(chat => chat.Id.Length > 0 && chat.Agent.Length > 0)
                 .ToList() ?? new();
+            // A key that became a title before TextGuard knew its kind is hidden now. The file is saved only when a
+            // title changed, so this happens once.
+            var scrubbed = false;
+            foreach (var chat in chats)
+            {
+                var clean = TextGuard.Redact(chat.Title);
+                if (clean == chat.Title) continue;
+                chat.Title = clean;
+                scrubbed = true;
+            }
+            if (scrubbed)
+            {
+                try
+                {
+                    Save(chats);
+                }
+                catch
+                {
+                    // Tried again at the next start; the titles shown are already clean.
+                }
+            }
+            return chats;
         }
         catch
         {
