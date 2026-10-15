@@ -779,6 +779,47 @@ async function textSizeDialog() {
   setFontSize(result ? result.size : before);
 }
 
+// ---------- version and update notice ----------
+
+// appInfo from the C# side: version, releases (the releases page), updateCheck (on or off) and update ({ version, url }
+// of a newer release, or null). The C# side asks GitHub at most once a day; the page only shows what it found.
+let appInfo = null;
+
+function appInfoArrived(message) {
+  appInfo = message;
+  $('#app-version').textContent = message.version ? `v${message.version}` : '';
+  renderUpdateNote();
+}
+
+// Hidden for a version you closed it for; the next version shows again.
+function renderUpdateNote() {
+  const note = $('#update-note');
+  const update = appInfo?.update;
+  note.hidden = !update || localStorage.getItem('updateDismissed') === update.version;
+  note.innerHTML = note.hidden ? '' :
+    `<button class="update-link" data-update-open title="Open the release page">${icon('download', 14)}` +
+    `<span class="ellipsis">Agent Arcade ${esc(update.version)} is available</span></button>` +
+    `<button class="icon-btn small" data-update-close title="Hide until the next version">${icon('close', 13)}</button>`;
+}
+
+async function versionDialog() {
+  if (!appInfo) return;
+  await modal({
+    title: `Agent Arcade ${appInfo.version}`,
+    body: `<label class="switch"><input type="checkbox" name="updateCheck"${appInfo.updateCheck ? ' checked' : ''}>` +
+      '<span class="switch-track"></span><span>Tell me when a new version is out</span></label>' +
+      "<p class=\"muted\">Once a day Agent Arcade asks GitHub's releases API for the newest version number. It sends no " +
+      'identifier and downloads nothing: you update yourself from the releases page.</p>' +
+      '<p><button type="button" class="text-btn link" data-releases>All releases</button></p>',
+    confirm: 'Done',
+    cancel: null,
+    opened: root => {
+      root.querySelector('[name="updateCheck"]').addEventListener('change', event => send({ type: 'updateCheck', on: event.target.checked }));
+      root.querySelector('[data-releases]').addEventListener('click', () => send({ type: 'openUrl', url: appInfo.releases }));
+    },
+  });
+}
+
 function scheduleFit(session) {
   if (session.fitFrame) return;
   session.fitFrame = requestAnimationFrame(() => {
@@ -988,6 +1029,8 @@ const agentName = session => agentOf(accountOf(session.key))?.name || 'The agent
 function watchTurn(session, data) {
   clearAttention(session);
   if (REPORTS.test(data)) return;
+  // Keys went to the dialog on screen, so once it leaves the screen it was answered (Remote.dialogAppeared).
+  if (session.dialog) session.dialog.input = true;
   if (data.includes('\r')) {
     session.armed = Date.now();
     session.turnStartedAt = session.armed;
@@ -1020,6 +1063,11 @@ function outputArrived(session) {
 setInterval(() => {
   const now = Date.now();
   for (const session of sessions.values()) {
+    // A dialog needs you as soon as it shows, however soon after Enter: once per dialog. After a resize the same
+    // dialog can wrap differently, which isn't a new one.
+    if (session.running && Remote.dialogAppeared(session.dialog ||= {}, screenParts(session), now, now - (session.resizedAt || 0) < 2000)) {
+      needsYou(session, '', true);
+    }
     if (session.running && session.armed && session.busyStart && now - session.lastOutput > QUIET_MS &&
         session.lastOutput - session.busyStart >= MIN_WORK_MS) needsYou(session);
   }
@@ -1044,15 +1092,22 @@ function refreshDots() {
   }
 }
 
-function needsYou(session, text = '') {
+// claimed: the 1 s check already counted this dialog as new (Remote.dialogAppeared).
+function needsYou(session, text = '', claimed = false) {
   session.armed = 0;
   session.busyStart = 0;
-  if (Date.now() - (session.notifiedAt || 0) < 8000) return;
-  session.notifiedAt = Date.now();
   const own = String(text).replace(/[\x00-\x1f]/g, ' ').trim();
   const screen = screenParts(session);
-  const asks = own ? Remote.asksOk(own) : screen.asks || screen.choices.length > 0 || screen.menu;
+  // A dialog on screen makes any alert about it a needsYou.
+  const asks = screen.asking || (own ? Remote.asksOk(own) : screen.asks || screen.choices.length > 0 || screen.menu);
   const kind = asks ? 'needsYou' : 'done';
+  // needsYou goes once per dialog (its question and choices); done at most once per 8 s.
+  if (kind === 'needsYou') {
+    if (!claimed && !Remote.claimDialog(session.dialog ||= {}, screen, Date.now())) return;
+  } else {
+    if (Date.now() - (session.notifiedAt || 0) < 8000) return;
+    session.notifiedAt = Date.now();
+  }
   const message = Remote.cut(own, 200) ||
     (asks ? `${agentName(session)} needs your OK to continue.` : `${agentName(session)} is done and waiting for you.`);
   if (!seenOnPc(session)) {
@@ -1062,12 +1117,30 @@ function needsYou(session, text = '') {
     refreshDots();
     remoteSoon();
   }
-  notify(session, own.slice(0, 200) || attentionText(session));
+  // A menu without approval words still needs you, so the toast says so too.
+  notify(session, own.slice(0, 200) || (kind === 'needsYou' ? message : attentionText(session)));
   remoteAttention(session, kind, message, asks ? screen.question : null);
 }
 
-// Someone is looking at this pane on the PC right now.
-const seenOnPc = session => !session.el.hidden && document.hasFocus() && session.el.contains(document.activeElement);
+// Whether someone is at the PC, from the C# side (presence: every 5 s and on lock or unlock) and this page's own
+// keyboard and mouse events, which are newer than the last report. at: when the report came.
+const AWAY_MS = 45000;
+let presence = { idleMs: 0, locked: false, at: Date.now() };
+let pageInputAt = 0;
+for (const type of ['keydown', 'pointerdown', 'pointermove', 'wheel']) {
+  document.addEventListener(type, () => { pageInputAt = Date.now(); }, { capture: true, passive: true });
+}
+
+function presenceChanged(message) {
+  const idleMs = Number(message.idleMs);
+  presence = { idleMs: Number.isFinite(idleMs) && idleMs >= 0 ? idleMs : 0, locked: message.locked === true, at: Date.now() };
+}
+
+// Nobody touched the PC's keyboard or mouse for 45 s, or Windows is locked.
+const awayFromPc = () => presence.locked || Math.min(presence.idleMs + Date.now() - presence.at, Date.now() - pageInputAt) >= AWAY_MS;
+
+// Someone is looking at this pane on the PC right now: window and pane focused, input in the last 45 s, unlocked.
+const seenOnPc = session => !session.el.hidden && document.hasFocus() && session.el.contains(document.activeElement) && !awayFromPc();
 
 // The bottom of the screen shows whether the agent asks to run or change something.
 function attentionText(session) {
@@ -2755,6 +2828,16 @@ $('#edit-agents').addEventListener('click', () => send({ type: 'editAgents' }));
 $('#text-size').addEventListener('click', textSizeDialog);
 $('#phone').addEventListener('click', openPhone);
 showPhones();
+$('#app-version').addEventListener('click', versionDialog);
+$('#update-note').addEventListener('click', event => {
+  const update = appInfo?.update;
+  if (!update) return;
+  if (event.target.closest('[data-update-open]')) send({ type: 'openUrl', url: update.url });
+  if (event.target.closest('[data-update-close]')) {
+    localStorage.setItem('updateDismissed', update.version);
+    renderUpdateNote();
+  }
+});
 $('#open-unity').addEventListener('click', () => send({ type: 'openUnity' }));
 $('#open-folder').addEventListener('click', () => send({ type: 'openFolder' }));
 $('#new-agent').addEventListener('click', event => newAgentMenu(event.currentTarget));
@@ -2870,6 +2953,9 @@ if (bridge) {
       case 'focusSession':
         showSession(message.session);
         break;
+      case 'presence':
+        presenceChanged(message);
+        break;
       case 'dropped':
         filesDropped(message);
         break;
@@ -2909,6 +2995,9 @@ if (bridge) {
       case 'toast':
         toast(message.text, message.kind);
         if (message.kind === 'error') pendingResume = null;
+        break;
+      case 'appInfo':
+        appInfoArrived(message);
         break;
       case 'accountAdded': {
         const account = accountOf(message.account);

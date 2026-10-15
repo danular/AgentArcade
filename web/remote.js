@@ -280,6 +280,51 @@ const Remote = (() => {
     };
   }
 
+  // One alert per dialog (REMOTE_API.md, Attention). A dialog is its question with its choices; '' when the screen
+  // (a parts() result) doesn't ask.
+  const dialogSig = screen => screen && screen.asking
+    ? JSON.stringify([screen.question || '', (screen.choices || []).map(choice => `${choice.key} ${choice.label}`)])
+    : '';
+  // A dialog gone this long without input was dismissed; shorter gaps are a redraw. An agent's own "needs you"
+  // notification sent before its dialog is drawn stands for the dialog that shows within DIALOG_SOON_MS.
+  const DIALOG_GONE_MS = 3000;
+  const DIALOG_SOON_MS = 3000;
+
+  // tracker holds one pane's alert state: sig (the dialog alerted last), input (keys went to the pane since),
+  // goneAt (when that dialog left the screen) and claimedAt (an alert for a dialog that wasn't drawn yet).
+  const remember = (tracker, sig) => Object.assign(tracker, { sig, input: false, goneAt: 0, claimedAt: 0 });
+
+  // Called every second with the pane's screen: true when a dialog appeared that nobody was alerted about. It is
+  // recorded, so the alert that follows goes out once. redrawn: the pane was just resized, so a changed signature is
+  // the same dialog wrapped again.
+  function dialogAppeared(tracker, screen, now, redrawn = false) {
+    const sig = dialogSig(screen);
+    if (!sig) {
+      if (tracker.sig && (tracker.input || now - (tracker.goneAt ||= now) >= DIALOG_GONE_MS)) remember(tracker, '');
+      return false;
+    }
+    tracker.goneAt = 0;
+    if (sig === tracker.sig) return false;
+    const announced = !!tracker.claimedAt && now - tracker.claimedAt < DIALOG_SOON_MS;
+    const rewrapped = redrawn && !!tracker.sig && !tracker.input;
+    remember(tracker, sig);
+    return !announced && !rewrapped;
+  }
+
+  // For a needsYou alert from anywhere else (the agent's own notification, the bell, the quiet timer): true when it
+  // is due, false when its dialog was alerted already. Records it.
+  function claimDialog(tracker, screen, now) {
+    const sig = dialogSig(screen);
+    if (sig) {
+      if (sig === tracker.sig) return false;
+      remember(tracker, sig);
+      return true;
+    }
+    if (tracker.claimedAt && now - tracker.claimedAt < DIALOG_SOON_MS) return false;
+    tracker.claimedAt = now;
+    return true;
+  }
+
   // OSC 9;4 progress (payload "4;state;percent"). null clears it; undefined means it isn't a progress report.
   function progress(data) {
     const match = /^4;(\d+)(?:;(\d*))?$/.exec(String(data));
@@ -405,7 +450,7 @@ const Remote = (() => {
 
   return {
     APPROVAL, cut, approval, asksOk, activity, plan, choices, findChoices, findMenu, picking, question, preview, parts,
-    progress, keySequence, palette, color256, serializeScreen,
+    dialogSig, dialogAppeared, claimDialog, progress, keySequence, palette, color256, serializeScreen,
   };
 })();
 

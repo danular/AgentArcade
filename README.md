@@ -35,8 +35,9 @@ Then click **Install** in the sidebar for any agent you don't have yet. Building
   - **Changes** shows what git sees changed in the project, with the diff of the file you pick. It looks again every 5 seconds while it shows, without taking git's index lock.
   - **Console** is a PowerShell (PowerShell 7 if installed) in the project folder. It isn't an agent: it doesn't count when you close the app, and the phone never sees it.
 - Each pane's dot shows its status: orange while the agent works, red when it needs you, green when it is idle, grey when it has ended.
-- Windows notifies you when an agent is done or asks for your OK, unless you are already looking at its pane: an agent that worked after you pressed Enter and then goes quiet, or one that sends its own notification (OSC 9/777, bell). Click the notification to jump to the pane. The pane's dot turns red until you look at it. Turn notifications off in a pane's ⋯ menu.
+- Windows notifies you when an agent is done or asks for your OK, unless you are already looking at its pane: a dialog that asks you something (once per dialog, as soon as it shows), an agent that worked after you pressed Enter and then goes quiet, or one that sends its own notification (OSC 9/777, bell). A focused pane still notifies when nobody touched the keyboard or mouse for 45 seconds or the PC is locked. Click the notification to jump to the pane. The pane's dot turns red until you look at it. Turn notifications off in a pane's ⋯ menu.
 - Text size: **Text size** at the bottom of the sidebar, or Ctrl+= / Ctrl+- / Ctrl+0 in a pane. It applies to every pane.
+- The version number sits at the bottom right of the sidebar. Once a day Agent Arcade asks GitHub's releases API for the newest version number (no identifier is sent and nothing is downloaded) and shows a notice above it when a newer version is out. Click the version number to switch this off.
 - History lists every chat per project, including projects you removed from the sidebar. Resume continues a chat: Claude Code reopens exactly that chat; the other agents open their own resume list. Only titles, folders and times are kept (`history.json`); the chats themselves stay in each agent's own files. A title can be the start of your first message.
 - A pane's ⋯ menu pastes a "save progress" prompt (writes `HANDOFF.md`) and a "continue" prompt, so the next agent can pick up where the last one stopped.
 - Phone remote: watch and drive the agents from your Android phone with the Agent Arcade Remote app (see below).
@@ -76,7 +77,7 @@ This publishes the app to `%LOCALAPPDATA%\Programs\AgentArcade` and adds a Start
 
 `install-and-run.ps1` does it all in one go: it builds first (a build error leaves the open app alone), then closes the open app the way its close button does (with agents running, the app asks you first, and Cancel stops the script), installs, and starts the new version. Run it from a terminal outside Agent Arcade or with the Claude app's Run button, not from a pane inside Agent Arcade. `test-run.ps1` builds a test copy into `%TEMP%\AgentArcade-test-build` and starts it next to the installed app, with its own data in `%TEMP%\AgentArcade-test-home` (see below); it installs nothing.
 
-To try a change without installing: `dotnet run` (while the installed app is closed). To run the built-in checks: `AgentArcade.exe --self-check`, then read `%TEMP%\AgentArcade-selfcheck.txt`.
+To try a change without installing: `dotnet run` (while the installed app is closed). To run the built-in checks: `AgentArcade.exe --self-check`, then read `%TEMP%\AgentArcade-selfcheck.txt`. `node --test tests/remote.test.js` checks the page's alert rules (one alert per dialog).
 
 To run a test build next to the installed app, set `AGENT_ARCADE_HOME` to an empty folder first. That copy keeps its own settings, agents, history and paired phones there, and doesn't count as the same app. With `AGENT_ARCADE_REMOTE_LOOPBACK=1` its Phone remote listens on 127.0.0.1 only, so Windows doesn't show a firewall prompt for it; give it another `RemotePort` in its `settings.json`.
 
@@ -90,7 +91,8 @@ To run a test build next to the installed app, set `AGENT_ARCADE_HOME` to an emp
 | `Images.cs` | Serves image files to the page and watches folders for new images |
 | `Panel.cs` | The side panel's file lists (Images tab, Preview suggestions) and its Changes tab (git status and diffs, after `GitConfigCheck` reads the repository's config: no program it names runs, no network path it names is reached) |
 | `Remote.cs` | Phone remote: the HTTPS and WebSocket server, its certificate, paired phones and pairing codes |
-| `Power.cs` | Keeps Windows from sleeping on its own while agents run (a power request), and reads the battery and lid settings |
+| `Power.cs` | Keeps Windows from sleeping on its own while agents run (a power request), reads the battery and lid settings, and whether someone is at the PC (time since the last input, for alerts) |
+| `Update.cs` | The once-a-day update check: the newest release's tag from GitHub's releases API, compared with the running version |
 | `Backend.cs` | Settings, agent list, accounts, sign-in checks, chat history, Windows Terminal launcher, shared instructions |
 | `web/` | The interface (`index.html`, `app.css`, `app.js`, `icon.png`), `remote.js` (what the phone sees: pane status, approvals, plans and screens read from the terminals) and xterm.js in `web/vendor` (MIT licence) |
 | `docs/phone-remote/` | The Android app's build plan and `REMOTE_API.md`, the contract between the PC and the phone |

@@ -25,11 +25,19 @@ static class Program
         if (args.Any(arg => arg == "--self-check"))
             return SelfCheck.Run();
 
-        // One window only: starting the app again brings the open window to the front.
+        // One window only: starting the app again brings the open window to the front. A copy from another folder
+        // can't take over that window, so it says where Agent Arcade runs instead of quietly doing nothing.
         using var single = new Mutex(true, AppSettings.InstanceName, out var first);
         if (!first)
         {
-            ShowExistingWindow();
+            if (ShowExistingWindow() is { } elsewhere)
+            {
+                ApplicationConfiguration.Initialize();
+                MessageBox.Show(
+                    (elsewhere.Length > 0 ? "Agent Arcade is already running from " + elsewhere + "." : "Agent Arcade is already running.") +
+                    " Close it first to start this copy.",
+                    "Agent Arcade", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
             return 0;
         }
 
@@ -38,21 +46,32 @@ static class Program
         return 0;
     }
 
-    static void ShowExistingWindow()
+    // Brings the open window of this same exe to the front and returns null; also null while that copy is still
+    // starting (no window yet). Otherwise returns the folder of the copy that runs from somewhere else ("" when unknown).
+    static string? ShowExistingWindow()
     {
         using var current = System.Diagnostics.Process.GetCurrentProcess();
         var path = Environment.ProcessPath;
+        var samePath = false;
+        var elsewhere = new List<string>();
         foreach (var process in System.Diagnostics.Process.GetProcessesByName(current.ProcessName))
         {
             using (process)
             {
                 try
                 {
-                    if (process.Id == current.Id || process.MainWindowHandle == IntPtr.Zero) continue;
-                    if (!string.Equals(process.MainModule?.FileName, path, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (process.Id == current.Id) continue;
+                    var file = process.MainModule?.FileName;
+                    if (!string.Equals(file, path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (Path.GetDirectoryName(file) is { Length: > 0 } folder && !elsewhere.Contains(folder, StringComparer.OrdinalIgnoreCase)) elsewhere.Add(folder);
+                        continue;
+                    }
+                    samePath = true;
+                    if (process.MainWindowHandle == IntPtr.Zero) continue;
                     if (IsIconic(process.MainWindowHandle)) ShowWindow(process.MainWindowHandle, 9);
                     SetForegroundWindow(process.MainWindowHandle);
-                    return;
+                    return null;
                 }
                 catch
                 {
@@ -60,6 +79,8 @@ static class Program
                 }
             }
         }
+        // Copies with another data folder (AGENT_ARCADE_HOME) can run too, so more than one folder may be listed.
+        return samePath ? null : string.Join(" or ", elsewhere);
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -115,6 +136,42 @@ static class SelfCheck
             Check("keep-awake", held && changed && released,
                 "a power request is held, replaced and let go; laptop " + laptop + ", on battery " + onBattery + ", lid sleeps " + lidSleeps);
         }
+
+        // Alerts treat a focused pane as unseen after 45 s without keyboard or mouse input, or while the PC is locked.
+        Check("presence", Presence.TryIdleMs(out var idle) && idle >= 0 && idle <= Environment.TickCount64 && Presence.Away(true),
+            "the time since the last keyboard or mouse input can be read (nothing about the input itself); a locked PC counts as away");
+
+        // The update notice, offline: a fake newer tag against this version, and what an API answer may contain.
+        try
+        {
+            var thisVersion = UpdateCheck.Parse(RemoteModel.Version) ?? new Version(0, 0, 0, 0);
+            var fakeNewer = "v" + thisVersion.Major + "." + thisVersion.Minor + "." + (thisVersion.Build + 1);
+            var fake = UpdateCheck.FromJson("{\"tag_name\":\"" + fakeNewer + "\",\"html_url\":\"https://github.com/danular/AgentArcade/releases/tag/" + fakeNewer + "\"}");
+            var now = DateTimeOffset.Now;
+            Check(
+                "update-compare",
+                UpdateCheck.IsNewer(fakeNewer, RemoteModel.Version) && fake?.Tag == fakeNewer && fake.Url.EndsWith("/releases/tag/" + fakeNewer, StringComparison.Ordinal)
+                    && !UpdateCheck.IsNewer("v" + RemoteModel.Version, RemoteModel.Version) && !UpdateCheck.IsNewer("v1.3.2", "1.3.3")
+                    && UpdateCheck.IsNewer("v1.10.0", "1.9.9") && !UpdateCheck.IsNewer("v1.3", "1.3.0") && !UpdateCheck.IsNewer("v1.4.0-beta", "1.3.3")
+                    && !UpdateCheck.IsNewer("latest", "1.3.3") && UpdateCheck.FromJson("{\"tag_name\":\"<b>9.9</b>\"}") == null
+                    && UpdateCheck.PageFor("https://example.com/danular/AgentArcade/releases/tag/v9.9.9") == UpdateCheck.Releases
+                    && UpdateCheck.Due(null, now) && !UpdateCheck.Due(now.AddHours(-23), now) && UpdateCheck.Due(now.AddHours(-25), now) && UpdateCheck.Due(now.AddDays(2), now)
+                    && UpdateCheck.Api.EndsWith("/releases/latest", StringComparison.Ordinal),
+                fakeNewer + " is newer than " + RemoteModel.Version + "; the same, older, pre-release and odd tags aren't; once a day; only the API's JSON, no download");
+        }
+        catch (Exception ex)
+        {
+            Check("update-compare", false, ex.Message);
+        }
+
+        // Gemini's old "Sign in with Google" hint is replaced in an existing agents.json; a hint the user wrote stays.
+        var geminiBuiltIn = AgentStore.Defaults().First(agent => agent.Command == "gemini");
+        var oldHint = new AgentDef { Name = "Gemini CLI", Command = "gemini", LoginHint = AgentStore.RetiredHints["gemini"][0] };
+        var ownHint = new AgentDef { Name = "Gemini CLI", Command = "gemini", LoginHint = AgentStore.RetiredHints["gemini"][0] + " (mine)" };
+        Check("gemini-hint",
+            AgentStore.CurrentHint(oldHint, geminiBuiltIn) == geminiBuiltIn.LoginHint && AgentStore.CurrentHint(ownHint, geminiBuiltIn) == ownHint.LoginHint
+                && geminiBuiltIn.LoginHint.Contains("Antigravity CLI", StringComparison.Ordinal),
+            "the old built-in hint becomes the API key / Code Assist one; an edited hint is kept");
 
         try
         {

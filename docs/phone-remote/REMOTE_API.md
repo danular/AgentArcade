@@ -282,7 +282,7 @@ One pane on the PC. The page builds it from the terminal, so the phone never par
 | `preview` | Up to 3 lines the agent last wrote (best effort), plain text, each at most 200 characters |
 | `turnStartedAt` | When Enter was last pressed in this pane (the start of the current or last turn) |
 | `lastOutputAt` | When the pane last printed anything |
-| `seenOnPc` | `true` when someone is looking at this pane on the PC right now (the window has focus and the pane is focused) |
+| `seenOnPc` | `true` only while someone is looking at this pane on the PC right now: the Agent Arcade window has focus, the pane is focused, there was keyboard or mouse input on the PC in the last 45 s, and the Windows session is unlocked. Otherwise `false`, for example when the user walked away from a focused pane or locked the PC |
 | `cols`, `rows` | The pane's terminal size on the PC |
 
 **Status rules** (the PC decides, in this order):
@@ -371,7 +371,13 @@ The end of one pane's terminal, as lines of styled text. The PC resolves colors 
 }
 ```
 
-Sent when the desktop would turn the pane amber or notify (`needsYou` or `done`), and when an agent ends (`ended`). It doesn't depend on the PC's Windows notification setting. The phone skips the alert when `seenOnPc` is true, when that chat is open on the phone's screen, or when the user muted that chat or that kind of alert.
+Sent when the desktop would turn the pane amber or notify (`needsYou` or `done`), and when an agent ends (`ended`). It doesn't depend on the PC's Windows notification setting.
+
+- `needsYou` goes out once per dialog, as soon as the screen starts asking (see the status rules), however soon after Enter that is. A dialog is its `question` together with its `choices`: the same dialog still on screen, or drawn again after a resize, sends nothing new. A dialog that comes back after it was answered or left the screen counts as new. An agent's own notification about a dialog that is about to show counts for that dialog.
+- `done` goes out when the agent worked after Enter and then went quiet, or sent its own "waiting for you" notification; at most once per 8 s per pane.
+- `seenOnPc` has the same meaning as in Session: it is `false` while nobody touched the PC's keyboard or mouse for 45 s or the Windows session is locked, even when the pane still has focus.
+
+The phone skips the alert when `seenOnPc` is true, when that chat is open on the phone's screen, or when the user muted that chat or that kind of alert.
 
 ## 6. Security
 

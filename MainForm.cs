@@ -38,6 +38,12 @@ sealed class MainForm : Form, IRemoteHost
     readonly Dictionary<string, Session> _sessions = new();
     readonly List<ChatRecord> _history = HistoryStore.Load();
     readonly System.Windows.Forms.Timer _flush = new() { Interval = 16 };
+    // Tells the page every 5 s whether someone is at the PC (presence), so a pane left focused still alerts.
+    readonly System.Windows.Forms.Timer _presence = new() { Interval = 5000 };
+    bool _locked;
+    // The update notice: the first look a minute after start, then every hour whether a day has passed (UpdateCheck).
+    readonly System.Windows.Forms.Timer _updates = new() { Interval = 60_000 };
+    bool _updateChecking;
     readonly ImageServer _images = new();
     readonly Dictionary<string, ImageWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
     NotifyIcon? _tray;
@@ -73,7 +79,14 @@ sealed class MainForm : Form, IRemoteHost
         BackColor = Color.FromArgb(12, 12, 14);
         Controls.Add(_web);
         _flush.Tick += (_, _) => Flush();
+        _presence.Tick += (_, _) => PostPresence();
+        _updates.Tick += (_, _) =>
+        {
+            _updates.Interval = 3_600_000;
+            CheckForUpdate();
+        };
         Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
         _remote = new RemoteServer(this, Path.Combine(AppSettings.Folder, "remote.json"));
     }
 
@@ -174,6 +187,8 @@ sealed class MainForm : Form, IRemoteHost
         };
         core.WebMessageReceived += OnMessage;
         _flush.Start();
+        _presence.Start();
+        _updates.Start();
         core.Navigate("https://" + Host + "/index.html");
     }
 
@@ -194,7 +209,10 @@ sealed class MainForm : Form, IRemoteHost
         // like an answered Cancel to install-and-run.ps1, which waits for the app to close.
         Hide();
         _flush.Stop();
+        _presence.Stop();
+        _updates.Stop();
         Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
         StopAll();
         _tray?.Dispose();
         _tray = null;
@@ -242,6 +260,8 @@ sealed class MainForm : Form, IRemoteHost
                     // A fresh page has no terminals, so nothing from before may keep running unseen.
                     StopAll();
                     RemotePageReady();
+                    PostPresence();
+                    PostAppInfo();
                     Run(RefreshAsync, "refresh");
                     break;
                 case "refresh":
@@ -410,6 +430,12 @@ sealed class MainForm : Form, IRemoteHost
                     }
                     PostRemoteInfo();
                     break;
+                case "updateCheck":
+                    _settings.UpdateCheck = m.TryGetProperty("on", out var check) && check.ValueKind == JsonValueKind.True;
+                    _settings.Save();
+                    PostAppInfo();
+                    CheckForUpdate();
+                    break;
                 case "editAgents":
                     AgentStore.Load();
                     Commands.StartVisible(Path.Combine(Environment.SystemDirectory, "notepad.exe"), "\"" + AgentStore.FilePath + "\"", AppSettings.Folder);
@@ -540,10 +566,11 @@ sealed class MainForm : Form, IRemoteHost
 
     // ---------- notifications ----------
 
-    // An agent is done or needs you. Windows only tells you when you can't see the pane already.
+    // An agent is done or needs you. Windows only tells you when you can't see the pane already: a pane on screen
+    // in the active window still notifies when nobody touched the PC for 45 s or the session is locked.
     void Notify(string id, string title, string body, bool paneVisible)
     {
-        if (ActiveForm == this && WindowState != FormWindowState.Minimized && paneVisible) return;
+        if (ActiveForm == this && WindowState != FormWindowState.Minimized && paneVisible && !Presence.Away(_locked)) return;
         if (_tray == null)
         {
             // The tray icon is how a Windows Forms app shows a notification; it stays until the app closes.
@@ -566,12 +593,85 @@ sealed class MainForm : Form, IRemoteHost
         }
     }
 
+    // The page's seenOnPc needs this: input idle time and whether the session is locked. Nothing about it is logged.
+    void PostPresence() => Post(new { type = "presence", idleMs = Presence.IdleMs(), locked = _locked });
+
+    // Locking the PC, or switching to another user or away from a remote session, means nobody looks at the panes.
+    void OnSessionSwitch(object? sender, Microsoft.Win32.SessionSwitchEventArgs e)
+    {
+        bool? locked = e.Reason switch
+        {
+            Microsoft.Win32.SessionSwitchReason.SessionLock or Microsoft.Win32.SessionSwitchReason.ConsoleDisconnect
+                or Microsoft.Win32.SessionSwitchReason.RemoteDisconnect => true,
+            Microsoft.Win32.SessionSwitchReason.SessionUnlock or Microsoft.Win32.SessionSwitchReason.SessionLogon => false,
+            _ => null,
+        };
+        if (locked is not { } now) return;
+        OnUi(() =>
+        {
+            if (_locked == now) return;
+            _locked = now;
+            PostPresence();
+        });
+    }
+
     void BringBack(string id)
     {
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         Show();
         Activate();
         if (id.Length > 0) Post(new { type = "focusSession", session = id });
+    }
+
+    // ---------- version and update notice ----------
+
+    // The sidebar shows the version, whether the update check is on, and a newer release when one was seen.
+    void PostAppInfo()
+    {
+        var tag = _settings.UpdateTag;
+        var newer = _settings.UpdateCheck && tag != null && UpdateCheck.IsNewer(tag, RemoteModel.Version);
+        Post(new
+        {
+            type = "appInfo",
+            version = RemoteModel.Version,
+            releases = UpdateCheck.Releases,
+            updateCheck = _settings.UpdateCheck,
+            update = newer ? new { version = UpdateCheck.Shown(tag!), url = UpdateCheck.PageFor(_settings.UpdateUrl) } : null,
+        });
+    }
+
+    // At most once a day, off the UI thread. Failures stay silent: no toast, and the log says only that it failed.
+    void CheckForUpdate()
+    {
+        if (!_settings.UpdateCheck || _updateChecking || !UpdateCheck.Due(_settings.UpdateCheckedAt, DateTimeOffset.Now)) return;
+        _updateChecking = true;
+        Run(async () =>
+        {
+            UpdateCheck.Release? release = null;
+            try
+            {
+                // Saved first, so a check that fails or hangs isn't tried again before tomorrow.
+                _settings.UpdateCheckedAt = DateTimeOffset.Now;
+                _settings.Save();
+                release = await Task.Run(UpdateCheck.LatestAsync);
+                if (release != null)
+                {
+                    _settings.UpdateTag = release.Tag;
+                    _settings.UpdateUrl = release.Url;
+                    _settings.Save();
+                }
+            }
+            catch
+            {
+                release = null;
+            }
+            finally
+            {
+                _updateChecking = false;
+            }
+            if (release == null) Log("update check failed");
+            else PostAppInfo();
+        }, "update check");
     }
 
     // ---------- images ----------

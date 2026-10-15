@@ -133,6 +133,24 @@ b { font-weight: 600; }
 input[type="range"] { padding: 0; accent-color: var(--accent); border: 0; box-shadow: none; }
 .text-btn { color: var(--muted); font-size: 12px; }
 .text-btn:hover { color: var(--text); }
+.text-btn.app-version { color: var(--faint); font-variant-numeric: tabular-nums; }
+.text-btn.app-version:hover { color: var(--text); }
+.text-btn.link { color: var(--accent-2); }
+.modal-body label.switch { flex-direction: row; gap: 10px; }
+/* A newer release: a quiet notice above the footer, never a dialog. */
+.update-note {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 10px 10px;
+  padding: 4px 4px 4px 10px;
+  font-size: 12px;
+  background: rgba(62, 207, 127, .08);
+  border: 1px solid rgba(62, 207, 127, .3);
+  border-radius: 10px;
+}
+.update-link { display: flex; flex: 1; align-items: center; gap: 7px; min-width: 0; color: var(--green); text-align: left; }
+.update-link:hover span { text-decoration: underline; }
 
 .icon-btn {
   display: inline-grid;
