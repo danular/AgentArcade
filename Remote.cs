@@ -53,6 +53,8 @@ interface IRemoteHost
     Task<RemoteReply> AskPageAsync(string device, string type, Dictionary<string, object?> fields);
     // Checks the account and the project, then asks the page to open the pane.
     Task<RemoteReply> StartAsync(string device, string account, string workspace);
+    // Makes the empty project folder name (already checked) in the projects folder and adds it to the sidebar.
+    Task<RemoteReply> CreateProjectAsync(string device, string name);
     // The page drops the typing it still has queued for this phone, or for every phone when device is null.
     void Cancel(string? device);
     // The panes the phones watch changed; the page sends a screen for each pane in refresh at once.
@@ -599,6 +601,72 @@ static class NetworkProfiles
     }
 }
 
+// New project from the phone (REMOTE_API.md, new project): an empty folder in the projects folder. The phone sends
+// only a name; the path is made here, and only as a direct child of that folder.
+static partial class NewProject
+{
+    public const int MaxName = 80;
+
+    // Names Windows keeps for devices, alone or with an extension: CON, nul.txt, com1, LPT³.
+    [GeneratedRegex(@"^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(\..*)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex Reserved();
+
+    // Why name (already trimmed) can't be a project folder, or null when it can. The same sentences as the phone.
+    public static string? Problem(string name)
+    {
+        if (name.Length == 0) return "Give the project a name.";
+        if (name.Length > MaxName) return "Use at most " + MaxName + " characters.";
+        if (name.IndexOfAny(['\\', '/', ':', '*', '?', '"', '<', '>', '|']) >= 0) return "A folder name can't contain \\ / : * ? \" < > |.";
+        if (name.Any(char.IsControl)) return "A folder name can't contain tabs or other control characters.";
+        if (name.EndsWith('.')) return "A folder name can't end with a dot.";
+        if (Reserved().IsMatch(name)) return "Windows keeps " + name.Split('.')[0].ToUpperInvariant() + " for itself. Choose another name.";
+        return null;
+    }
+
+    // The folder that holds workspace, or when that has none or is missing, the one of the first listed workspace
+    // that has one; null when none has.
+    public static string? Folder(string workspace, IEnumerable<string> projects)
+    {
+        foreach (var path in projects.Prepend(workspace))
+        {
+            try
+            {
+                if (path.Length == 0) continue;
+                var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)));
+                if (parent != null && Directory.Exists(parent)) return parent;
+            }
+            catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or System.Security.SecurityException)
+            {
+                // A path Windows can't read doesn't count.
+            }
+        }
+        return null;
+    }
+
+    // Makes the empty folder name in folder: 201 { workspace }, or 400, 404, 409 with the sentence the phone shows.
+    public static (string? Path, RemoteReply Reply) Create(string? folder, string name)
+    {
+        name = name.Trim();
+        if (Problem(name) is { } problem) return (null, RemoteReply.Fail(400, problem));
+        if (folder == null || !Directory.Exists(folder))
+            return (null, RemoteReply.Fail(404, "Agent Arcade on your PC has no projects folder. Add a project there first."));
+        var path = Path.Combine(folder, name);
+        if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), Path.TrimEndingDirectorySeparator(folder), StringComparison.OrdinalIgnoreCase))
+            return (null, RemoteReply.Fail(400, "That name can't be a folder."));
+        if (Directory.Exists(path) || File.Exists(path))
+            return (null, RemoteReply.Fail(409, "There's already a folder called " + name + " in " + folder + "."));
+        try
+        {
+            Directory.CreateDirectory(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (null, RemoteReply.Fail(409, "Windows didn't let Agent Arcade make " + name + " in " + folder + "."));
+        }
+        return (path, new RemoteReply(201, JsonSerializer.SerializeToElement(new { workspace = path }, RemoteModel.Wire)));
+    }
+}
+
 // The JSON the phone gets, and the checks on what it sends.
 static class RemoteModel
 {
@@ -637,6 +705,13 @@ static class RemoteModel
         unity = File.Exists(Path.Combine(path, "ProjectSettings", "ProjectVersion.txt")),
     }).ToList();
 
+    // Whether the PC may go to sleep (State.power). keepAwake is the setting, awake whether the request is held now.
+    public static object Power(string keepAwake, bool awake)
+    {
+        var (_, onBattery, lidSleeps) = KeepAwake.Status();
+        return new { keepAwake, awake, onBattery, lidSleeps };
+    }
+
     // tools holds the probe results by agent name; while the PC checks again, the previous ones. hosts are the
     // addresses of the pairing link.
     public static object State(
@@ -647,12 +722,15 @@ static class RemoteModel
         IEnumerable<AgentAccount> accounts,
         IReadOnlyDictionary<string, AccountInfo>? infos,
         IEnumerable<JsonElement> sessions,
-        IEnumerable<string> hosts) => new
+        IEnumerable<string> hosts,
+        object? power = null) => new
     {
         api = Api,
         pc = Pc,
         version = Version,
         workspace,
+        projectsFolder = NewProject.Folder(workspace, projects),
+        power,
         workspaces = Workspaces(projects),
         agents = agents.Select(agent =>
         {
@@ -1512,6 +1590,8 @@ sealed class RemoteServer
                 return RemoteReply.Ok(new { chats = await _host.ChatsAsync() });
             case ["sessions"] when post:
                 return await StartAsync(context, device);
+            case ["projects"] when post:
+                return await ProjectAsync(context, device);
             case ["chats", var chat, "resume"] when post:
                 return RemoteModel.IsChatId(chat)
                     ? await AskPageAsync(device, "remoteResume", new() { ["chat"] = chat })
@@ -1576,6 +1656,20 @@ sealed class RemoteServer
         }
         if (account.Length == 0 || workspace.Length == 0) return RemoteReply.Fail(400, "Choose an agent account and a project.");
         return await WaitForPageAsync(device, () => _host.StartAsync(device, account, workspace));
+    }
+
+    async Task<RemoteReply> ProjectAsync(HttpContext context, string device)
+    {
+        var (body, problem) = await ReadBodyAsync(context);
+        if (body == null) return problem!;
+        string name;
+        using (body)
+        {
+            if (!TryString(body.RootElement, "name", out name)) return Invalid;
+        }
+        name = name.Trim();
+        if (NewProject.Problem(name) is { } bad) return RemoteReply.Fail(400, bad);
+        return await _host.CreateProjectAsync(device, name);
     }
 
     async Task<RemoteReply> InputAsync(HttpContext context, string device, string id)

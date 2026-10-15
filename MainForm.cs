@@ -60,6 +60,7 @@ sealed class MainForm : Form, IRemoteHost
     (string Link, string Qr)? _qr;
     (long At, string? Hosts, string? Warning) _networkWarning;
     readonly KeepAwake _awake = new();
+    bool _onBattery = KeepAwake.Status().OnBattery;
 
     public MainForm()
     {
@@ -72,6 +73,7 @@ sealed class MainForm : Form, IRemoteHost
         BackColor = Color.FromArgb(12, 12, 14);
         Controls.Add(_web);
         _flush.Tick += (_, _) => Flush();
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         _remote = new RemoteServer(this, Path.Combine(AppSettings.Folder, "remote.json"));
     }
 
@@ -180,6 +182,7 @@ sealed class MainForm : Form, IRemoteHost
         // like an answered Cancel to install-and-run.ps1, which waits for the app to close.
         Hide();
         _flush.Stop();
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         StopAll();
         _tray?.Dispose();
         _tray = null;
@@ -1281,7 +1284,27 @@ sealed class MainForm : Form, IRemoteHost
             : null;
         var before = _awake.Reason;
         if (!_awake.Set(reason)) Log("Couldn't ask Windows to stay awake");
-        if (_awake.Reason != before) PostRemoteInfo();
+        if (_awake.Reason != before) PowerChanged();
+    }
+
+    // The Phone dialog and the phones (State.power) hear when sleeping becomes possible or not, or the plug changes.
+    void PowerChanged()
+    {
+        PostRemoteInfo();
+        if (_remote.Phones > 0) _remote.Send(new { type = "state", state = RemoteState() });
+    }
+
+    // Windows reports every battery percent too; only plugging in or out counts.
+    void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode != Microsoft.Win32.PowerModes.StatusChange) return;
+        OnUi(() =>
+        {
+            var onBattery = KeepAwake.Status().OnBattery;
+            if (onBattery == _onBattery) return;
+            _onBattery = onBattery;
+            PowerChanged();
+        });
     }
 
     string AwakeMode() => _settings.KeepAwake is KeepAwake.Remote or KeepAwake.Off ? _settings.KeepAwake : KeepAwake.Agents;
@@ -1330,7 +1353,8 @@ sealed class MainForm : Form, IRemoteHost
         });
     }
 
-    object RemoteState() => RemoteModel.State(_settings.ProjectPath, _settings.Projects, _agents, _lastTools, _accounts, _infos, _summaries.Values, RemoteHosts());
+    object RemoteState() => RemoteModel.State(_settings.ProjectPath, _settings.Projects, _agents, _lastTools, _accounts, _infos, _summaries.Values, RemoteHosts(),
+        RemoteModel.Power(AwakeMode(), _awake.Reason != null));
 
     List<object> RemoteChats() => RemoteModel.Chats(_history, _agents, chat => _sessions.FirstOrDefault(pair => pair.Value.Chat == chat).Key);
 
@@ -1368,6 +1392,18 @@ sealed class MainForm : Form, IRemoteHost
         if (problem != null) return RemoteReply.Fail(404, problem);
         return await AskPageAsync("remoteStart", device, new() { ["account"] = account, ["workspace"] = project }, null);
     }
+
+    // Like + with a folder that is already there, but the folder is new and the PC keeps showing its workspace.
+    Task<RemoteReply> IRemoteHost.CreateProjectAsync(string device, string name) => OnUiAsync(() =>
+    {
+        var (path, reply) = NewProject.Create(NewProject.Folder(_settings.ProjectPath, _settings.Projects), name);
+        if (path == null) return reply;
+        _settings.Projects.Add(path);
+        _settings.Save();
+        Log("New project from a phone: " + path);
+        PostState();
+        return reply;
+    });
 
     // The server already answered the phone's waiting requests; their late replies are dropped.
     void IRemoteHost.Cancel(string? device) => OnUi(() => Post(new { type = "remoteCancel", device }));

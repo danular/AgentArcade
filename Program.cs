@@ -465,19 +465,38 @@ static class RemoteSelfCheck
                 && RemoteLink.Qr(link).StartsWith("data:image/png;base64,iVBORw0KGgo", StringComparison.Ordinal),
             "v=1, encoded PC name, ip:port hosts, 22-character code, 64-hex fingerprint; the QR code is a PNG");
 
+        var names = new[] { "", "a/b", "tab\tthere", "dot.", "CON", "com1.txt", "LPT³", new string('x', 81) }.Select(NewProject.Problem).ToList();
+        var projects = Path.Combine(folder, "projects");
+        Directory.CreateDirectory(Path.Combine(projects, "First"));
+        var (made, madeReply) = NewProject.Create(projects, " RiverRun ");
+        var (_, twice) = NewProject.Create(projects, "riverrun");
+        var (_, none) = NewProject.Create(null, "RiverRun");
+        var (_, sneaky) = NewProject.Create(projects, "..");
+        check(
+            "new-project",
+            names.All(problem => problem != null) && NewProject.Problem("River Run 2") == null && NewProject.Problem("CONSOLE") == null
+                && NewProject.Folder(Path.Combine(projects, "First"), []) == projects
+                && NewProject.Folder(@"Q:\", [Path.Combine(projects, "First")]) == projects
+                && madeReply.Status == 201 && made == Path.Combine(projects, "RiverRun") && Directory.Exists(made)
+                && twice.Status == 409 && twice.Error == "There's already a folder called riverrun in " + projects + "."
+                && none.Status == 404 && sneaky.Status == 400,
+            "names follow the contract's rules; the folder holds the workspace; 201 makes an empty folder, 409 when it is there, 404 without a folder");
+
         var agents = AgentStore.Defaults();
         var claude = agents.First(agent => agent.Command == "claude");
         using var summary = JsonDocument.Parse("{\"id\":\"s1\"}");
         // Probe results are found by agent name, so the ones from before a refresh still count.
         var probed = new Dictionary<string, ToolStatus> { [claude.Name] = new(AgentStore.Defaults().First(agent => agent.Command == "claude"), @"C:\Tools\claude.exe", "2.1.0") };
         var state = JsonSerializer.SerializeToElement(
-            RemoteModel.State(folder, [folder], agents, probed, [new AgentAccount { Agent = claude.Name, Name = "main" }], null, [summary.RootElement], ["192.168.1.20:47821"]),
+            RemoteModel.State(folder, [folder], agents, probed, [new AgentAccount { Agent = claude.Name, Name = "main" }], null, [summary.RootElement], ["192.168.1.20:47821"], RemoteModel.Power("agents", true)),
             RemoteModel.Wire);
         var record = new ChatRecord { Id = "c1", Agent = claude.Name, Account = "main", Workspace = folder, ChatId = "c1", Started = DateTimeOffset.Now, LastActive = DateTimeOffset.Now };
         var chat = JsonSerializer.SerializeToElement(RemoteModel.Chats([record], agents, _ => "s1")[0], RemoteModel.Wire);
         check(
             "remote-json",
-            Names(state, "api pc version workspace workspaces agents accounts sessions hosts")
+            Names(state, "api pc version workspace projectsFolder power workspaces agents accounts sessions hosts")
+                && Names(state.GetProperty("power"), "keepAwake awake onBattery lidSleeps")
+                && Json.Str(state, "projectsFolder") == Path.GetDirectoryName(folder)
                 && state.GetProperty("hosts")[0].GetString() == "192.168.1.20:47821"
                 && state.GetProperty("agents")[0].GetProperty("installed").GetBoolean() && Json.Str(state.GetProperty("agents")[0], "version") == "2.1.0"
                 && Json.Str(chat, "title") == "New chat" && !chat.GetProperty("named").GetBoolean()
@@ -618,6 +637,10 @@ static class RemoteSelfCheck
             var unknownBody = await Body(unknown);
             using var started = await Send(http, HttpMethod.Post, root + "sessions", token, new { account = "Claude Code|main", workspace = folder });
             var startedBody = await Body(started);
+            using var badProject = await Send(http, HttpMethod.Post, root + "projects", token, new { name = " nul.txt " });
+            var badProjectBody = await Body(badProject);
+            using var project = await Send(http, HttpMethod.Post, root + "projects", token, new { name = " RiverRun " });
+            var projectBody = await Body(project);
             check(
                 "remote-requests",
                 input.StatusCode == HttpStatusCode.OK && inputBody.TryGetProperty("ok", out var ok) && ok.GetBoolean() && host.Asked.Contains(("remoteInput", deviceId))
@@ -626,8 +649,11 @@ static class RemoteSelfCheck
                     && badKey.StatusCode == HttpStatusCode.BadRequest && Json.Str(badKeyBody, "error") == "Unknown key: f13"
                     && badId.StatusCode == HttpStatusCode.NotFound
                     && unknown.StatusCode == HttpStatusCode.NotFound && Json.Str(unknownBody, "error") == "Unknown request."
-                    && started.StatusCode == HttpStatusCode.Created && Json.Str(startedBody, "id") == "s9" && host.Asked.Contains(("remoteStart", deviceId)),
-                "input reaches the page with the phone's device id; bad JSON 400, too long 413, unknown key 400, bad pane id 404, unknown route 404, start 201");
+                    && started.StatusCode == HttpStatusCode.Created && Json.Str(startedBody, "id") == "s9" && host.Asked.Contains(("remoteStart", deviceId))
+                    && badProject.StatusCode == HttpStatusCode.BadRequest && Json.Str(badProjectBody, "error") == "Windows keeps NUL for itself. Choose another name."
+                    && project.StatusCode == HttpStatusCode.Created && Json.Str(projectBody, "workspace") == "RiverRun" && host.Projects.SequenceEqual(["RiverRun"]),
+                "input reaches the page with the phone's device id; bad JSON 400, too long 413, unknown key 400, bad pane id 404, unknown route 404, start 201, "
+                    + "a new project's name is trimmed and checked before it reaches the window");
 
             await WaitingForPageAsync(check, server, host, http, root, fingerprint);
 
@@ -1085,6 +1111,14 @@ static class RemoteSelfCheck
             if (Hold is not { } hold) return Task.FromResult(RemoteReply.Ok(new { ok = true }));
             Interlocked.Increment(ref _held);
             return hold.Task;
+        }
+
+        public ConcurrentQueue<string> Projects { get; } = new();
+
+        public Task<RemoteReply> CreateProjectAsync(string device, string name)
+        {
+            Projects.Enqueue(name);
+            return Task.FromResult(new RemoteReply(201, JsonSerializer.SerializeToElement(new { workspace = name })));
         }
 
         public Task<RemoteReply> StartAsync(string device, string account, string workspace)

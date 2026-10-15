@@ -39,7 +39,7 @@ How it stays safe:
 - HTTPS only (TLS 1.2 or 1.3). The PC makes its own certificate once (kept in your Windows user certificate store), and the phone accepts only that certificate: it gets the certificate's fingerprint from the QR code.
 - A pairing code works once, for 10 minutes; five wrong codes cancel it. Each phone gets its own token. The PC keeps only a hash of it in `remote.json`, and **Remove** in the Phone dialog cuts that phone off at once.
 - Only addresses on your local network or Tailscale can connect; the port stays closed to the internet even if the PC has a public address.
-- A paired phone can do what you can do inside the panes (read, type, approve, start, stop, resume, rename). It can't read files, change settings, start agents outside your workspaces or see account logins. Tokens, pairing codes and terminal text are never written to the log.
+- A paired phone can do what you can do inside the panes (read, type, approve, start, stop, resume, rename). It can also make a new, empty project folder next to your current project (**New project** on the phone), which then appears at the end of the sidebar. It can't read files, change settings, start agents outside your workspaces or see account logins. Tokens, pairing codes and terminal text are never written to the log.
 
 ## Requirements
 

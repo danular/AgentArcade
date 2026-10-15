@@ -54,8 +54,8 @@ agentarcade://pair?v=1&name=DESKTOP-ARCADE&hosts=192.168.1.20:47821,100.101.102.
 | 400 | Bad input | Show the error |
 | 401 | Token missing or unknown (the phone was removed) | Forget the pairing, open Connect: "This phone isn't paired any more. Pair it again on your PC." |
 | 403 | Pairing code wrong or expired | Show the error, offer to scan again |
-| 404 | Unknown session or chat | Show the error, refresh the state |
-| 409 | Conflict (already open, still running, ended) | Show the error |
+| 404 | Unknown session or chat, or no projects folder | Show the error, refresh the state |
+| 409 | Conflict (already open, still running, ended, folder already there) | Show the error |
 | 413 | Body too large | Show the error |
 | 429 | Too many requests or pairing attempts | Wait, then retry |
 | 503 | Agent Arcade is busy (its window isn't ready, or the page didn't answer within 10 s) | "Agent Arcade is busy, try again" |
@@ -71,6 +71,7 @@ agentarcade://pair?v=1&name=DESKTOP-ARCADE&hosts=192.168.1.20:47821,100.101.102.
 | `GET /api/v1/history` | | `{ "chats": [Chat] }`, newest first, at most 300 |
 | `GET /api/v1/sessions/{id}/screen?lines=200` | | `Screen` (lines 1 to 2000, default 200) |
 | `POST /api/v1/sessions` | `{ "account", "workspace" }` | 201 `{ "id" }` of the new pane |
+| `POST /api/v1/projects` | `{ "name" }` | 201 `{ "workspace" }`, the new project's folder |
 | `POST /api/v1/chats/{chat}/resume` | | 201 `{ "id" }`; 409 `{ "error", "id" }` when it is already open |
 | `POST /api/v1/sessions/{id}/input` | `{ "text", "submit" }` | `{ "ok": true }` |
 | `POST /api/v1/sessions/{id}/keys` | `{ "keys": ["down", "enter"] }` | `{ "ok": true }` |
@@ -122,6 +123,20 @@ Up to 32 key names, sent 40 ms apart:
 - **Close** removes a pane whose agent has ended.
 - **Rename** sets the chat title like double-clicking it on the PC. An empty title goes back to the automatic one.
 
+### new project
+
+Makes an empty folder called `name` in `projectsFolder` (see State) and adds it to the end of the sidebar on the PC, like **+** (Add a project folder) does with a folder that is already there. The PC keeps showing the workspace it showed before. The answer is the new folder, and the next `state` lists it at the end of `workspaces`.
+
+```json
+{ "name": "RiverRun" }
+```
+
+```json
+{ "workspace": "C:\\Projects\\RiverRun" }
+```
+
+The phone sends only a name, never a path. Both sides remove spaces around it and check it: 1 to 80 characters, none of `\ / : * ? " < > |` and no control characters, not ending in a dot, and not a name Windows keeps for devices (`CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9` and `COM¹`–`LPT³`, in any case, also with an extension such as `nul.txt`). Answers: 400 for a name that breaks these rules, 404 when the PC has no projects folder (`projectsFolder` is `null`), 409 when something called `name` is already in that folder (`"There's already a folder called RiverRun in C:\Projects."`).
+
 ## 4. WebSocket: `wss://<host>/api/v1/live`
 
 Open it with the `Authorization` header. Both sides send WebSocket ping frames every 20 s; if nothing at all arrives for 45 s the phone reconnects. permessage-deflate compression is on when both sides support it (screens compress well).
@@ -168,7 +183,9 @@ Close codes: `1000` replaced by a newer connection from the same phone (only an 
   "pc": "DESKTOP-ARCADE",
   "version": "1.3.0",
   "workspace": "C:\\Projects\\HimalayanExpedition",
+  "projectsFolder": "C:\\Projects",
   "hosts": ["192.168.1.20:47821", "100.101.102.103:47821"],
+  "power": { "keepAwake": "agents", "awake": true, "onBattery": false, "lidSleeps": true },
   "workspaces": [
     { "path": "C:\\Projects\\HimalayanExpedition", "name": "HimalayanExpedition", "exists": true, "unity": true },
     { "path": "C:\\Projects\\AgentArcade", "name": "AgentArcade", "exists": true, "unity": false }
@@ -186,9 +203,20 @@ Close codes: `1000` replaced by a newer connection from the same phone (only an 
 ```
 
 - `workspace` is the project the PC shows right now.
+- `projectsFolder` is where a new project goes (see new project): the folder that holds `workspace`, or when that has none or is missing, the folder of the first listed workspace that has one. `null` when no workspace has one. A PC older than this field leaves it out, and the phone then offers no New project.
 - `color` is the agent's brand color by command (`claude #d97757`, `codex #10a37f`, `gemini #4f8cff`, `copilot #a371f7`, `cursor-agent #7c8aa5`) or `null`. When `null` the phone uses `hsl(hash % 360, 55%, 58%)` with `hash = (hash * 31 + charCode) >>> 0` over the agent name, like the desktop.
 - `signedIn` is `true`, `false` or `null` (still checking or unknown).
-- `hosts` lists the addresses the PC listens on now, in the same order and format as `hosts` in the pairing link.
+- `hosts` lists the addresses the PC listens on now, in the same order and format as `hosts` in the pairing link. An address in `100.64.0.0/10` is the PC's Tailscale address, which also works away from home; the others are on the PC's local network.
+- `power` tells whether the PC may go to sleep, which would stop the agents and cut the phone off. The phone only shows it; the setting is changed on the PC (Phone dialog → Keep this PC awake). A PC older than this field leaves it out, and the phone then shows nothing about sleep.
+
+| Field | Meaning |
+| --- | --- |
+| `keepAwake` | The PC's setting: `agents` (Windows doesn't sleep on its own while agents run), `remote` (also while Phone remote is on, so the PC stays reachable), `off` (Windows decides) |
+| `awake` | `true` while the PC keeps Windows from sleeping on its own right now |
+| `onBattery` | `true` when the PC runs on battery: Windows then still sleeps a few minutes after its sleep time |
+| `lidSleeps` | `true` on a laptop whose lid, when closed while plugged in, puts it to sleep |
+
+The state goes out again when `awake` or `onBattery` changes.
 - While the PC is still checking the agents (just after start or Refresh), `installed` and `version` keep their last known values.
 
 ### Session
@@ -351,7 +379,7 @@ Sent when the desktop would turn the pane amber or notify (`needsYou` or `done`)
 - **Certificate:** made on the PC the first time (ECDSA P-256, `CN=Agent Arcade Remote`, valid 20 years) and kept in the Windows user certificate store. The phone pins its SHA-256 fingerprint from the pairing link.
 - **Pairing codes:** 16 random bytes, 10 minutes, single use, five wrong tries cancel the code. At most 10 pairing attempts per minute in total.
 - **Device tokens:** 32 random bytes (base64url). The PC stores only their SHA-256 hash in `%LOCALAPPDATA%\AgentArcade\remote.json` (with the phone's name, paired time and last seen) and compares hashes in constant time. **Remove** in the Phone dialog deletes the hash and disconnects that phone at once (close code 4401).
-- **What a phone can do** is what a person at the PC can do inside the panes: read the screens, type, answer, start, stop, resume and rename agents. It cannot read files, run anything outside an agent, change settings, or see account tokens.
+- **What a phone can do** is what a person at the PC can do inside the panes: read the screens, type, answer, start, stop, resume and rename agents. It cannot read files, run anything outside an agent, change settings, or see account tokens. The one thing it can make on the PC's disk is an empty project folder in `projectsFolder`, under a name the PC checked.
 - **Limits:** request bodies up to 64 KB, `input` text up to 16 KB, 20 requests per second per phone and at most 4 of its requests waiting for Agent Arcade at once (429 above that), 4 phones connected at once, 8 open connections per address, 4 KB per WebSocket message from the phone.
 - **Network:** the PC accepts connections only from local and Tailscale addresses (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10), so the port stays closed to the internet even when the PC has a public address. TLS 1.2 and 1.3 only, HTTP/1.1 only. More than 20 wrong tokens in a minute from one address lock that address out for a minute.
 - **Removing a phone** also cancels typing it asked for that hasn't happened yet; so does turning Phone remote off.
@@ -373,6 +401,8 @@ curl -k -X POST https://127.0.0.1:47821/api/v1/sessions/s1/input -H "Authorizati
   -H 'Content-Type: application/json' -d '{"text":"Say hi in one line.","submit":true}'
 curl -k -X POST https://127.0.0.1:47821/api/v1/sessions/s1/keys -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"keys":["esc"]}'
+curl -k -X POST https://127.0.0.1:47821/api/v1/projects -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"name":"RiverRun"}'
 ```
 
 For the WebSocket, any client that can send the `Authorization` header works, for example `websocat -k -H "Authorization: Bearer $TOKEN" wss://127.0.0.1:47821/api/v1/live`, then type `{"type":"watch","id":"s1","lines":40}`.

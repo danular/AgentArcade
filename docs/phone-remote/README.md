@@ -50,6 +50,8 @@ Then paste these into the Gemini chat in **Agent Mode**, one at a time. After ea
 | [step3d-Agent-Mode-alerts.txt](step3d-Agent-Mode-alerts.txt) | Notifications, staying connected in the background |
 | [step3e-Agent-Mode-finish.txt](step3e-Agent-Mode-finish.txt) | Tablets, empty and error states, motion, accessibility, tests, release |
 
+Later, with Claude Code in Android Studio: [step4-Claude-Code-Tailscale-and-sleep.txt](step4-Claude-Code-Tailscale-and-sleep.txt) shows whether the phone is connected over Wi-Fi or Tailscale, connects faster away from home, helps when the PC can't be reached (Tailscale missing or off, the PC asleep), and shows whether the PC may go to sleep (`power` in State).
+
 ## Step 4: pair your phone
 
 1. Put the app on your phone: turn on Developer options and USB debugging (or Wireless debugging), pick the phone in Android Studio, and press Run.
