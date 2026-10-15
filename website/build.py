@@ -63,6 +63,11 @@ SITE = {
     'apk_cert': '01e68ee0fb88710fb42780eae6e5532e9982d21a7546e9a60e8114c064086dce',
     'releases': 'https://github.com/danular/AgentArcade/releases',
     'discuss': 'https://github.com/danular/AgentArcade/discussions',
+    # The business behind Agent Arcade, as in the public KvK register (imprint on legal.html). Add the btw-id when known.
+    'company': '3Dmatters',
+    'kvk': '93618085',
+    'branch_number': '000059146834',
+    'contact': 'daanschuurmans25@hotmail.com',
     'issues': 'https://github.com/danular/AgentArcade/issues',
     'license': 'https://github.com/danular/AgentArcade/blob/main/LICENSE.md',
     'licensing': 'https://github.com/danular/AgentArcade/blob/main/LICENSING.md',
