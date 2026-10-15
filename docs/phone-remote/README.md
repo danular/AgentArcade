@@ -23,7 +23,7 @@ Steps 1 and 2 can run at the same time.
 1. Android Studio → **New Project** → **Create with AI**.
 2. Paste **[step2-Android-Create-with-AI-prompt.txt](step2-Android-Create-with-AI-prompt.txt)** into the text box. If the box won't take all of it, paste the first two paragraphs there and the rest as your first message in Agent Mode.
 3. Attach the mockups from `mockups/`: `00-overview.png`, `01-agents.png`, `02-chat-needs-ok.png`, `03-chat-working.png` and `08-style-guide.png`. If it takes only one image, use `00-overview.png`.
-4. **Next**. Name: `Agent Arcade Remote`, package: `com.agentarcade.remote`, minimum SDK: API 26. **Finish**.
+4. **Next**. Name: `Agent Arcade Remote`, package: `com.agentarcade.remote` (since 1.1 the app id is `nl.danular.remote`; the code's namespace stayed `com.agentarcade.remote`), minimum SDK: API 26. **Finish**.
 5. Gemini shows a plan first. Check that it has the six screens, the dark theme with the exact colors, the demo data, `@Serializable` models with the listed field names, and no Hilt. If something is missing, ask it to change the plan, then approve it.
 
 Tip: the results get much better with your own Gemini API key: **Settings → Tools → AI → Model Providers → Google AI Studio**.

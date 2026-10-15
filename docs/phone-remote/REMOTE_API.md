@@ -567,7 +567,7 @@ The phone skips the alert when `seenOnPc` is true, when that chat is open on the
 
 ### run
 
-(1.1, feature `run`.) Pane ids (`s1`, `s2`, ...) start again at `s1` whenever Agent Arcade's page starts: when Agent Arcade starts, and if its page ever loads again (every agent stops then). So an id alone doesn't say which pane it is after Agent Arcade started again; `run` does.
+(1.1, feature `run`.) Pane ids (`s` and up to 9 digits) are numbered from a new starting point whenever Agent Arcade's page starts: when Agent Arcade starts, and if its page ever loads again (every agent stops then). From 1.3.4 that starting point is random, so ids rarely repeat, but nothing guarantees it. So an id alone doesn't say which pane it is after Agent Arcade started again; `run` does.
 
 - `run` is 16 lowercase hex characters (8 random bytes), for example `9c4e1a7f03b2d865`. The PC makes a new one each time its page starts, and keeps it until the next start. Within one run a pane id is never used for a second pane, so (`id`, `run`) names one pane for good.
 - State, every Session and every Attention carry it. A Session always has the `run` of the State it came with.
