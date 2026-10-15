@@ -41,6 +41,9 @@ sealed class MainForm : Form, IRemoteHost
     // Tells the page every 5 s whether someone is at the PC (presence), so a pane left focused still alerts.
     readonly System.Windows.Forms.Timer _presence = new() { Interval = 5000 };
     bool _locked;
+    // The update notice: the first look a minute after start, then every hour whether a day has passed (UpdateCheck).
+    readonly System.Windows.Forms.Timer _updates = new() { Interval = 60_000 };
+    bool _updateChecking;
     readonly ImageServer _images = new();
     readonly Dictionary<string, ImageWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
     NotifyIcon? _tray;
@@ -77,6 +80,11 @@ sealed class MainForm : Form, IRemoteHost
         Controls.Add(_web);
         _flush.Tick += (_, _) => Flush();
         _presence.Tick += (_, _) => PostPresence();
+        _updates.Tick += (_, _) =>
+        {
+            _updates.Interval = 3_600_000;
+            CheckForUpdate();
+        };
         Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
         _remote = new RemoteServer(this, Path.Combine(AppSettings.Folder, "remote.json"));
@@ -180,6 +188,7 @@ sealed class MainForm : Form, IRemoteHost
         core.WebMessageReceived += OnMessage;
         _flush.Start();
         _presence.Start();
+        _updates.Start();
         core.Navigate("https://" + Host + "/index.html");
     }
 
@@ -201,6 +210,7 @@ sealed class MainForm : Form, IRemoteHost
         Hide();
         _flush.Stop();
         _presence.Stop();
+        _updates.Stop();
         Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
         StopAll();
@@ -251,6 +261,7 @@ sealed class MainForm : Form, IRemoteHost
                     StopAll();
                     RemotePageReady();
                     PostPresence();
+                    PostAppInfo();
                     Run(RefreshAsync, "refresh");
                     break;
                 case "refresh":
@@ -414,6 +425,12 @@ sealed class MainForm : Form, IRemoteHost
                         UpdateAwake();
                     }
                     PostRemoteInfo();
+                    break;
+                case "updateCheck":
+                    _settings.UpdateCheck = m.TryGetProperty("on", out var check) && check.ValueKind == JsonValueKind.True;
+                    _settings.Save();
+                    PostAppInfo();
+                    CheckForUpdate();
                     break;
                 case "editAgents":
                     AgentStore.Load();
@@ -600,6 +617,57 @@ sealed class MainForm : Form, IRemoteHost
         Show();
         Activate();
         if (id.Length > 0) Post(new { type = "focusSession", session = id });
+    }
+
+    // ---------- version and update notice ----------
+
+    // The sidebar shows the version, whether the update check is on, and a newer release when one was seen.
+    void PostAppInfo()
+    {
+        var tag = _settings.UpdateTag;
+        var newer = _settings.UpdateCheck && tag != null && UpdateCheck.IsNewer(tag, RemoteModel.Version);
+        Post(new
+        {
+            type = "appInfo",
+            version = RemoteModel.Version,
+            releases = UpdateCheck.Releases,
+            updateCheck = _settings.UpdateCheck,
+            update = newer ? new { version = UpdateCheck.Shown(tag!), url = UpdateCheck.PageFor(_settings.UpdateUrl) } : null,
+        });
+    }
+
+    // At most once a day, off the UI thread. Failures stay silent: no toast, and the log says only that it failed.
+    void CheckForUpdate()
+    {
+        if (!_settings.UpdateCheck || _updateChecking || !UpdateCheck.Due(_settings.UpdateCheckedAt, DateTimeOffset.Now)) return;
+        _updateChecking = true;
+        Run(async () =>
+        {
+            UpdateCheck.Release? release = null;
+            try
+            {
+                // Saved first, so a check that fails or hangs isn't tried again before tomorrow.
+                _settings.UpdateCheckedAt = DateTimeOffset.Now;
+                _settings.Save();
+                release = await Task.Run(UpdateCheck.LatestAsync);
+                if (release != null)
+                {
+                    _settings.UpdateTag = release.Tag;
+                    _settings.UpdateUrl = release.Url;
+                    _settings.Save();
+                }
+            }
+            catch
+            {
+                release = null;
+            }
+            finally
+            {
+                _updateChecking = false;
+            }
+            if (release == null) Log("update check failed");
+            else PostAppInfo();
+        }, "update check");
     }
 
     // ---------- images ----------

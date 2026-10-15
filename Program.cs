@@ -139,6 +139,29 @@ static class SelfCheck
         Check("presence", Presence.TryIdleMs(out var idle) && idle >= 0 && idle <= Environment.TickCount64 && Presence.Away(true),
             "the time since the last keyboard or mouse input can be read (nothing about the input itself); a locked PC counts as away");
 
+        // The update notice, offline: a fake newer tag against this version, and what an API answer may contain.
+        try
+        {
+            var thisVersion = UpdateCheck.Parse(RemoteModel.Version) ?? new Version(0, 0, 0, 0);
+            var fakeNewer = "v" + thisVersion.Major + "." + thisVersion.Minor + "." + (thisVersion.Build + 1);
+            var fake = UpdateCheck.FromJson("{\"tag_name\":\"" + fakeNewer + "\",\"html_url\":\"https://github.com/danular/AgentArcade/releases/tag/" + fakeNewer + "\"}");
+            var now = DateTimeOffset.Now;
+            Check(
+                "update-compare",
+                UpdateCheck.IsNewer(fakeNewer, RemoteModel.Version) && fake?.Tag == fakeNewer && fake.Url.EndsWith("/releases/tag/" + fakeNewer, StringComparison.Ordinal)
+                    && !UpdateCheck.IsNewer("v" + RemoteModel.Version, RemoteModel.Version) && !UpdateCheck.IsNewer("v1.3.2", "1.3.3")
+                    && UpdateCheck.IsNewer("v1.10.0", "1.9.9") && !UpdateCheck.IsNewer("v1.3", "1.3.0") && !UpdateCheck.IsNewer("v1.4.0-beta", "1.3.3")
+                    && !UpdateCheck.IsNewer("latest", "1.3.3") && UpdateCheck.FromJson("{\"tag_name\":\"<b>9.9</b>\"}") == null
+                    && UpdateCheck.PageFor("https://example.com/danular/AgentArcade/releases/tag/v9.9.9") == UpdateCheck.Releases
+                    && UpdateCheck.Due(null, now) && !UpdateCheck.Due(now.AddHours(-23), now) && UpdateCheck.Due(now.AddHours(-25), now) && UpdateCheck.Due(now.AddDays(2), now)
+                    && UpdateCheck.Api.EndsWith("/releases/latest", StringComparison.Ordinal),
+                fakeNewer + " is newer than " + RemoteModel.Version + "; the same, older, pre-release and odd tags aren't; once a day; only the API's JSON, no download");
+        }
+        catch (Exception ex)
+        {
+            Check("update-compare", false, ex.Message);
+        }
+
         try
         {
             var ptyText = new System.Text.StringBuilder();

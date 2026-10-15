@@ -756,6 +756,47 @@ async function textSizeDialog() {
   setFontSize(result ? result.size : before);
 }
 
+// ---------- version and update notice ----------
+
+// appInfo from the C# side: version, releases (the releases page), updateCheck (on or off) and update ({ version, url }
+// of a newer release, or null). The C# side asks GitHub at most once a day; the page only shows what it found.
+let appInfo = null;
+
+function appInfoArrived(message) {
+  appInfo = message;
+  $('#app-version').textContent = message.version ? `v${message.version}` : '';
+  renderUpdateNote();
+}
+
+// Hidden for a version you closed it for; the next version shows again.
+function renderUpdateNote() {
+  const note = $('#update-note');
+  const update = appInfo?.update;
+  note.hidden = !update || localStorage.getItem('updateDismissed') === update.version;
+  note.innerHTML = note.hidden ? '' :
+    `<button class="update-link" data-update-open title="Open the release page">${icon('download', 14)}` +
+    `<span class="ellipsis">Agent Arcade ${esc(update.version)} is available</span></button>` +
+    `<button class="icon-btn small" data-update-close title="Hide until the next version">${icon('close', 13)}</button>`;
+}
+
+async function versionDialog() {
+  if (!appInfo) return;
+  await modal({
+    title: `Agent Arcade ${appInfo.version}`,
+    body: `<label class="switch"><input type="checkbox" name="updateCheck"${appInfo.updateCheck ? ' checked' : ''}>` +
+      '<span class="switch-track"></span><span>Tell me when a new version is out</span></label>' +
+      "<p class=\"muted\">Once a day Agent Arcade asks GitHub's releases API for the newest version number. It sends no " +
+      'identifier and downloads nothing: you update yourself from the releases page.</p>' +
+      '<p><button type="button" class="text-btn link" data-releases>All releases</button></p>',
+    confirm: 'Done',
+    cancel: null,
+    opened: root => {
+      root.querySelector('[name="updateCheck"]').addEventListener('change', event => send({ type: 'updateCheck', on: event.target.checked }));
+      root.querySelector('[data-releases]').addEventListener('click', () => send({ type: 'openUrl', url: appInfo.releases }));
+    },
+  });
+}
+
 function scheduleFit(session) {
   if (session.fitFrame) return;
   session.fitFrame = requestAnimationFrame(() => {
@@ -2740,6 +2781,16 @@ $('#edit-agents').addEventListener('click', () => send({ type: 'editAgents' }));
 $('#text-size').addEventListener('click', textSizeDialog);
 $('#phone').addEventListener('click', openPhone);
 showPhones();
+$('#app-version').addEventListener('click', versionDialog);
+$('#update-note').addEventListener('click', event => {
+  const update = appInfo?.update;
+  if (!update) return;
+  if (event.target.closest('[data-update-open]')) send({ type: 'openUrl', url: update.url });
+  if (event.target.closest('[data-update-close]')) {
+    localStorage.setItem('updateDismissed', update.version);
+    renderUpdateNote();
+  }
+});
 $('#open-unity').addEventListener('click', () => send({ type: 'openUnity' }));
 $('#open-folder').addEventListener('click', () => send({ type: 'openFolder' }));
 $('#new-agent').addEventListener('click', event => newAgentMenu(event.currentTarget));
@@ -2897,6 +2948,9 @@ if (bridge) {
       case 'toast':
         toast(message.text, message.kind);
         if (message.kind === 'error') pendingResume = null;
+        break;
+      case 'appInfo':
+        appInfoArrived(message);
         break;
       case 'accountAdded': {
         const account = accountOf(message.account);

@@ -38,6 +38,12 @@ sealed class AppSettings
     public int RemotePort { get; set; } = 47821;
     // When Windows may not sleep on its own: "agents" while agents run, "remote" also while Phone remote is on, "off".
     public string KeepAwake { get; set; } = AgentArcade.KeepAwake.Agents;
+    // The update notice (UpdateCheck class): on by default, at most once a day. UpdateTag and UpdateUrl are the newest
+    // release it saw, so the notice shows again after a restart without asking GitHub again.
+    public bool UpdateCheck { get; set; } = true;
+    public DateTimeOffset? UpdateCheckedAt { get; set; }
+    public string? UpdateTag { get; set; }
+    public string? UpdateUrl { get; set; }
 
     static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
