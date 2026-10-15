@@ -634,6 +634,14 @@ sealed class MainForm : Form, IRemoteHost
         var path = text.Trim().Trim('"', '\'', '`');
         if (path.StartsWith('~')) path = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + path[1..];
         if (_sessions.TryGetValue(id, out var session)) workspace = session.Workspace;
+        // A network path (\\server\share) isn't touched: Windows would sign in there with your account. Pane text could
+        // name any computer. Checked before and after the path is made whole; the path itself isn't shown or logged.
+        const string network = "Agent Arcade doesn't open images from network paths (\\\\server\\share).";
+        if (ProjectFiles.IsNetworkPath(path))
+        {
+            Toast(network, "error");
+            return;
+        }
         try
         {
             if (!Path.IsPathFullyQualified(path))
@@ -646,6 +654,11 @@ sealed class MainForm : Form, IRemoteHost
         catch
         {
             Toast("That isn't a file path: " + text, "error");
+            return;
+        }
+        if (ProjectFiles.IsNetworkPath(path))
+        {
+            Toast(network, "error");
             return;
         }
         if (!ImageServer.IsImage(path) || !File.Exists(path))
