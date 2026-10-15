@@ -28,6 +28,9 @@ if (Test-Path $zip) { Remove-Item $zip }
 # which other unzip tools turn into flat file names.
 & (Join-Path $env:SystemRoot 'System32\tar.exe') -a -cf $zip -C $work $name
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# Upload both: the website and README link to releases/latest/download/AgentArcade-win-x64.zip, which always
+# serves the newest release.
+Copy-Item $zip (Join-Path (Split-Path $zip) 'AgentArcade-win-x64.zip') -Force
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 Write-Host $zip
 Write-Host "SHA-256 $hash"
