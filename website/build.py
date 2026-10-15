@@ -29,10 +29,10 @@ SITE = {
     'base': 'https://danular.github.io/AgentArcade/',
     'voice': 'Agent Arcade Voice',
     'remote': 'Agent Arcade Remote',
-    'version': '1.3.1',
+    'version': '1.3.2',
     'released': '15 Oct 2026',
     'zip_size': '63 MB',
-    'sha256': '2f4d6ef0bcfa4ba3c9fcc3e0668ebceb0d6be852f0ee257e1108d6a89141ee75',
+    'sha256': 'f81efd2f44cf021f1d2a4324a76988b0dd9fb4dac21013826ff611137ada2c22',
     'github': 'https://github.com/danular/AgentArcade',
     'download': 'https://github.com/danular/AgentArcade/releases/latest/download/AgentArcade-win-x64.zip',
     # The Android app rides along on every GitHub release (release.ps1 copies it), so this name always serves the newest.
