@@ -70,6 +70,8 @@ interface IRemoteHost
     Task<RemoteReply> CreateProjectAsync(string device, string name);
     // The page drops the typing it still has queued for this phone, or for every phone when device is null.
     void Cancel(string? device);
+    // The current run (REMOTE_API.md, run): new each time the page starts.
+    string Run { get; }
     // The panes the phones watch changed; the page sends a screen for each pane in refresh at once.
     void WatchesChanged(IReadOnlyList<string> refresh);
     // A phone connected, left, paired or was removed, or the pairing code changed.
@@ -785,9 +787,10 @@ static class RemoteModel
 
     public static object Power(string keepAwake, bool awake, bool onBattery, bool lidSleeps) => new { keepAwake, awake, onBattery, lidSleeps };
 
-    // tools holds the probe results by agent name; while the PC checks again, the previous ones. hosts are the
-    // addresses of the pairing link.
+    // run is the page's current run (sessions carry the same one). tools holds the probe results by agent name; while
+    // the PC checks again, the previous ones. hosts are the addresses of the pairing link.
     public static object State(
+        string run,
         string workspace,
         IEnumerable<string> projects,
         IEnumerable<AgentDef> agents,
@@ -797,13 +800,14 @@ static class RemoteModel
         IEnumerable<JsonElement> sessions,
         IEnumerable<string> hosts,
         object? power = null)
-        => State(Pc, Version, workspace, NewProject.Folder(workspace, projects), Workspaces(projects), agents, tools, accounts, infos, sessions, hosts, power);
+        => State(Pc, Version, run, workspace, NewProject.Folder(workspace, projects), Workspaces(projects), agents, tools, accounts, infos, sessions, hosts, power);
 
     // The same from parts that are already known: what this PC is called, its version, its projects folder and the
     // workspaces. The contract fixtures pass made-up ones, so nothing in them comes from this PC.
     public static object State(
         string pc,
         string version,
+        string run,
         string workspace,
         string? projectsFolder,
         List<object> workspaces,
@@ -818,6 +822,7 @@ static class RemoteModel
         api = Api,
         pc,
         version,
+        run,
         workspace,
         projectsFolder,
         power,
@@ -860,6 +865,28 @@ static class RemoteModel
         => history.OrderByDescending(chat => chat.LastActive).Take(300)
             .Select(chat => Chat(chat, agents.FirstOrDefault(agent => agent.Name == chat.Agent), sessionOf(chat)))
             .ToList();
+
+    // A new run (REMOTE_API.md, run): 8 random bytes as 16 lowercase hex characters.
+    public static string NewRun() => Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8));
+
+    // A Session or Attention from the page as the phone gets it: TextGuard applied (Redacted), then this side's run
+    // as its last field. A run the page put in is replaced, so it is always the run of the State it goes with.
+    public static JsonElement Summary(JsonElement item, string run)
+    {
+        var redacted = Redacted(item);
+        if (redacted.ValueKind != JsonValueKind.Object) return redacted.Clone();
+        var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, WireWriter))
+        {
+            writer.WriteStartObject();
+            foreach (var property in redacted.EnumerateObject())
+                if (!property.NameEquals("run")) property.WriteTo(writer);
+            writer.WriteString("run", run);
+            writer.WriteEndObject();
+        }
+        using var json = JsonDocument.Parse(stream.ToArray());
+        return json.RootElement.Clone();
+    }
 
     // The fields the phone matches by; they are never changed.
     static readonly HashSet<string> MatchFields = ["id", "chat", "account", "workspace"];

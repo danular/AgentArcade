@@ -61,6 +61,8 @@ sealed class MainForm : Form, IRemoteHost
     readonly OrderedDictionary<string, JsonElement> _summaries = new();
     readonly ConcurrentDictionary<string, PageRequest> _pageRequests = new();
     volatile bool _pageReady;
+    // The run of the page that runs now (REMOTE_API.md, run): State, Session and Attention carry it. Set on the UI thread.
+    volatile string _run = RemoteModel.NewRun();
     bool _remoteOn;
     bool _remoteClosed;
     (string Link, string Qr)? _qr;
@@ -397,7 +399,7 @@ sealed class MainForm : Form, IRemoteHost
                     break;
                 case "remoteAttention":
                     if (m.TryGetProperty("attention", out var attention) && attention.ValueKind == JsonValueKind.Object)
-                        _remote.Send(new { type = "attention", attention = RemoteModel.Redacted(attention) });
+                        _remote.Send(new { type = "attention", attention = RemoteModel.Summary(attention, _run) });
                     break;
                 case "remoteReply":
                     RemoteReplied(m);
@@ -1342,7 +1344,8 @@ sealed class MainForm : Form, IRemoteHost
         PostRemoteStatus();
     }
 
-    // A fresh page has no panes, and it doesn't know yet what the phones watch.
+    // A fresh page has no panes, and it doesn't know yet what the phones watch. It is a new run: the phones get a state
+    // with it before any Session of it (the page sends those only after remoteStatus).
     void RemotePageReady()
     {
         _pageReady = true;
@@ -1350,6 +1353,8 @@ sealed class MainForm : Form, IRemoteHost
         foreach (var id in _summaries.Keys.ToList()) _remote.Closed(id);
         _summaries.Clear();
         _remote.ForgetScreens();
+        _run = RemoteModel.NewRun();
+        if (_remote.Phones > 0) _remote.Send(new { type = "state", state = RemoteState() });
         if (_settings.RemoteEnabled && !_remote.Running) ApplyRemote();
         PostRemoteStatus();
         PostRemoteWatch(_remote.Watches().Select(watch => watch.Id).ToList());
@@ -1373,9 +1378,9 @@ sealed class MainForm : Form, IRemoteHost
             {
                 var id = Json.Str(session, "id");
                 if (id.Length == 0) continue;
-                var redacted = RemoteModel.Redacted(session.Clone());
-                _summaries[id] = redacted;
-                _remote.Send(new { type = "session", session = redacted });
+                var summary = RemoteModel.Summary(session, _run);
+                _summaries[id] = summary;
+                _remote.Send(new { type = "session", session = summary });
             }
         }
     }
@@ -1387,7 +1392,7 @@ sealed class MainForm : Form, IRemoteHost
         _summaries.Clear();
         foreach (var session in sessions.EnumerateArray())
         {
-            if (Json.Str(session, "id") is { Length: > 0 } id) _summaries[id] = RemoteModel.Redacted(session.Clone());
+            if (Json.Str(session, "id") is { Length: > 0 } id) _summaries[id] = RemoteModel.Summary(session, _run);
         }
     }
 
@@ -1549,7 +1554,7 @@ sealed class MainForm : Form, IRemoteHost
         });
     }
 
-    object RemoteState() => RemoteModel.State(_settings.ProjectPath, _settings.Projects, _agents, _lastTools, _accounts, _infos, _summaries.Values, RemoteHosts(),
+    object RemoteState() => RemoteModel.State(_run, _settings.ProjectPath, _settings.Projects, _agents, _lastTools, _accounts, _infos, _summaries.Values, RemoteHosts(),
         RemoteModel.Power(AwakeMode(), _awake.Reason != null));
 
     List<object> RemoteChats() => RemoteModel.Chats(_history, _agents, chat => _sessions.FirstOrDefault(pair => pair.Value.Chat == chat).Key);
@@ -1601,6 +1606,8 @@ sealed class MainForm : Form, IRemoteHost
 
     // The server already answered the phone's waiting requests; their late replies are dropped.
     void IRemoteHost.Cancel(string? device) => OnUi(() => Post(new { type = "remoteCancel", device }));
+
+    string IRemoteHost.Run => _run;
 
     void IRemoteHost.WatchesChanged(IReadOnlyList<string> refresh) => OnUi(() => PostRemoteWatch(refresh));
 

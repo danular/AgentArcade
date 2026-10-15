@@ -932,17 +932,19 @@ static class RemoteSelfCheck
 
         var agents = AgentStore.Defaults();
         var claude = agents.First(agent => agent.Command == "claude");
+        var stateRun = RemoteModel.NewRun();
         using var summary = JsonDocument.Parse("{\"id\":\"s1\"}");
         // Probe results are found by agent name, so the ones from before a refresh still count.
         var probed = new Dictionary<string, ToolStatus> { [claude.Name] = new(AgentStore.Defaults().First(agent => agent.Command == "claude"), @"C:\Tools\claude.exe", "2.1.0") };
         var state = JsonSerializer.SerializeToElement(
-            RemoteModel.State(folder, [folder], agents, probed, [new AgentAccount { Agent = claude.Name, Name = "main" }], null, [summary.RootElement], ["192.168.1.20:47821"], RemoteModel.Power("agents", true)),
+            RemoteModel.State(stateRun, folder, [folder], agents, probed, [new AgentAccount { Agent = claude.Name, Name = "main" }], null, [summary.RootElement], ["192.168.1.20:47821"], RemoteModel.Power("agents", true)),
             RemoteModel.Wire);
         var record = new ChatRecord { Id = "c1", Agent = claude.Name, Account = "main", Workspace = folder, ChatId = "c1", Started = DateTimeOffset.Now, LastActive = DateTimeOffset.Now };
         var chat = JsonSerializer.SerializeToElement(RemoteModel.Chats([record], agents, _ => "s1")[0], RemoteModel.Wire);
         check(
             "remote-json",
-            Names(state, "api pc version workspace projectsFolder power workspaces agents accounts sessions hosts")
+            Names(state, "api pc version run workspace projectsFolder power workspaces agents accounts sessions hosts")
+                && Json.Str(state, "run") == stateRun
                 && Names(state.GetProperty("power"), "keepAwake awake onBattery lidSleeps")
                 && Json.Str(state, "projectsFolder") == Path.GetDirectoryName(folder)
                 && state.GetProperty("hosts")[0].GetString() == "192.168.1.20:47821"
@@ -961,6 +963,20 @@ static class RemoteSelfCheck
                 && chat.GetProperty("resume").GetString() == "exact" && chat.GetProperty("open").GetBoolean() && chat.GetProperty("session").GetString() == "s1"
                 && Regex.IsMatch(RemoteModel.Version, @"^\d+\.\d+\.\d+\z"),
             "State, Chat, Hello and the pair answer have exactly the names in REMOTE_API.md; an untitled chat is \"New chat\"; version " + RemoteModel.Version);
+
+        // run: 16 hex characters, new each time; a Session or Attention gets the State's run as its last field, in place of
+        // any the page put in, and its text is still hidden.
+        var runs = Enumerable.Range(0, 50).Select(_ => RemoteModel.NewRun()).ToList();
+        using var fromThePage = JsonDocument.Parse("{\"id\":\"s7\",\"run\":\"page\",\"title\":\"use sk-proj-" + new string('b', 40) + "\",\"seenOnPc\":false}");
+        var stamped = RemoteModel.Summary(fromThePage.RootElement, stateRun);
+        var plain = RemoteModel.Summary(summary.RootElement, stateRun);
+        check(
+            "remote-run",
+            runs.All(run => Regex.IsMatch(run, "^[0-9a-f]{16}\\z")) && runs.Distinct().Count() == runs.Count
+                && stamped.EnumerateObject().Select(property => property.Name).SequenceEqual(["id", "title", "seenOnPc", "run"])
+                && Json.Str(stamped, "run") == stateRun && Json.Str(stamped, "title") == "use sk-proj-[hidden]" && Json.Str(stamped, "id") == "s7"
+                && plain.EnumerateObject().Select(property => property.Name).SequenceEqual(["id", "run"]),
+            "a run is 16 lowercase hex characters and new each time; Sessions and Attention carry the State's run, never the page's, with their text still hidden");
 
         // Only that nothing throws: whether this PC is on a public network right now is up to Windows. The network's name
         // stays out of the report.
@@ -1184,7 +1200,7 @@ static class RemoteSelfCheck
                 var screen = await Receive(live, cancel.Token);
                 check(
                     "remote-live",
-                    Json.Str(first, "type") == "hello" && first.GetProperty("state").GetProperty("api").GetInt32() == 1
+                    Json.Str(first, "type") == "hello" && first.GetProperty("state").GetProperty("api").GetInt32() == 1 && Json.Str(first.GetProperty("state"), "run") == host.Run
                         && Json.Str(second, "type") == "history" && second.GetProperty("chats").ValueKind == JsonValueKind.Array
                         && extensions.Contains("permessage-deflate", StringComparison.Ordinal) && extensions.Contains("server_no_context_takeover", StringComparison.Ordinal)
                         && host.Refreshed.Contains("s1") && Json.Str(screen, "type") == "screen"
@@ -1613,7 +1629,7 @@ static class RemoteSelfCheck
         public volatile TaskCompletionSource<RemoteReply>? Hold;
         public int Held => Volatile.Read(ref _held);
 
-        static object State() => RemoteModel.State(Path.GetTempPath(), [Path.GetTempPath()], AgentStore.Defaults(), null, [], null, [], []);
+        object State() => RemoteModel.State(Run, Path.GetTempPath(), [Path.GetTempPath()], AgentStore.Defaults(), null, [], null, [], []);
 
         public Task<object> StateAsync() => Task.FromResult(State());
 
@@ -1645,6 +1661,8 @@ static class RemoteSelfCheck
 
         public void Cancel(string? device) => Cancelled.Add(device);
 
+        public string Run { get; } = RemoteModel.NewRun();
+
         public void WatchesChanged(IReadOnlyList<string> refresh)
         {
             foreach (var id in refresh) Refreshed.Add(id);
@@ -1674,6 +1692,8 @@ static class RemoteFixtures
     const string River = Projects + @"\RiverRun", Garden = Projects + @"\StoneGarden", Maze = Projects + @"\OldMaze";
     const string FoamChat = "6f0c2b8e-5d1e-4f7a-9a43-2b1f7c9d0e11", StoneChat = "3b9d2f4a-8c1e-4e6b-a0d7-5f2c9e8b1a64";
     const string FoamQuestion = "Do you want to make this edit to WaterSurface.shader?";
+    // A fixed run, the contract's example, so the files are the same each time.
+    const string FixedRun = "9c4e1a7f03b2d865";
 
     // The sentences REMOTE_API.md's error table gives for these codes.
     const string DialogChanged = "The question on your PC changed, so nothing was sent. Check it and answer again.";
@@ -1742,8 +1762,8 @@ static class RemoteFixtures
             ["Codex|main"] = new(null),
         };
         var workspaces = RemoteModel.Workspaces([River, Garden, Maze], path => path != Maze, path => path == River);
-        var state = RemoteModel.State(Pc, Version, River, Projects, workspaces, agents, tools, accounts, infos,
-            [RemoteModel.Redacted(Page(Asking())), RemoteModel.Redacted(Page(Ended()))],
+        var state = RemoteModel.State(Pc, Version, FixedRun, River, Projects, workspaces, agents, tools, accounts, infos,
+            [RemoteModel.Summary(Page(Asking()), FixedRun), RemoteModel.Summary(Page(Ended()), FixedRun)],
             ["192.168.1.20:47821", "100.101.102.103:47821"], RemoteModel.Power("agents", true, false, true));
 
         var history = new List<ChatRecord>
@@ -1761,9 +1781,9 @@ static class RemoteFixtures
             ["state.json"] = RemoteModel.ReplyJson(RemoteReply.Ok(state)),
             ["history.json"] = RemoteModel.ReplyJson(RemoteReply.Ok(new { chats = (object)chats })),
             // WebSocket events, as RemoteServer sends them.
-            ["session.json"] = RemoteModel.Event(new { type = "session", session = RemoteModel.Redacted(Page(Working())) }),
+            ["session.json"] = RemoteModel.Event(new { type = "session", session = RemoteModel.Summary(Page(Working()), FixedRun) }),
             ["screen.json"] = RemoteModel.ScreenMessage(Page(Screen()), 6),
-            ["attention.json"] = RemoteModel.Event(new { type = "attention", attention = RemoteModel.Redacted(Page(Attention())) }),
+            ["attention.json"] = RemoteModel.Event(new { type = "attention", attention = RemoteModel.Summary(Page(Attention()), FixedRun) }),
             // Error bodies; the status is in the file name.
             ["error-409-dialogChanged.json"] = RemoteModel.ReplyJson(RemoteReply.Fail(409, "dialogChanged", DialogChanged)),
             ["error-403-notApproved.json"] = RemoteModel.ReplyJson(RemoteReply.Fail(403, "notApproved", NotApproved)),
