@@ -24,3 +24,12 @@ jobs:
           foreach ($f in 'publish/AgentArcade.exe', 'publish/web/index.html', 'publish/web/vendor/xterm.js') {
             if (-not (Test-Path $f)) { throw "missing $f" }
           }
+      - name: Check the bundled .NET runtime is the latest (release.ps1 enforces the same)
+        shell: pwsh
+        run: |
+          $config = Get-Content publish/AgentArcade.runtimeconfig.json -Raw | ConvertFrom-Json
+          $latest = [version](Invoke-RestMethod 'https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json').'latest-runtime'
+          foreach ($fw in $config.runtimeOptions.includedFrameworks) {
+            "$($fw.name) $($fw.version) (latest $latest)"
+            if ([version]$fw.version -lt $latest) { throw "$($fw.name) $($fw.version) is older than $latest" }
+          }
