@@ -87,7 +87,9 @@ static class SelfCheck
         Locator.RefreshPath();
         var settings = AppSettings.Load();
         Check("project", Directory.Exists(settings.ProjectPath), settings.ProjectPath);
-        Check("windows-terminal", Locator.FindOnPath("wt") != null, Locator.FindOnPath("wt") ?? "missing, agents open in a console window");
+        // Optional: without it, Open in terminal uses a console window.
+        if (Locator.FindOnPath("wt") is { } wt) Check("windows-terminal", true, wt);
+        else lines.Add("INFO windows-terminal — not installed, agents open in a console window");
 
         var agents = AgentStore.Load();
         Check("agents.json", agents.Count > 0, agents.Count + " agents in " + AgentStore.FilePath);
@@ -245,6 +247,51 @@ static class SelfCheck
                     && codexChat.ChatId.Length == 0 && ChatArgs.Resume(codexDef, codexChat) == "resume"
                     && defaults.Any(agent => agent.Command == "cursor-agent" && agent.Login == "login"),
                 "new chats get an id where the agent allows it; resume uses it");
+        }
+
+        {
+            // Made up here, never real keys: each kind is hidden wherever it sits in a line, and prose stays as it is.
+            var keys = new[]
+            {
+                "sk-ant-api03-" + new string('a', 40), "sk-proj-" + new string('b', 40), "sk-" + new string('c', 40),
+                "AIza" + new string('d', 35), "ghp_" + new string('e', 36), "gho_" + new string('f', 36), "github_pat_" + new string('g', 50),
+                "xoxb-1234567890-" + new string('h', 24), "AKIA" + new string('J', 16),
+                "eyJ" + new string('k', 12) + ".eyJ" + new string('m', 12) + "." + new string('n', 20),
+            };
+            var hidden = keys.Select(key => (Key: key, Text: TextGuard.Redact("use " + key + " now"))).ToList();
+            const string prose = "Fix the foam near the bridge: ask-me about task-runner, desk-reservation-system-version-two, sk-short, AKIA and eyJ at 10:30.";
+            var passed = hidden.All(item => item.Text.StartsWith("use ", StringComparison.Ordinal) && item.Text.EndsWith(" now", StringComparison.Ordinal)
+                    && item.Text.Contains("[hidden]", StringComparison.Ordinal) && !item.Text.Contains(item.Key[^8..], StringComparison.Ordinal)
+                    && TextGuard.Redact(item.Text) == item.Text)
+                && TextGuard.Redact(prose) == prose;
+            // What the phone gets: a pane summary from the page and a chat title from the history. The ids stay. The page's
+            // highest first pane id is still one Remote.cs accepts.
+            var key = keys[1];
+            var summary = JsonSerializer.SerializeToElement(new
+            {
+                id = "s799999999", workspace = @"C:\Projects\x", title = "use " + key, message = (string?)null,
+                preview = new[] { "line " + key }, plan = new { current = key, items = new[] { new { text = key, done = false } } },
+            });
+            var redacted = RemoteModel.Redacted(summary);
+            var chatTitle = Json.Str(JsonSerializer.SerializeToElement(RemoteModel.Chat(new ChatRecord { Id = "c1", Agent = "a", Title = "use " + key }, null, null)), "title");
+            var phone = !redacted.GetRawText().Contains(key[^8..], StringComparison.Ordinal) && Json.Str(redacted, "title") == "use sk-proj-[hidden]"
+                && Json.Str(redacted, "id") == "s799999999" && Json.Str(redacted, "workspace") == @"C:\Projects\x"
+                && chatTitle == "use sk-proj-[hidden]" && RemoteModel.Redacted(redacted).GetRawText() == redacted.GetRawText()
+                && RemoteModel.IsSessionId("s799999999");
+            Check("text-guard", passed && phone, passed && phone
+                ? keys.Length + " kinds of key (sk-ant, sk-proj, sk, AIza, ghp, gho, github_pat, xoxb, AKIA, JWT) are hidden, hiding twice changes nothing, "
+                    + "prose is unchanged; pane summaries and chat titles for the phone are hidden too, their ids kept"
+                : string.Join(" | ", hidden.Select(item => item.Text)) + " | " + TextGuard.Redact(prose) + " | phone: " + TextGuard.Redact(redacted.GetRawText()) + " " + chatTitle);
+
+            var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var masked = Mask("INFO Claude Code / main — jane.doe@example.com · max (" + profile + @"\.local\bin\claude.exe, " + profile.Replace('\\', '/') + "/x)", profile);
+            var network = HideNetworks("Windows treats \"Home Wi-Fi 5G\" as a public network. Set it to Private in Settings > Wi-Fi > Home Wi-Fi 5G.", ["Home Wi-Fi 5G"]);
+            Check(
+                "report-masking",
+                masked == @"INFO Claude Code / main — j…@example.com · max (%USERPROFILE%\.local\bin\claude.exe, %USERPROFILE%/x)"
+                    && !network.Contains("Home Wi-Fi", StringComparison.Ordinal) && network.Contains("[network]", StringComparison.Ordinal)
+                    && Mask("OK   project — " + profile + "Other", profile).Contains(profile + "Other", StringComparison.Ordinal),
+                "this report shows emails as their first letter and domain, the user folder as %USERPROFILE% and no network name");
         }
 
         var scratch = Path.Combine(Path.GetTempPath(), "AgentArcade-selfcheck-" + Environment.ProcessId);
@@ -437,18 +484,44 @@ static class SelfCheck
 
         var output = Path.Combine(Path.GetTempPath(), "AgentArcade-selfcheck.txt");
         lines.Add(ok ? "SELF_CHECK_OK" : "SELF_CHECK_FAIL");
-        File.WriteAllText(output, string.Join(Environment.NewLine, lines));
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var report = lines.Select(line => Mask(line, home)).ToList();
+        File.WriteAllText(output, string.Join(Environment.NewLine, report));
         try
         {
             AttachConsole(0xFFFFFFFF);
             Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true });
-            foreach (var line in lines) Console.WriteLine(line);
+            foreach (var line in report) Console.WriteLine(line);
         }
         catch
         {
             // The result file remains readable when this window has no console.
         }
         return ok ? 0 : 1;
+    }
+
+    // People share this report with bug reports, so an email keeps only its first letter and domain (a…@example.com)
+    // and the user's own folder becomes %USERPROFILE%.
+    static readonly Regex Email = new(@"([A-Za-z0-9])[A-Za-z0-9._%+\-]*@([A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)+)",
+        RegexOptions.CultureInvariant);
+
+    public static string Mask(string line, string profile)
+    {
+        profile = Path.TrimEndingDirectorySeparator(profile);
+        if (profile.Length > 3)
+        {
+            foreach (var form in new[] { profile, profile.Replace('\\', '/') }.Distinct())
+                line = Regex.Replace(line, Regex.Escape(form) + @"(?![A-Za-z0-9_\-])", "%USERPROFILE%", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+        return Email.Replace(line, match => match.Groups[1].Value + "…@" + match.Groups[2].Value);
+    }
+
+    // A network's name (often the home Wi-Fi's) is left out of the report.
+    public static string HideNetworks(string text, IEnumerable<string> names)
+    {
+        foreach (var name in names.Where(name => name.Length > 0).OrderByDescending(name => name.Length))
+            text = text.Replace(name, "[network]", StringComparison.Ordinal);
+        return text;
     }
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
@@ -612,9 +685,12 @@ static class RemoteSelfCheck
                 && Regex.IsMatch(RemoteModel.Version, @"^\d+\.\d+\.\d+\z"),
             "State, Chat, Hello and the pair answer have exactly the names in REMOTE_API.md; an untitled chat is \"New chat\"; version " + RemoteModel.Version);
 
-        // Only that nothing throws: whether this PC is on a public network right now is up to Windows.
+        // Only that nothing throws: whether this PC is on a public network right now is up to Windows. The network's name
+        // stays out of the report.
         var warning = RemoteLink.PublicNetworkWarning(RemoteLink.Hosts(47821, false));
-        check("remote-network", true, warning ?? "no address of the pairing link is on a public network");
+        check("remote-network", true, warning == null
+            ? "no address of the pairing link is on a public network"
+            : Regex.Replace(SelfCheck.HideNetworks(warning, PublicNetworkNames()), "\"[^\"]*\"", "\"[network]\""));
 
         using var screen = JsonDocument.Parse("{\"id\":\"s1\",\"seq\":3,\"total\":100,\"from\":90,\"cursor\":{\"x\":1,\"y\":99},\"lines\":[[],[],[],[],[],[],[],[],[],[{\"t\":\"last\"}]]}");
         using var cut = JsonDocument.Parse(RemoteModel.ScreenMessage(screen.RootElement, 4));
@@ -636,6 +712,18 @@ static class RemoteSelfCheck
                 && cutScreen.GetProperty("lines")[3][0].GetProperty("t").GetString() == "last"
                 && whole.RootElement.GetProperty("screen").GetProperty("from").GetInt32() == 90,
             "ids, keys, phone names, line counts, the local-network address filter and cutting a screen to the lines a phone wants");
+    }
+
+    static List<string> PublicNetworkNames()
+    {
+        try
+        {
+            return NetworkProfiles.PublicNetworks().Values.ToList();
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     static async Task ServerAsync(Action<string, bool, string> check, string folder)
