@@ -1062,7 +1062,7 @@ function needsYou(session, text = '', claimed = false) {
 // keyboard and mouse events, which are newer than the last report. at: when the report came.
 const AWAY_MS = 45000;
 let presence = { idleMs: 0, locked: false, at: Date.now() };
-let pageInputAt = Date.now();
+let pageInputAt = 0;
 for (const type of ['keydown', 'pointerdown', 'pointermove', 'wheel']) {
   document.addEventListener(type, () => { pageInputAt = Date.now(); }, { capture: true, passive: true });
 }
