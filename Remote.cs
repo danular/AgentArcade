@@ -715,24 +715,33 @@ static class RemoteModel
 
     public static string? Color(string command) => Colors.GetValueOrDefault(command.ToLowerInvariant());
 
-    public static object Hello() => new { app = "Agent Arcade", api = Api, version = Version, pc = Pc };
+    public static object Hello() => Hello(Pc, Version);
+
+    // The contract fixtures (Program.cs) pass a made-up PC name and version; everything else passes this PC's.
+    public static object Hello(string pc, string version) => new { app = "Agent Arcade", api = Api, version, pc };
 
     public static object PairAnswer(string token, string deviceId) => new { token, deviceId, pc = Pc };
 
-    public static List<object> Workspaces(IEnumerable<string> projects) => projects.Select(path => (object)new
+    public static List<object> Workspaces(IEnumerable<string> projects)
+        => Workspaces(projects, Directory.Exists, path => File.Exists(Path.Combine(path, "ProjectSettings", "ProjectVersion.txt")));
+
+    // exists and unity answer for each folder; the contract fixtures pass made-up answers instead of looking at the disk.
+    public static List<object> Workspaces(IEnumerable<string> projects, Func<string, bool> exists, Func<string, bool> unity) => projects.Select(path => (object)new
     {
         path,
         name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path)) is { Length: > 0 } folder ? folder : path,
-        exists = Directory.Exists(path),
-        unity = File.Exists(Path.Combine(path, "ProjectSettings", "ProjectVersion.txt")),
+        exists = exists(path),
+        unity = unity(path),
     }).ToList();
 
     // Whether the PC may go to sleep (State.power). keepAwake is the setting, awake whether the request is held now.
     public static object Power(string keepAwake, bool awake)
     {
         var (_, onBattery, lidSleeps) = KeepAwake.Status();
-        return new { keepAwake, awake, onBattery, lidSleeps };
+        return Power(keepAwake, awake, onBattery, lidSleeps);
     }
+
+    public static object Power(string keepAwake, bool awake, bool onBattery, bool lidSleeps) => new { keepAwake, awake, onBattery, lidSleeps };
 
     // tools holds the probe results by agent name; while the PC checks again, the previous ones. hosts are the
     // addresses of the pairing link.
@@ -745,15 +754,32 @@ static class RemoteModel
         IReadOnlyDictionary<string, AccountInfo>? infos,
         IEnumerable<JsonElement> sessions,
         IEnumerable<string> hosts,
-        object? power = null) => new
+        object? power = null)
+        => State(Pc, Version, workspace, NewProject.Folder(workspace, projects), Workspaces(projects), agents, tools, accounts, infos, sessions, hosts, power);
+
+    // The same from parts that are already known: what this PC is called, its version, its projects folder and the
+    // workspaces. The contract fixtures pass made-up ones, so nothing in them comes from this PC.
+    public static object State(
+        string pc,
+        string version,
+        string workspace,
+        string? projectsFolder,
+        List<object> workspaces,
+        IEnumerable<AgentDef> agents,
+        IReadOnlyDictionary<string, ToolStatus>? tools,
+        IEnumerable<AgentAccount> accounts,
+        IReadOnlyDictionary<string, AccountInfo>? infos,
+        IEnumerable<JsonElement> sessions,
+        IEnumerable<string> hosts,
+        object? power) => new
     {
         api = Api,
-        pc = Pc,
-        version = Version,
+        pc,
+        version,
         workspace,
-        projectsFolder = NewProject.Folder(workspace, projects),
+        projectsFolder,
         power,
-        workspaces = Workspaces(projects),
+        workspaces,
         agents = agents.Select(agent =>
         {
             ToolStatus? tool = null;
@@ -895,6 +921,9 @@ static class RemoteModel
         }
         return stream.ToArray();
     }
+
+    // A WebSocket event ({ type, ... }) as the phones get it.
+    public static byte[] Event(object message) => JsonSerializer.SerializeToUtf8Bytes(message, Wire);
 
     // A screen event cut to the last lines a phone asked for: lines drop from the front and from goes up by as many.
     public static byte[] ScreenMessage(JsonElement screen, int lines)
@@ -1260,7 +1289,7 @@ sealed class RemoteServer
             if (_sockets.Count == 0) return;
             sockets = _sockets.ToList();
         }
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(message, RemoteModel.Wire);
+        var bytes = RemoteModel.Event(message);
         foreach (var socket in sockets) socket.Send(bytes);
     }
 
@@ -1916,9 +1945,7 @@ sealed class RemoteServer
         try
         {
             var (state, chats) = await _host.SnapshotAsync();
-            phone.Begin(
-                JsonSerializer.SerializeToUtf8Bytes(new { type = "hello", state }, RemoteModel.Wire),
-                JsonSerializer.SerializeToUtf8Bytes(new { type = "history", chats }, RemoteModel.Wire));
+            phone.Begin(RemoteModel.Event(new { type = "hello", state }), RemoteModel.Event(new { type = "history", chats }));
         }
         catch (Exception ex)
         {

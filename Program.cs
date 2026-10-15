@@ -23,7 +23,7 @@ static class Program
         Environment.SetEnvironmentVariable("NoDefaultCurrentDirectoryInExePath", "1");
 
         if (args.Any(arg => arg == "--self-check"))
-            return SelfCheck.Run();
+            return SelfCheck.Run(args);
 
         // One window only: starting the app again brings the open window to the front. A copy from another folder
         // can't take over that window, so it says where Agent Arcade runs instead of quietly doing nothing.
@@ -95,8 +95,11 @@ static class Program
 
 static class SelfCheck
 {
-    public static int Run()
+    // --fixtures <folder> also writes the Phone remote contract fixtures there (RemoteFixtures).
+    public static int Run(string[] args)
     {
+        var at = Array.IndexOf(args, "--fixtures");
+        var fixtures = at < 0 ? null : at + 1 < args.Length ? args[at + 1] : "";
         var lines = new List<string>();
         var ok = true;
         void Check(string name, bool pass, string detail)
@@ -536,6 +539,7 @@ static class SelfCheck
         GitSafetyCheck.Run(Check, lines.Add);
 
         RemoteSelfCheck.Run(Check);
+        RemoteFixtures.Run(Check, fixtures);
 
         var editor = Locator.FindUnityEditor(settings.ProjectPath);
         var running = Locator.UnityEditorIsRunning();
@@ -1602,5 +1606,288 @@ static class RemoteSelfCheck
         }
 
         public void Log(string message) => Logged.Enqueue(message);
+    }
+}
+
+// The Phone remote contract's example files (docs/phone-remote/fixtures, README there): byte for byte what a phone
+// gets, made by the server's own serializers and options (RemoteModel) from made-up data. The Android app pins each
+// file's SHA-256 and decodes it (ContractFixturesTest), so the PC and the phone can't drift apart unnoticed.
+// Nothing in them comes from this PC: no machine name, version, path, account, terminal text or clock.
+// Session, Screen and Attention are built by the page (web/app.js); here a made-up object in the page's field order
+// stands in for it and goes through the same C# steps as the page's (Redacted, ScreenMessage, Event).
+static class RemoteFixtures
+{
+    const string Pc = "DESKTOP-ARCADE", Version = "1.4.0", Projects = @"C:\Projects";
+    const string River = Projects + @"\RiverRun", Garden = Projects + @"\StoneGarden", Maze = Projects + @"\OldMaze";
+    const string FoamChat = "6f0c2b8e-5d1e-4f7a-9a43-2b1f7c9d0e11", StoneChat = "3b9d2f4a-8c1e-4e6b-a0d7-5f2c9e8b1a64";
+    const string FoamQuestion = "Do you want to make this edit to WaterSurface.shader?";
+
+    // The sentences REMOTE_API.md's error table gives for these codes.
+    const string DialogChanged = "The question on your PC changed, so nothing was sent. Check it and answer again.";
+    const string NotApproved = "Nobody allowed this phone on your PC in time. Press New code on your PC, scan again and click Allow.";
+
+    public static void Run(Action<string, bool, string> check, string? folder)
+    {
+        try
+        {
+            var files = Build();
+            var again = Build();
+            var same = files.Keys.SequenceEqual(again.Keys) && files.All(file => file.Value.AsSpan().SequenceEqual(again[file.Key]));
+            var objects = files.Values.All(bytes =>
+            {
+                using var json = JsonDocument.Parse(bytes);
+                return json.RootElement.ValueKind == JsonValueKind.Object;
+            });
+            var local = LocalNames().Where(name => files.Values.Any(bytes => Encoding.UTF8.GetString(bytes).Contains(name, StringComparison.OrdinalIgnoreCase))).ToList();
+            var built = same && objects && local.Count == 0;
+            var detail = files.Count + " files, the same bytes each time, " + (local.Count == 0 ? "nothing from this PC in them" : "this PC's name or folder in them");
+            if (folder == null)
+            {
+                check("remote-fixtures", built, detail + "; not written (--fixtures <folder> writes them)");
+                return;
+            }
+            if (folder.Length == 0)
+            {
+                check("remote-fixtures", false, "--fixtures needs a folder");
+                return;
+            }
+            var target = Path.GetFullPath(folder);
+            if (built)
+            {
+                Directory.CreateDirectory(target);
+                foreach (var (name, bytes) in files) File.WriteAllBytes(Path.Combine(target, name), bytes);
+            }
+            check("remote-fixtures", built, detail + (built ? "; written to " + target : "; not written"));
+        }
+        catch (Exception ex)
+        {
+            check("remote-fixtures", false, ex.GetType().Name + ": " + ex.Message);
+        }
+    }
+
+    // File name -> its bytes, in name order.
+    public static SortedDictionary<string, byte[]> Build()
+    {
+        var agents = AgentStore.Defaults().Where(agent => agent.Command is "claude" or "codex" or "copilot").ToList();
+        AgentDef Agent(string command) => agents.First(agent => agent.Command == command);
+        var tools = new Dictionary<string, ToolStatus>
+        {
+            [Agent("claude").Name] = new(Agent("claude"), "claude.exe", "2.1.4"),
+            [Agent("codex").Name] = new(Agent("codex"), "codex.exe", "0.46.0"),
+        };
+        var accounts = new List<AgentAccount>
+        {
+            new() { Agent = Agent("claude").Name, Name = "main" },
+            new() { Agent = Agent("claude").Name, Name = "second", Home = "second" },
+            new() { Agent = Agent("codex").Name, Name = "main" },
+        };
+        var infos = new Dictionary<string, AccountInfo>
+        {
+            ["Claude Code|main"] = new(true, "you@example.com", "max"),
+            ["Claude Code|second"] = new(true, "second@example.com", "pro"),
+            // Still being checked: signedIn null.
+            ["Codex|main"] = new(null),
+        };
+        var workspaces = RemoteModel.Workspaces([River, Garden, Maze], path => path != Maze, path => path == River);
+        var state = RemoteModel.State(Pc, Version, River, Projects, workspaces, agents, tools, accounts, infos,
+            [RemoteModel.Redacted(Page(Asking())), RemoteModel.Redacted(Page(Ended()))],
+            ["192.168.1.20:47821", "100.101.102.103:47821"], RemoteModel.Power("agents", true, false, true));
+
+        var history = new List<ChatRecord>
+        {
+            Record(FoamChat, Agent("claude").Name, "second", River, "Calm the foam near the bridge", false, FoamChat, 1791890520000, 1791893401000, null),
+            Record(StoneChat, Agent("codex").Name, "main", Garden, "Sort the stone sizes", true, "", 1791804300000, 1791807060000, 1791807060000),
+            Record("a1d4c7e0-2b5f-4c8a-9e3d-6f1b0a7c2d95", Agent("copilot").Name, "main", Maze, "", false, "", 1791700000000, 1791700900000, 1791700900000),
+        };
+        var chats = RemoteModel.Chats(history, agents, chat => chat.Id == FoamChat ? "s3" : null);
+
+        return new(StringComparer.Ordinal)
+        {
+            // GET /api/v1/hello, /state and /history: the bodies WriteAsync sends.
+            ["hello.json"] = RemoteModel.ReplyJson(RemoteReply.Ok(RemoteModel.Hello(Pc, Version))),
+            ["state.json"] = RemoteModel.ReplyJson(RemoteReply.Ok(state)),
+            ["history.json"] = RemoteModel.ReplyJson(RemoteReply.Ok(new { chats = (object)chats })),
+            // WebSocket events, as RemoteServer sends them.
+            ["session.json"] = RemoteModel.Event(new { type = "session", session = RemoteModel.Redacted(Page(Working())) }),
+            ["screen.json"] = RemoteModel.ScreenMessage(Page(Screen()), 6),
+            ["attention.json"] = RemoteModel.Event(new { type = "attention", attention = RemoteModel.Redacted(Page(Attention())) }),
+            // Error bodies; the status is in the file name.
+            ["error-409-dialogChanged.json"] = RemoteModel.ReplyJson(RemoteReply.Fail(409, DialogChanged)),
+            ["error-403-notApproved.json"] = RemoteModel.ReplyJson(RemoteReply.Fail(403, NotApproved)),
+        };
+    }
+
+    // What the page posts arrives as JSON text and is parsed, as MainForm does with the page's messages.
+    static JsonElement Page(object value)
+    {
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(value));
+        return json.RootElement.Clone();
+    }
+
+    static ChatRecord Record(string id, string agent, string account, string workspace, string title, bool named, string chatId, long started, long lastActive, long? ended) => new()
+    {
+        Id = id,
+        Agent = agent,
+        Account = account,
+        Workspace = workspace,
+        Title = title,
+        Named = named,
+        ChatId = chatId,
+        Started = DateTimeOffset.FromUnixTimeMilliseconds(started),
+        LastActive = DateTimeOffset.FromUnixTimeMilliseconds(lastActive),
+        Ended = ended is { } at ? DateTimeOffset.FromUnixTimeMilliseconds(at) : null,
+    };
+
+    // Sessions in the field order of the page's remoteSummary.
+    static object Asking() => new
+    {
+        id = "s3",
+        chat = FoamChat,
+        mode = "start",
+        agent = "Claude Code",
+        command = "claude",
+        account = "Claude Code|second",
+        accountName = "second",
+        workspace = River,
+        title = "Calm the foam near the bridge",
+        status = "needsYou",
+        message = "Claude Code needs your OK to continue.",
+        question = FoamQuestion,
+        choices = new[]
+        {
+            new { key = "1", label = "Yes" },
+            new { key = "2", label = "Yes, and don't ask again this session" },
+            new { key = "3", label = "No, and tell Claude what to do differently" },
+        },
+        activity = (string?)null,
+        plan = new
+        {
+            done = 2,
+            total = 4,
+            current = "Narrow the foam mask",
+            items = new[]
+            {
+                new { text = "Find the foam code", done = true },
+                new { text = "Measure the foam band", done = true },
+                new { text = "Narrow the foam mask", done = false },
+                new { text = "Check the bridge banks", done = false },
+            },
+        },
+        progress = (object?)null,
+        preview = Array.Empty<string>(),
+        startedAt = 1791890520000,
+        turnStartedAt = 1791893270000,
+        lastOutputAt = 1791893401000,
+        endedAt = (long?)null,
+        exitCode = (long?)null,
+        error = (string?)null,
+        seenOnPc = false,
+        cols = 120,
+        rows = 40,
+    };
+
+    static object Working() => new
+    {
+        id = "s4",
+        chat = "9e7a1c3b-4d2f-4a6e-8b0c-1f5d3e9a7c20",
+        mode = "start",
+        agent = "Claude Code",
+        command = "claude",
+        account = "Claude Code|main",
+        accountName = "main",
+        workspace = Garden,
+        title = "Add a moss shader",
+        status = "working",
+        message = (string?)null,
+        question = (string?)null,
+        choices = Array.Empty<object>(),
+        activity = "✻ Brewing… (1m 12s · ↑ 3.4k tokens · esc to interrupt)",
+        plan = (object?)null,
+        progress = new { state = "percent", percent = 40 },
+        preview = new[] { "The moss needs a second UV set.", "Reading the stone textures." },
+        startedAt = 1791892000000,
+        turnStartedAt = 1791893300000,
+        lastOutputAt = 1791893402000,
+        endedAt = (long?)null,
+        exitCode = (long?)null,
+        error = (string?)null,
+        seenOnPc = true,
+        cols = 120,
+        rows = 40,
+    };
+
+    // 0xC000013A, the exit code after Ctrl+C, is above a 32-bit int.
+    static object Ended() => new
+    {
+        id = "s5",
+        chat = StoneChat,
+        mode = "resume",
+        agent = "Codex",
+        command = "codex",
+        account = "Codex|main",
+        accountName = "main",
+        workspace = Garden,
+        title = "Sort the stone sizes",
+        status = "ended",
+        message = "Codex stopped.",
+        question = (string?)null,
+        choices = Array.Empty<object>(),
+        activity = (string?)null,
+        plan = (object?)null,
+        progress = (object?)null,
+        preview = new[] { "Sorted 48 stones by size." },
+        startedAt = 1791804300000,
+        turnStartedAt = 1791806900000,
+        lastOutputAt = 1791807050000,
+        endedAt = 1791807060000,
+        exitCode = 3221225786L,
+        error = (string?)null,
+        seenOnPc = false,
+        cols = 100,
+        rows = 30,
+    };
+
+    // The page's screenOf: id and seq, then cols, rows, total, from, cursor and lines. Eight lines, cut to the last
+    // six as for a phone that watches 6 lines, so from goes up by 2.
+    static object Screen() => new
+    {
+        id = "s3",
+        seq = 418,
+        cols = 120,
+        rows = 40,
+        total = 2133,
+        from = 2125,
+        cursor = new { x = 3, y = 2131 },
+        lines = new object[][]
+        {
+            [new { t = "● ", fg = "#fafafa" }, new { t = "Update", s = 1 }, new { t = "(Assets/Shaders/WaterSurface.shader)" }],
+            [new { t = "  ⎿  ", fg = "#71717a" }, new { t = "Updated 1 line", fg = "#71717a", s = 8 }],
+            [new { t = "118 - float foam = smoothstep(0, .6, d);", fg = "#f87171", bg = "#3b1d22" }],
+            [new { t = "118 + float foam = smoothstep(0, .25, d);", fg = "#4ade80", bg = "#16301f" }],
+            [],
+            [new { t = " " + FoamQuestion, s = 1 }],
+            [new { t = " ❯ 1. Yes", fg = "#d97757" }],
+            [new { t = "   2. Yes, and don't ask again this session" }],
+        },
+    };
+
+    static object Attention() => new
+    {
+        id = "s3",
+        status = "needsYou",
+        title = "Calm the foam near the bridge",
+        message = "Claude Code needs your OK to continue.",
+        question = FoamQuestion,
+        seenOnPc = false,
+        at = 1791893401000,
+    };
+
+    // This PC's name, user and folder, which must not get into the files.
+    static IEnumerable<string> LocalNames()
+    {
+        var profile = Path.TrimEndingDirectorySeparator(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        return new[] { Environment.MachineName, Environment.UserName, profile, profile.Replace('\\', '/'), JsonEncodedText.Encode(profile).ToString() }
+            .Where(name => name.Length >= 4 && !Pc.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .Distinct();
     }
 }
