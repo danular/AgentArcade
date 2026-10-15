@@ -24,7 +24,7 @@ Then click **Install** in the sidebar for any agent you don't have yet. Building
 - Gemini CLI needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence: Google stopped serving it for personal Google sign-ins (free, Google AI Pro and Ultra) on 18 Jun 2026.
 - Extra accounts (for example a second Claude subscription) get their own folder, and the sidebar shows which email each account uses.
 - Workspaces are your project folders. Agents always start in the selected one. **+** adds a folder you already have; **New project** (the folder icon next to it) makes an empty folder next to your current project and opens it.
-- Each pane shows the chat's title: the one the agent gives it, or else your first message. Double-click the title to rename it.
+- Each pane shows the chat's title: the one the agent gives it, or else your first typed message (pasted text and anything that looks like a key don't count). Double-click the title to rename it.
 - The sidebar lists each project's running agents. The arrow next to a project hides them, and the arrow next to Agents hides the whole agent list (it then shows how many are running). The button left of the project name hides the whole sidebar, so the panes get its width; click it again to bring the sidebar back.
 - Drag a pane by its header onto another pane to swap their places in the grid.
 - Drop files or images on a pane to paste their paths into the agent's prompt. Claude Code and Codex attach pasted image paths; Gemini gets them as `@path`. Images dragged from a browser are saved to `%TEMP%\AgentArcade\drops` first.
@@ -88,7 +88,7 @@ To run a test build next to the installed app, set `AGENT_ARCADE_HOME` to an emp
 | `MainForm.cs` | The window: hosts the web page and passes messages between it and the agents |
 | `Pty.cs` | Runs an agent in a Windows pseudo console (ConPTY) |
 | `Images.cs` | Serves image files to the page and watches folders for new images |
-| `Panel.cs` | The side panel's file lists (Images tab, Preview suggestions) and its Changes tab (git status and diffs) |
+| `Panel.cs` | The side panel's file lists (Images tab, Preview suggestions) and its Changes tab (git status and diffs, after `GitConfigCheck` reads the repository's config: no program it names runs, no network path it names is reached) |
 | `Remote.cs` | Phone remote: the HTTPS and WebSocket server, its certificate, paired phones and pairing codes |
 | `Power.cs` | Keeps Windows from sleeping on its own while agents run (a power request), and reads the battery and lid settings |
 | `Backend.cs` | Settings, agent list, accounts, sign-in checks, chat history, Windows Terminal launcher, shared instructions |
