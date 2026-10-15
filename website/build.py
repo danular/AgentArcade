@@ -13,10 +13,20 @@ No dependencies beyond Python 3. Each page starts with a small header:
 Values in SITE can be used in any page as {{key}}. The product names live here, so a rename is one edit.
 SITE['base'] is the public address (GitHub Pages, deployed by .github/workflows/pages.yml); canonical and og: URLs,
 sitemap.xml and the 404 page's links are built from it.
+
+The download facts ({{version}}, {{released}}, {{zip_size}}, {{sha256}}, {{apk_size}}, {{apk_sha256}} and the links
+{{download}} and {{apk}}) come from the newest GitHub release, read from the releases API, so they can't go stale:
+pages.yml rebuilds the site when a release is published. Only the API's JSON is read; a release asset is never
+fetched (GitHub counts every download). GITHUB_TOKEN, when set, is sent to stay clear of the API's rate limit. When the
+API can't be reached the build warns and uses FALLBACK; in CI (CI=true) it stops instead.
 """
 import html
 import json
+import os
 import re
+import sys
+import urllib.request
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -24,22 +34,32 @@ HERE = Path(__file__).parent
 PAGES = HERE / 'pages'
 OUT = HERE / 'site'
 
+REPO = 'danular/AgentArcade'
+RELEASE_API = f'https://api.github.com/repos/{REPO}/releases/latest'
+# Every release carries exactly these two names (release.ps1).
+ZIP_ASSET = 'AgentArcade-win-x64.zip'
+APK_ASSET = 'AgentArcadeRemote.apk'
+
+# Only for a local build that can't reach the releases API: the 1.3.2 release.
+FALLBACK = {
+    'tag': 'v1.3.2',
+    'released': '15 Oct 2026',
+    'zip_size': '63 MB',
+    'sha256': 'f81efd2f44cf021f1d2a4324a76988b0dd9fb4dac21013826ff611137ada2c22',
+    'apk_size': '3.8 MB',
+    'apk_sha256': '846153b823f219cf54def52f8542fbcaf87d92dbf9fd79988c9c7d464906df18',
+}
+
 SITE = {
     'name': 'Agent Arcade',
     'base': 'https://danular.github.io/AgentArcade/',
     'voice': 'Agent Arcade Voice',
     'remote': 'Agent Arcade Remote',
-    'version': '1.3.2',
-    'released': '15 Oct 2026',
-    'zip_size': '63 MB',
-    'sha256': 'f81efd2f44cf021f1d2a4324a76988b0dd9fb4dac21013826ff611137ada2c22',
-    'github': 'https://github.com/danular/AgentArcade',
-    'download': 'https://github.com/danular/AgentArcade/releases/latest/download/AgentArcade-win-x64.zip',
-    # The Android app rides along on every GitHub release (release.ps1 copies it), so this name always serves the newest.
-    'apk': 'https://github.com/danular/AgentArcade/releases/latest/download/AgentArcadeRemote.apk',
+    'github': f'https://github.com/{REPO}',
+    # The releases API has no field for the APK's own version, so it is typed here; change it with a new APK.
     'apk_version': '1.0',
-    'apk_size': '3.8 MB',
-    'apk_sha256': '846153b823f219cf54def52f8542fbcaf87d92dbf9fd79988c9c7d464906df18',
+    # SHA-256 of the APK's signing certificate. It is the same for every version: Android refuses an update signed
+    # with another key.
     'apk_cert': '01e68ee0fb88710fb42780eae6e5532e9982d21a7546e9a60e8114c064086dce',
     'releases': 'https://github.com/danular/AgentArcade/releases',
     'discuss': 'https://github.com/danular/AgentArcade/discussions',
@@ -122,6 +142,60 @@ LAYOUT = '''<!doctype html>
 '''
 
 
+MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+
+def megabytes(size):
+    mb = size / 1e6
+    return f'{mb:.0f} MB' if mb >= 10 else f'{mb:.1f} MB'
+
+
+def latest_release():
+    """The newest release's download facts, from the releases API's JSON. Raises when an asset or its digest is missing."""
+    headers = {'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28',
+               'User-Agent': 'agent-arcade-website-build'}
+    if os.environ.get('GITHUB_TOKEN'):
+        headers['Authorization'] = 'Bearer ' + os.environ['GITHUB_TOKEN']
+    with urllib.request.urlopen(urllib.request.Request(RELEASE_API, headers=headers), timeout=20) as response:
+        release = json.load(response)
+    tag = release['tag_name']
+    if not re.fullmatch(r'v?\d+(\.\d+){1,3}', tag):
+        raise ValueError(f'unexpected tag {tag!r}')
+    published = datetime.fromisoformat(release['published_at'].replace('Z', '+00:00'))
+
+    def asset(name):
+        found = next((item for item in release.get('assets', []) if item.get('name') == name), None)
+        if found is None:
+            raise ValueError(f'release {tag} has no {name}')
+        digest = found.get('digest') or ''
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
+            raise ValueError(f'{name} in release {tag} has no SHA-256 digest')
+        return digest.removeprefix('sha256:'), megabytes(found['size'])
+
+    sha256, zip_size = asset(ZIP_ASSET)
+    apk_sha256, apk_size = asset(APK_ASSET)
+    return {'tag': tag, 'released': f'{published.day} {MONTHS[published.month - 1]} {published.year}',
+            'zip_size': zip_size, 'sha256': sha256, 'apk_size': apk_size, 'apk_sha256': apk_sha256}
+
+
+def download_facts():
+    try:
+        facts = latest_release()
+        print('release', facts['tag'], 'from', RELEASE_API)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        if os.environ.get('CI') == 'true':
+            sys.exit(f'error: could not read the latest release from {RELEASE_API}: {error}')
+        print(f'warning: could not read the latest release from {RELEASE_API} ({error}); '
+              f'the site shows the {FALLBACK["tag"]} details from build.py instead', file=sys.stderr)
+        facts = dict(FALLBACK)
+    tag = facts['tag']
+    facts['version'] = tag.removeprefix('v')
+    # Versioned links, so the file always matches the version and SHA-256 shown next to it.
+    facts['download'] = f'{SITE["github"]}/releases/download/{tag}/{ZIP_ASSET}'
+    facts['apk'] = f'{SITE["github"]}/releases/download/{tag}/{APK_ASSET}'
+    return facts
+
+
 def page(path):
     text = path.read_text(encoding='utf-8')
     m = re.match(r'---\n(.*?)\n---\n', text, re.S)
@@ -140,11 +214,12 @@ def json_ld():
         '@context': 'https://schema.org', '@type': 'SoftwareApplication', 'name': SITE['name'],
         'operatingSystem': 'Windows 11', 'applicationCategory': 'DeveloperApplication', 'softwareVersion': SITE['version'],
         'downloadUrl': SITE['download'],
+        # Pro can't be bought yet, so search engines get no Pro offer until checkout opens. Then add:
+        # {'@type': 'Offer', 'name': 'Pro', 'price': '25', 'priceCurrency': 'EUR', 'priceSpecification':
+        #  {'@type': 'UnitPriceSpecification', 'price': '25', 'priceCurrency': 'EUR', 'valueAddedTaxIncluded': False,
+        #   'unitText': 'per user per month'}}
         'offers': [
             {'@type': 'Offer', 'name': 'Personal', 'price': '0', 'priceCurrency': 'EUR'},
-            {'@type': 'Offer', 'name': 'Pro', 'price': '25', 'priceCurrency': 'EUR',
-             'priceSpecification': {'@type': 'UnitPriceSpecification', 'price': '25', 'priceCurrency': 'EUR',
-                                    'valueAddedTaxIncluded': False, 'unitText': 'per user per month'}},
         ],
     }
     return '<script type="application/ld+json">' + json.dumps(data) + '</script>\n'
@@ -203,4 +278,5 @@ def build():
 
 
 if __name__ == '__main__':
+    SITE.update(download_facts())
     build()

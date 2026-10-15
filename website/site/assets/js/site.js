@@ -44,7 +44,8 @@
     }
   }
 
-  // Film lightbox: never autoplays with sound; Esc or the button closes it.
+  // Film lightbox: starts muted (the captions are burned into the picture, so the track is off until you pick it);
+  // Esc or the button closes it.
   document.querySelectorAll('[data-film]').forEach(function (opener) {
     opener.addEventListener('click', function (e) {
       e.preventDefault();
@@ -53,9 +54,9 @@
       box.setAttribute('role', 'dialog');
       box.setAttribute('aria-modal', 'true');
       box.setAttribute('aria-label', 'Agent Arcade film, 30 seconds');
-      box.innerHTML = '<video controls autoplay playsinline preload="auto" poster="' + opener.getAttribute('data-poster') + '">' +
+      box.innerHTML = '<video controls autoplay muted playsinline preload="auto" poster="' + opener.getAttribute('data-poster') + '">' +
         '<source src="' + opener.getAttribute('data-film') + '" type="video/mp4">' +
-        '<track kind="captions" srclang="en" label="English" src="' + opener.getAttribute('data-captions') + '" default></video>' +
+        '<track kind="captions" srclang="en" label="English" src="' + opener.getAttribute('data-captions') + '"></video>' +
         '<button class="btn btn-ghost btn-sm" type="button">Close</button>';
       document.body.appendChild(box);
       var close = box.querySelector('button');

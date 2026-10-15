@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
     paths: ['website/**', '.github/workflows/pages.yml']
+  # A new release changes the version, sizes and SHA-256 values that build.py reads from the releases API.
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -16,15 +19,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A release event runs on the release's tag, and the github-pages environment deploys only from main. So a release
+  # starts a normal run on main, which builds the site from main with the new release's details.
+  release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Rebuild the site on the default branch
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
   build:
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      # Reads only the releases API's JSON, never a release file (GitHub counts downloads). CI=true makes it fail
+      # instead of falling back to the details typed in build.py.
       - name: Build the site
         run: python website/build.py
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Check the site
         shell: python
         run: |
@@ -39,6 +62,12 @@ jobs:
           # GitHub Pages serves 404.html at any missing path, so relative links there would break.
           relative = re.findall(r'(?:href|src)="(?![a-z]+:|/|#)([^"]*)"', (site / '404.html').read_text(encoding='utf-8'))
           assert not relative, f'404.html has relative links: {relative}'
+          # Claims retired because they weren't true; docs/claims-checklist.md has the ones that replaced them.
+          retired = ['Nothing else.', "can't read files", 'relay servers', 'no relay', 'open source', 'Priority email support']
+          files = [*site.glob('*.html'), *site.glob('assets/video/*.vtt'), Path('README.md')]
+          found = [(f.name, phrase) for f in files for phrase in retired
+                   if phrase.lower() in f.read_text(encoding='utf-8').lower()]
+          assert not found, f'retired claims: {found}'
           print('site ok:', len(pages), 'pages')
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

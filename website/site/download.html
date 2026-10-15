@@ -37,38 +37,58 @@
   <div class="wrap">
     <p class="eyebrow">Download · v1.3.2 · 15 Oct 2026</p>
     <h1>Get Agent Arcade for Windows</h1>
-    <p class="lead">One zip with everything inside, including the .NET runtime. Unzip it, start it, and add your first project folder.</p>
-    <div class="ctas"><a class="btn btn-accent" href="https://github.com/danular/AgentArcade/releases/latest/download/AgentArcade-win-x64.zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>Download AgentArcade-win-x64.zip</a><a class="btn btn-ghost" href="#phone">Android app</a><a class="btn btn-ghost" href="https://github.com/danular/AgentArcade/releases">All releases on GitHub</a></div>
+    <p class="lead">One zip with everything inside, including the .NET runtime. Extract it, start it, and add your first project folder.</p>
+    <div class="ctas"><a class="btn btn-accent" href="https://github.com/danular/AgentArcade/releases/download/v1.3.2/AgentArcade-win-x64.zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>Download AgentArcade-win-x64.zip</a><a class="btn btn-ghost" href="#phone">Android app</a><a class="btn btn-ghost" href="https://github.com/danular/AgentArcade/releases">All releases on GitHub</a></div>
     <p class="meta">63 MB · Windows 11 x64 · self-contained · free for personal use</p>
   </div>
 </section>
 
 <section class="section" style="padding-top:48px">
   <div class="wrap docs">
-    <nav class="toc" aria-label="On this page"><a href="#install">Install</a><a href="#smartscreen">SmartScreen</a><a href="#verify">Check the file</a><a href="#agents">Get your agents</a><a href="#phone">Android app</a><a href="#requirements">Requirements</a><a href="#source">Build from source</a></nav>
+    <nav class="toc" aria-label="On this page"><a href="#install">Install</a><a href="#verify">Check the file</a><a href="#smartscreen">SmartScreen</a><a href="#smart-app-control">Smart App Control</a><a href="#update">Update</a><a href="#uninstall">Uninstall</a><a href="#agents">Get your agents</a><a href="#phone">Android app</a><a href="#requirements">Requirements</a><a href="#source">Build from source</a></nav>
     <div class="prose">
-      <h2 id="install" style="margin-top:0">Install in three steps</h2>
+      <h2 id="install" style="margin-top:0">Install</h2>
       <ol class="steps">
-        <li><div><b>Unzip it to a folder of your own,</b> for example <code>%LOCALAPPDATA%\Programs\AgentArcade</code>. Keep the files together: the app needs the <code>web</code> folder next to it. No administrator rights needed.</div></li>
+        <li><div><b>Download the zip.</b> If Microsoft Edge says it isn't commonly downloaded, open the download's <b>⋯</b> menu, choose <b>Keep</b>, then <b>Show more</b> → <b>Keep anyway</b>.</div></li>
+        <li><div><b>Extract it to a folder of your choice,</b> for example <code>%LOCALAPPDATA%\Programs\AgentArcade</code>. <code>AgentArcade.exe</code> is at the top of the zip. Keep the files together: the app needs the <code>web</code> folder next to it. No administrator rights needed.</div></li>
         <li><div><b>Start <code>AgentArcade.exe</code>.</b> Windows may warn you the first time; see <a href="#smartscreen">SmartScreen</a> below.</div></li>
         <li><div><b>Add a project folder</b> in the sidebar and start an agent. A new install opens in your Documents folder until you add one.</div></li>
       </ol>
 
-      <h2 id="smartscreen">If Windows says it "protected your PC"</h2>
-      <p>The download isn't code-signed yet, so Windows SmartScreen doesn't know it. Click <b>More info</b>, then <b>Run anyway</b>. Code signing is planned; until then you can check the file yourself, and the full source is public on <a href="https://github.com/danular/AgentArcade">GitHub</a>.</p>
-
       <h2 id="verify">Check the file</h2>
-      <p>The SHA-256 of AgentArcade-1.3.2-win-x64.zip (the same file as AgentArcade-win-x64.zip):</p>
+      <p>The SHA-256 of AgentArcade-win-x64.zip v1.3.2, as its <a href="https://github.com/danular/AgentArcade/releases/tag/v1.3.2">GitHub release</a> lists it:</p>
       <div class="codeblock"><pre>f81efd2f44cf021f1d2a4324a76988b0dd9fb4dac21013826ff611137ada2c22</pre></div>
-      <p>In PowerShell, in the folder you downloaded it to:</p>
-      <div class="codeblock"><pre>Get-FileHash .\AgentArcade-win-x64.zip</pre></div>
+      <p>In PowerShell, in the folder you downloaded it to. It prints <code>True</code> when the file matches:</p>
+      <div class="codeblock"><pre>(Get-FileHash .\AgentArcade-win-x64.zip -Algorithm SHA256).Hash -eq 'f81efd2f44cf021f1d2a4324a76988b0dd9fb4dac21013826ff611137ada2c22'</pre></div>
+      <div class="ctas"><a class="btn btn-ghost" href="https://github.com/danular/AgentArcade/releases/download/v1.3.2/AgentArcade-win-x64.zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>Download v1.3.2</a></div>
+
+      <h2 id="smartscreen">If Windows says it "protected your PC"</h2>
+      <p>Agent Arcade isn't code-signed yet, so Windows SmartScreen doesn't know it. Click <b>More info</b>, then <b>Run anyway</b>. It stays unsigned until a code-signing certificate arrives; until then you can check the file yourself, and the full source is public on <a href="https://github.com/danular/AgentArcade">GitHub</a>.</p>
+
+      <h2 id="smart-app-control">Smart App Control</h2>
+      <p>If Smart App Control is on (Windows Security → App &amp; browser control), Windows blocks unsigned apps it doesn't know, and it has no per-app exception. So while Agent Arcade is unsigned, it can't start on a PC with Smart App Control on. <a href="https://support.microsoft.com/topic/what-is-smart-app-control-285ea03d-fa88-4d56-882e-6698afdb7003">Microsoft explains Smart App Control</a> and your options.</p>
+
+      <h2 id="update">Update</h2>
+      <ol class="steps">
+        <li><div><b>Close Agent Arcade.</b> Its agents stop; History can resume their chats afterwards.</div></li>
+        <li><div><b>Extract the new zip over the old folder</b> (the one that holds <code>AgentArcade.exe</code>) and replace the files.</div></li>
+        <li><div><b>Start <code>AgentArcade.exe</code>.</b> Settings, history and paired phones stay where they are, in <code>%LOCALAPPDATA%\AgentArcade</code>.</div></li>
+      </ol>
+
+      <h2 id="uninstall">Uninstall</h2>
+      <p><b>1. The app and its data.</b> Close Agent Arcade, then delete its folder (the one that holds <code>AgentArcade.exe</code>) and <code>%LOCALAPPDATA%\AgentArcade</code>, which holds your settings, agent list, history, paired phones, the log and the window's WebView2 data. If you installed it with <code>install.ps1</code>, also delete the <i>Agent Arcade</i> shortcut in the Start menu.</p>
+      <p><b>2. The phone remote's certificate.</b> If you ever turned Phone remote on, Agent Arcade made a certificate in your Windows user certificate store. Delete it in <code>certmgr.msc</code> (Personal → Certificates → <i>Agent Arcade Remote</i>), or with its private key in PowerShell:</p>
+      <div class="codeblock"><pre>Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq 'CN=Agent Arcade Remote' | Remove-Item -DeleteKey</pre></div>
+      <p><b>3. The firewall rule.</b> When you allowed Agent Arcade at the Windows firewall prompt, Windows made inbound rules for <code>AgentArcade.exe</code>. Remove them in Windows Security → Firewall &amp; network protection → <i>Allow an app through firewall</i> → <b>Change settings</b> → <i>agentarcade.exe</i> → <b>Remove</b>, or in PowerShell run as administrator:</p>
+      <div class="codeblock"><pre>Get-NetFirewallApplicationFilter | Where-Object Program -like '*\AgentArcade.exe' | Get-NetFirewallRule | Remove-NetFirewallRule</pre></div>
+      <p><b>4. The phone.</b> Uninstall Agent Arcade Remote on your phone.</p>
 
       <h2 id="agents">Get your agents</h2>
-      <p>Agent Arcade runs the official command-line agents. Click <b>Install</b> in the sidebar for any you don't have yet: it shows you the vendor's install command first, then runs it in a pane you can watch. Codex, Gemini CLI and GitHub Copilot CLI need <a href="https://nodejs.org">Node.js</a>; Cursor installs with its own PowerShell installer. Each agent then signs in through its own official login.</p>
+      <p>Agent Arcade runs the official command-line agents. Click <b>Install</b> in the sidebar for any you don't have yet: it shows you the vendor's install command first, then runs it in a pane you can watch. Codex, GitHub Copilot CLI and Gemini CLI need <a href="https://nodejs.org">Node.js</a>; Cursor installs with its own PowerShell installer. Each agent then signs in through its own official login. Gemini CLI needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence: Google stopped serving it for personal Google sign-ins on 18 Jun 2026.</p>
 
       <h2 id="phone">The Android app</h2>
       <p>Agent Arcade Remote lets you watch and drive your agents from your phone. It isn't on Google Play yet, so you install the APK yourself. The PC side is already in the zip above: <b>Phone</b> at the bottom of the sidebar. <a href="phone.html">Read how it works</a>.</p>
-      <div class="ctas"><a class="btn btn-accent" href="https://github.com/danular/AgentArcade/releases/latest/download/AgentArcadeRemote.apk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>Download AgentArcadeRemote.apk</a></div>
+      <div class="ctas"><a class="btn btn-accent" href="https://github.com/danular/AgentArcade/releases/download/v1.3.2/AgentArcadeRemote.apk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>Download AgentArcadeRemote.apk</a></div>
       <p class="muted small">v1.0 · 3.8 MB · Android 8.0 and up · free</p>
       <ol class="steps">
         <li><div><b>Download it on your phone.</b> Open this page in your phone's browser and tap the button.</div></li>
@@ -77,7 +97,7 @@
         <li><div><b>Pair it with your PC:</b> see <a href="docs.html#phone">Pair your phone</a>.</div></li>
       </ol>
       <p>To update, download the newest APK and install it over the old one. Your pairing stays.</p>
-      <p>The SHA-256 of AgentArcadeRemote.apk v1.0:</p>
+      <p>The SHA-256 of AgentArcadeRemote.apk v1.0, from the v1.3.2 release:</p>
       <div class="codeblock"><pre>846153b823f219cf54def52f8542fbcaf87d92dbf9fd79988c9c7d464906df18</pre></div>
       <p>Every version is signed with the same key, and Android refuses an update signed with another one. The SHA-256 of the signing certificate:</p>
       <div class="codeblock"><pre>01e68ee0fb88710fb42780eae6e5532e9982d21a7546e9a60e8114c064086dce</pre></div>
@@ -86,8 +106,8 @@
       <ul>
         <li>Windows 11 on x64. Windows 10 and Windows on ARM aren't tested yet.</li>
         <li>WebView2, which Windows 11 includes.</li>
-        <li>The agents you want to run, and their subscriptions.</li>
-        <li>For the phone remote: your Wi-Fi set to <i>Private</i> in Windows, or <a href="https://tailscale.com">Tailscale</a>.</li>
+        <li>The agents you want to run, and their subscriptions or API keys.</li>
+        <li>For the phone remote: on your own home Wi-Fi, the network set to <i>Private</i> in Windows; on shared Wi-Fi, keep it <i>Public</i> and use <a href="https://tailscale.com">Tailscale</a>.</li>
       </ul>
 
       <h2 id="source">Build from source</h2>

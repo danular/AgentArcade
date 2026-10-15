@@ -12,7 +12,7 @@ Agent Arcade on the PC ── Remote.cs (Kestrel server, only while Phone remote
 web/app.js (xterm.js panes: screens, titles, "needs you")  ──  ConPTY  ──  the agents
 ```
 
-The phone talks to the PC directly over the local network, or over Tailscale when both devices use it. Nothing goes through a cloud service.
+The phone talks to the PC over the local network, or over Tailscale when both devices use it. There is no Agent Arcade server in between; over Tailscale, Tailscale may relay the encrypted traffic through its own DERP servers when the devices can't reach each other directly.
 
 ## 1. Turning it on and pairing
 
@@ -379,7 +379,7 @@ Sent when the desktop would turn the pane amber or notify (`needsYou` or `done`)
 - **Certificate:** made on the PC the first time (ECDSA P-256, `CN=Agent Arcade Remote`, valid 20 years) and kept in the Windows user certificate store. The phone pins its SHA-256 fingerprint from the pairing link.
 - **Pairing codes:** 16 random bytes, 10 minutes, single use, five wrong tries cancel the code. At most 10 pairing attempts per minute in total.
 - **Device tokens:** 32 random bytes (base64url). The PC stores only their SHA-256 hash in `%LOCALAPPDATA%\AgentArcade\remote.json` (with the phone's name, paired time and last seen) and compares hashes in constant time. **Remove** in the Phone dialog deletes the hash and disconnects that phone at once (close code 4401).
-- **What a phone can do** is what a person at the PC can do inside the panes: read the screens, type, answer, start, stop, resume and rename agents. It cannot read files, run anything outside an agent, change settings, or see account tokens. The one thing it can make on the PC's disk is an empty project folder in `projectsFolder`, under a name the PC checked.
+- **What a phone can do** is what a person at the PC can do inside the panes: read the screens, type, answer, start, stop, resume and rename agents. A paired phone is as powerful as the keyboard in those panes: agents run with the user's Windows permissions, so by typing to an agent a phone can reach files indirectly. The API itself gives no file access, runs nothing outside an agent pane, changes no settings and shows no account tokens. The one thing the API itself makes on the PC's disk is an empty project folder in `projectsFolder`, under a name the PC checked (`POST /projects`).
 - **Limits:** request bodies up to 64 KB, `input` text up to 16 KB, 20 requests per second per phone and at most 4 of its requests waiting for Agent Arcade at once (429 above that), 4 phones connected at once, 8 open connections per address, 4 KB per WebSocket message from the phone.
 - **Network:** the PC accepts connections only from local and Tailscale addresses (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10), so the port stays closed to the internet even when the PC has a public address. TLS 1.2 and 1.3 only, HTTP/1.1 only. More than 20 wrong tokens in a minute from one address lock that address out for a minute.
 - **Removing a phone** also cancels typing it asked for that hasn't happened yet; so does turning Phone remote off.

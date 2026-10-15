@@ -1,6 +1,6 @@
 ---
 title: Docs
-description: Get started with Agent Arcade: install, your first agents, panes and status dots, the side panel, extra accounts, the phone remote and troubleshooting.
+description: Get started with Agent Arcade: install and update, your first agents, panes and status dots, the side panel, extra accounts, the phone remote and troubleshooting.
 nav: docs
 ---
 <section class="page-head">
@@ -13,17 +13,25 @@ nav: docs
 
 <section class="section" style="padding-top:24px">
   <div class="wrap docs">
-    <nav class="toc" aria-label="On this page"><a href="#install">Install</a><a href="#first">First agents</a><a href="#panes">Panes and dots</a><a href="#side">Side panel</a><a href="#accounts">Extra accounts</a><a href="#history">History and handoff</a><a href="#phone">Phone remote</a><a href="#tailscale">Away from home</a><a href="#awake">Keep-awake</a><a href="#trouble">Troubleshooting</a></nav>
+    <nav class="toc" aria-label="On this page"><a href="#install">Install</a><a href="#update">Update</a><a href="#first">First agents</a><a href="#panes">Panes and dots</a><a href="#side">Side panel</a><a href="#accounts">Extra accounts</a><a href="#history">History and handoff</a><a href="#phone">Phone remote</a><a href="#tailscale">Away from home</a><a href="#awake">Keep-awake</a><a href="#trouble">Troubleshooting</a></nav>
     <div class="prose">
       <h2 id="install" style="margin-top:0">Install</h2>
-      <p><a href="download.html">Download the zip</a>, unzip it to a folder of your own and start <code>AgentArcade.exe</code>. If SmartScreen warns you, click <b>More info</b> → <b>Run anyway</b>.</p>
+      <p><a href="download.html">Download the zip</a> and extract it to a folder of your choice, for example <code>%LOCALAPPDATA%\Programs\AgentArcade</code>. <code>AgentArcade.exe</code> is at the top of the zip; start it. If SmartScreen warns you, click <b>More info</b> → <b>Run anyway</b>. The <a href="download.html#install">download page</a> shows how to check the file, what Smart App Control does, and how to <a href="download.html#uninstall">uninstall</a>.</p>
+
+      <h2 id="update">Update</h2>
+      <ol>
+        <li>Close Agent Arcade. Its agents stop; History can resume their chats afterwards.</li>
+        <li>Extract the new zip over the old folder (the one that holds <code>AgentArcade.exe</code>) and replace the files.</li>
+        <li>Start <code>AgentArcade.exe</code>. Settings, history and paired phones stay where they are, in <code>%LOCALAPPDATA%\AgentArcade</code>.</li>
+      </ol>
 
       <h2 id="first">Your first agents</h2>
       <ol>
         <li>Add a project folder in the sidebar with <b>+</b>, or make an empty one next to your current project with <b>New project</b>. Agents always start in the selected workspace.</li>
-        <li>Click <b>Install</b> next to any agent you don't have. It shows the vendor's install command, then runs it in a pane. Codex, Gemini CLI and GitHub Copilot CLI need <a href="https://nodejs.org">Node.js</a>.</li>
+        <li>Click <b>Install</b> next to any agent you don't have. It shows the vendor's install command, then runs it in a pane. Codex, GitHub Copilot CLI and Gemini CLI need <a href="https://nodejs.org">Node.js</a>.</li>
         <li>Start an agent. The first time, it signs in through its own official login, in its own pane.</li>
       </ol>
+      <p><b>Gemini CLI</b> needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence. Google stopped serving Gemini CLI for personal Google sign-ins (free, Google AI Pro and Ultra) on 18 Jun 2026.</p>
       <p>To add another command-line agent, add it to <code>agents.json</code> in <code>%LOCALAPPDATA%\AgentArcade</code>.</p>
 
       <h2 id="panes">Panes and status dots</h2>
@@ -39,7 +47,7 @@ nav: docs
       <p>The button at the right end of the top bar opens it. <b>Preview</b> shows a local address such as <code>localhost:5173</code> or a page in the project. <b>Images</b> lists the project's images; drag one onto a pane. <b>Changes</b> shows what git sees changed, with diffs. <b>Console</b> is PowerShell in the project folder.</p>
 
       <h2 id="accounts">Extra accounts</h2>
-      <p>A second Claude Code, Codex or Gemini CLI subscription gets its own folder, and the sidebar shows which email each account uses. You sign in to each one through the tool's own login. Agent Arcade never reads, copies or swaps login tokens, and never switches accounts by itself.</p>
+      <p>A second Claude Code, Codex or Gemini CLI account gets its own folder, and the sidebar shows which email each account uses. You sign in to each one through the tool's own login. Agent Arcade never reads, copies or swaps login tokens, and never switches accounts by itself.</p>
 
       <h2 id="history">History and handoff</h2>
       <p>History lists every chat per project. Resume continues a chat: Claude Code reopens exactly that chat; the other agents open their own resume list. A pane's ⋯ menu pastes a "save progress" prompt (it writes <code>HANDOFF.md</code>) and a "continue" prompt, so the next agent can pick up where the last one stopped.</p>
@@ -48,21 +56,21 @@ nav: docs
       <p>First install the Android app: <a href="download.html#phone">download the APK</a> on your phone. It isn't on Google Play yet.</p>
       <ol>
         <li>Sidebar → <b>Phone</b> → switch on <i>Let my phone watch and drive these agents</i>.</li>
-        <li>If Windows asks, allow Agent Arcade on <b>private</b> networks. Your Wi-Fi must be set to <i>Private</i> (Settings → Network &amp; internet → Wi-Fi → your network).</li>
+        <li>If Windows asks, allow Agent Arcade on <b>private</b> networks. On your own home Wi-Fi, set the network to <i>Private</i> (Settings → Network &amp; internet → Wi-Fi → your network); on a <i>Public</i> network Windows blocks the phone. On shared Wi-Fi (an office, a café, a hotel) keep it <i>Public</i> and use <a href="#tailscale">Tailscale</a> instead.</li>
         <li>On the phone: <b>Scan QR code</b>, check that the fingerprint matches the Phone dialog, and tap <b>Pair</b>.</li>
       </ol>
 
       <h2 id="tailscale">Away from home</h2>
-      <p>Install <a href="https://tailscale.com">Tailscale</a> on the PC and the phone and sign in with the same account. The pairing link lists the PC's Tailscale address after its Wi-Fi address, so the phone finds it either way. Tailscale's Personal plan is free for non-commercial use.</p>
+      <p>Install <a href="https://tailscale.com">Tailscale</a> on the PC and the phone and sign in with the same account. The pairing link lists the PC's Tailscale address after its Wi-Fi address, so the phone finds it either way. Tailscale's Personal plan is free for non-commercial use. When Tailscale can't link the two devices directly, it relays the encrypted traffic through its own DERP servers.</p>
 
       <h2 id="awake">Keep-awake</h2>
       <p>By default Windows doesn't go to sleep on its own while agents run (the screen still turns off). In the Phone dialog, <b>Keep this PC awake</b> can also cover the time Phone remote is on. Windows still sleeps when you close the lid, press Sleep, or after a while on battery, so keep a laptop plugged in.</p>
 
       <h2 id="trouble">Troubleshooting</h2>
       <ul>
-        <li><b>The phone can't connect.</b> Check that your Wi-Fi is set to <i>Private</i> in Windows, that Phone remote is on, and that both devices are on the same network or on Tailscale.</li>
+        <li><b>The phone can't connect.</b> Check that Phone remote is on and that both devices are on the same network or on Tailscale. On your own home Wi-Fi, check that it is set to <i>Private</i> in Windows; on shared Wi-Fi, use Tailscale.</li>
         <li><b>An agent doesn't start.</b> Make sure the project folder still exists and the agent is installed (its version shows in the sidebar).</li>
-        <li><b>Something else.</b> Run <code>AgentArcade.exe --self-check</code> and read <code>%TEMP%\AgentArcade-selfcheck.txt</code>, then <a href="{{issues}}">open an issue</a>. Don't paste tokens or private terminal text.</li>
+        <li><b>Something else.</b> Run <code>AgentArcade.exe --self-check</code> and read <code>%TEMP%\AgentArcade-selfcheck.txt</code>, then <a href="{{issues}}">open an issue</a> and paste only the lines that start with <code>FAIL</code>: the rest of the report lists your account emails and folder paths. A FAIL line can name a folder too, so read it before you paste. Don't paste tokens or private terminal text.</li>
       </ul>
     </div>
   </div>

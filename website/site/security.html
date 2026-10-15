@@ -48,10 +48,11 @@
       <tr><th scope="row">Agent Arcade itself</th><td>No telemetry, no analytics, no account with us. Internet traffic comes from the agents you run, and from vendor installers when you click Install.</td></tr>
       <tr><th scope="row">Your AI logins</th><td>Stay with the AI tools. Each agent signs in through its own official flow. To show which account is active, Agent Arcade asks the tool itself; for Gemini CLI it reads the signed-in email address Gemini keeps on your PC. It never switches, pools or rotates accounts.</td></tr>
       <tr><th scope="row">Extra accounts</th><td>A second Claude Code, Codex or Gemini CLI account gets its own folder (CLAUDE_CONFIG_DIR, CODEX_HOME, GEMINI_CLI_HOME). You sign in to each one yourself.</td></tr>
-      <tr><th scope="row">Chat history</th><td>On your PC only: each chat's title, agent, account, folder and times. Never the conversation itself. A title you don't type yourself comes from the agent's terminal title, so it can describe the topic.</td></tr>
-      <tr><th scope="row">Phone remote</th><td>Phone to PC only, over your network or Tailscale. Off until you turn it on.</td></tr>
+      <tr><th scope="row">Chat history</th><td>On your PC only: each chat's title, agent, account, folder and times. Never the conversation itself. A title you don't type yourself comes from the agent's terminal title or, until the agent names the chat, from the start of your first message (up to 120 characters), so it can describe the topic.</td></tr>
+      <tr><th scope="row">Phone remote</th><td>Agent screens and your typing go only between your phone and your PC, over your network or Tailscale. Off until you turn it on. Over Tailscale, when the two devices can't connect directly, Tailscale relays the encrypted traffic through its own DERP servers.</td></tr>
+      <tr><th scope="row">The window (Microsoft WebView2)</th><td>From 1.3.3, SmartScreen reputation checks are off, so the addresses of pages shown in the window (the app's own page and Preview) aren't sent to Microsoft, and WebView2 crash dumps stay on your PC. Before 1.3.3, WebView2's defaults applied: SmartScreen checked page addresses with Microsoft, and crash reports went to Microsoft as far as your Windows diagnostic-data setting allowed.</td></tr>
       <tr><th scope="row">Your agents</th><td>Talk to their own vendors under your accounts, exactly as they would in any terminal.</td></tr>
-      <tr><th scope="row">Agent Arcade Voice (Pro)</th><td>Audio stays in memory on your PC. Prompt history is a local file. Prompt Coach's Analyse sends prompt text through your own Claude Code sign-in, only when you press it.</td></tr>
+      <tr><th scope="row">Agent Arcade Voice (coming with Pro)</th><td>Not released yet. As planned, audio will stay in memory on your PC and prompt history will be a local file. Prompt Coach (planned) will send prompt text through your own Claude Code sign-in, only when you press Analyse.</td></tr>
     </table></div>
   </div>
 </section>
@@ -62,10 +63,11 @@
     <ul>
       <li><b>Off by default.</b> Agent Arcade listens on port 47821 only while Phone remote is on.</li>
       <li><b>Local addresses only.</b> It accepts private-network IPv4 addresses and the 100.64.0.0/10 range Tailscale uses. Every other address is dropped before the TLS handshake, even if a port is forwarded.</li>
-      <li><b>HTTPS only (TLS 1.2 or 1.3).</b> The PC makes its own certificate once, kept in your Windows user certificate store with a key that can't be exported. The phone gets the certificate's fingerprint from the QR code and accepts nothing else.</li>
+      <li><b>HTTPS only (TLS 1.2 or 1.3).</b> The PC makes its own certificate once, kept in your Windows user certificate store with a key that can't be exported. The phone gets the certificate's fingerprint from the QR code and accepts no other certificate.</li>
       <li><b>Pairing codes</b> work once, for 10 minutes; five wrong codes cancel them.</li>
       <li><b>Tokens.</b> Each phone gets its own token. The PC keeps only its SHA-256 hash in <code>remote.json</code>, and <b>Remove</b> in the Phone dialog cuts that phone off at once.</li>
-      <li><b>Limits on what a phone can do.</b> It can read, type, approve, start, stop, resume and rename inside your listed workspaces. It can't read files, change settings or see account logins.</li>
+      <li><b>A paired phone is as powerful as your keyboard in the panes.</b> It can read, type, approve, start, stop, resume and rename agents in your listed workspaces. Agents run with your Windows permissions, so by typing to an agent a phone can reach your files indirectly, as you could at the PC. It can also make an empty project folder next to your projects (<code>POST /projects</code>: the phone sends only a name, which the PC checks). It has no way of its own to read files, change Agent Arcade's settings, start agents outside your workspaces or see account logins. Treat a paired phone like a key: keep it locked, and <b>Remove</b> a lost one at once.</li>
+      <li><b>Tailscale's relays.</b> Away from home, Tailscale may relay the connection through its own DERP servers when the phone and PC can't reach each other directly. The traffic stays encrypted (Tailscale's own encryption and Agent Arcade's pinned TLS), but then it isn't a direct phone-to-PC link.</li>
       <li><b>Logs.</b> Tokens, pairing codes and terminal text are never written to the log.</li>
     </ul>
 
@@ -73,16 +75,17 @@
     <ul>
       <li><b>Agents aren't sandboxed.</b> They run with your normal Windows permissions and can change or delete files, as they would in any terminal. You're responsible for what you let them do.</li>
       <li><b>Agents share the project folder.</b> There's no per-agent git worktree isolation yet. The Changes tab shows every edit live.</li>
+      <li><b>Cloned projects can contain anything.</b> From 1.3.3, agent sessions run with <code>NoDefaultCurrentDirectoryInExePath=1</code>, so a <code>node.bat</code> or <code>node.cmd</code> planted in a cloned repository no longer runs in place of Node.js when an agent's launcher starts <code>node</code>. An agent can still run whatever a project tells it to, so read what you clone.</li>
       <li><b>Status detection is heuristic.</b> It reads the agents' English terminal text, so treat it as a strong signal, not a guarantee.</li>
       <li><b>No independent audit</b> has been done. The source is public, so you can read it.</li>
-      <li><b>The download isn't code-signed yet.</b> Check its SHA-256 on the <a href="download.html#verify">download page</a>.</li>
+      <li><b>The download isn't code-signed yet.</b> Check its SHA-256 on the <a href="download.html#verify">download page</a>. With Smart App Control on, Windows blocks unsigned apps and offers no per-app exception, so Agent Arcade can't run there until it is signed.</li>
     </ul>
 
     <h2>Check it yourself</h2>
-    <p>The source is on <a href="https://github.com/danular/AgentArcade">GitHub</a>. <code>AgentArcade.exe --self-check</code> runs the built-in checks, including the phone remote's TLS pinning, pairing limits and address filter, and writes the results to <code>%TEMP%\AgentArcade-selfcheck.txt</code>. <code>powercfg /requests</code> shows the keep-awake request while agents run.</p>
+    <p>The source is on <a href="https://github.com/danular/AgentArcade">GitHub</a>. <code>AgentArcade.exe --self-check</code> runs the built-in checks, including the phone remote's TLS pinning, pairing limits and address filter, and writes the results to <code>%TEMP%\AgentArcade-selfcheck.txt</code>. That report also lists your agents' account emails and folder paths, so share only its <code>FAIL</code> lines. <code>powercfg /requests</code> shows the keep-awake request while agents run.</p>
 
     <h2>Report a vulnerability</h2>
-    <p>Please report security problems privately through GitHub: <a href="https://github.com/danular/AgentArcade/security/advisories/new">open a private security advisory</a>. Don't open a public issue for them.</p>
+    <p>Please report security problems privately through GitHub: <a href="https://github.com/danular/AgentArcade/security/advisories/new">open a private security advisory</a>. Don't open a public issue for them. <a href="https://github.com/danular/AgentArcade/blob/main/SECURITY.md">SECURITY.md</a> has the details; security fixes go into the latest release.</p>
   </div>
 </section>
 </main>

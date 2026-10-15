@@ -7,7 +7,7 @@ An Android app that remote-controls Agent Arcade. On your phone you see every ag
 The phone needs something on the PC to talk to, so the plan has two halves that share one contract, [REMOTE_API.md](REMOTE_API.md):
 
 ```
-Phone app  ── HTTPS + WebSocket (Wi-Fi or Tailscale, no cloud) ──  Agent Arcade "Phone remote"  ──  your agent panes
+Phone app  ── HTTPS + WebSocket (Wi-Fi or Tailscale, no Agent Arcade server) ──  Agent Arcade "Phone remote"  ──  your agent panes
 ```
 
 Steps 1 and 2 can run at the same time.
@@ -55,10 +55,10 @@ Later, with Claude Code in Android Studio: [step4-Claude-Code-Tailscale-and-slee
 ## Step 4: pair your phone
 
 1. Put the app on your phone: turn on Developer options and USB debugging (or Wireless debugging), pick the phone in Android Studio, and press Run.
-2. On the PC: Agent Arcade → **Phone** (bottom of the sidebar) → switch it on. If Windows asks, allow Agent Arcade on private networks.
+2. On the PC: Agent Arcade → **Phone** (bottom of the sidebar) → switch it on. If Windows asks, allow Agent Arcade on private networks. On your own home Wi-Fi, set the network to *Private* in Windows; on shared Wi-Fi keep it *Public* and use Tailscale.
 3. On the phone: **Scan QR code**, check that the fingerprint matches the one on the PC, and tap **Pair**.
 
-Away from home: install [Tailscale](https://tailscale.com) on the PC and the phone with the same account. The pairing link includes the Tailscale address automatically.
+Away from home: install [Tailscale](https://tailscale.com) on the PC and the phone with the same account. The pairing link includes the Tailscale address automatically. When the two can't reach each other directly, Tailscale relays the encrypted traffic through its own DERP servers.
 
 ## What the phone shows
 
@@ -76,13 +76,13 @@ Progress comes from what the agents already show: their live status line (`✻ B
 
 - Phone remote is off until you switch it on, and only listens while it's on.
 - Everything is encrypted (HTTPS, TLS 1.2 or 1.3). The phone only accepts your PC's own certificate, whose fingerprint it gets from the QR code.
-- Only devices on your own network or your Tailscale network can connect; the port stays closed to the internet.
+- Only devices on your own network or your Tailscale network can connect; the port stays closed to the internet. Agent screens and your typing go only between the phone and the PC (over Tailscale, possibly through Tailscale's encrypted DERP relays).
 - A pairing code works once, for 10 minutes. Each phone gets its own token; the PC keeps only a hash of it, and **Remove** in the Phone dialog cuts that phone off at once.
-- A paired phone can do what you can do inside the panes (read, type, approve, start, stop). It can't read your files, change settings or see account logins. Tokens, codes and terminal text never go into any log.
+- A paired phone is as powerful as your keyboard in the panes (read, type, approve, start, stop, resume, rename). Agents run with your Windows permissions, so by typing to an agent a phone can reach your files indirectly. It can also make an empty project folder (`POST /projects`). It has no way of its own to read files, change settings or see account logins. Tokens, codes and terminal text never go into any log.
 
 ## Troubleshooting
 
-- **The phone can't reach the PC.** Same Wi-Fi? Is the Wi-Fi set to *Private* in Windows (Settings → Network & internet → Wi-Fi → your network)? The Phone dialog warns you when it isn't. Did you allow Agent Arcade in the firewall prompt? Is Phone remote on and the PC awake? Guest Wi-Fi networks often block devices from seeing each other. On Android 17 and newer, allow *Nearby devices* for Agent Arcade Remote (Android settings → Apps), or it can't reach addresses on your Wi-Fi.
+- **The phone can't reach the PC.** Same Wi-Fi? On your own home Wi-Fi, is it set to *Private* in Windows (Settings → Network & internet → Wi-Fi → your network)? The Phone dialog warns you when it isn't. On shared Wi-Fi, keep it *Public* and use Tailscale instead. Did you allow Agent Arcade in the firewall prompt? Is Phone remote on and the PC awake? Guest Wi-Fi networks often block devices from seeing each other. On Android 17 and newer, allow *Nearby devices* for Agent Arcade Remote (Android settings → Apps), or it can't reach addresses on your Wi-Fi.
 - **The PC got a new address, or you installed Tailscale after pairing.** The phone learns the new addresses whenever it is connected. If it can't connect at all any more, remove the phone in the Phone dialog and pair again.
 - **"This isn't the PC you paired with."** The PC's certificate changed (for example after a Windows reset). Forget the PC in Settings and pair again.
 - **No alerts while the app is closed.** Turn on *Stay connected*, allow notifications, and set the app's battery use to *Unrestricted*.

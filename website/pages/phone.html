@@ -1,6 +1,6 @@
 ---
 title: Phone remote
-description: Agent Arcade Remote for Android shows every agent's live terminal, alerts you when one needs you, and lets you approve with a tap. Phone to PC directly, no relay.
+description: Agent Arcade Remote for Android shows every agent's live terminal, alerts you when one needs you, and lets you approve with a tap. Phone to PC, with no Agent Arcade server in between.
 nav: phone
 cockpit: yes
 ---
@@ -9,7 +9,7 @@ cockpit: yes
     <div class="f-text">
       <p class="eyebrow">{{remote}} · Android · free</p>
       <h1>Walk away. They keep working.</h1>
-      <p class="lead">See every agent's live terminal, answer approvals with a tap, and start or stop agents from the couch. Your phone talks only to your PC, over Wi-Fi or Tailscale.</p>
+      <p class="lead">See every agent's live terminal, answer approvals with a tap, and start or stop agents from the couch. Agent screens and your typing go only between your phone and your PC, over Wi-Fi or Tailscale.</p>
       <div class="ctas"><a class="btn btn-accent" href="{{apk}}">{{download_icon}}Download the Android app</a><a class="btn btn-ghost" href="download.html">Get the PC app</a></div>
       <p class="meta">v{{apk_version}} · {{apk_size}} APK · Android 8.0 and up · not on Google Play yet · <a href="download.html#phone">How to install</a></p>
     </div>
@@ -21,11 +21,11 @@ cockpit: yes
   <div class="wrap">
     <div class="sec-head"><p class="eyebrow">Pairing</p><h2 id="pair-h">Paired in 30 seconds</h2></div>
     <ol class="steps" style="max-width:760px">
-      <li><div><b>On the PC:</b> Agent Arcade → <b>Phone</b> at the bottom of the sidebar → switch on <i>Let my phone watch and drive these agents</i>. If Windows asks, allow Agent Arcade on private networks.</div></li>
+      <li><div><b>On the PC:</b> Agent Arcade → <b>Phone</b> at the bottom of the sidebar → switch on <i>Let my phone watch and drive these agents</i>. If Windows asks, allow Agent Arcade on private networks. On your own home Wi-Fi, set the network to <i>Private</i> in Windows; on shared Wi-Fi keep it <i>Public</i> and use Tailscale.</div></li>
       <li><div><b>On the phone:</b> tap <b>Scan QR code</b> and point it at the PC screen.</div></li>
       <li><div><b>Check the fingerprint.</b> The PC and the phone show the same one. Tap <b>Pair</b>.</div></li>
     </ol>
-    <div class="link-diagram" role="img" aria-label="Phone and PC joined directly over Wi-Fi or Tailscale, with no cloud relay" style="margin-top:32px">
+    <div class="link-diagram" role="img" aria-label="Phone and PC joined over Wi-Fi or Tailscale, with no Agent Arcade server in between" style="margin-top:32px">
       <div class="node"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><rect x="14" y="4" width="20" height="40" rx="4"/><path d="M21 38h6"/></svg>Your phone</div>
       <div class="line"><span>Wi-Fi or Tailscale · TLS, pinned</span><div class="cloud"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 36h22a8 8 0 0 0 0-16 12 12 0 0 0-23-2A9 9 0 0 0 14 36Z"/></svg></div></div>
       <div class="node"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="40" height="26" rx="3"/><path d="M18 42h12M24 34v8"/></svg>Your PC</div>
@@ -51,18 +51,18 @@ cockpit: yes
   <div class="wrap feature">
     <div class="f-text">
       <p class="eyebrow">Security</p>
-      <h2 id="sec-h">Your phone talks to your PC. Nothing else.</h2>
+      <h2 id="sec-h">Agent screens and your typing go only between your phone and your PC</h2>
       <ul>
         <li><span class="dot done"></span><span><b>Off until you switch it on,</b> and the PC listens only while it's on.</span></li>
         <li><span class="dot done"></span><span><b>Local network and Tailscale only.</b> Every other address is dropped before the TLS handshake, even if a port is forwarded.</span></li>
         <li><span class="dot done"></span><span><b>Pinned TLS 1.2/1.3.</b> The phone trusts only your PC's own certificate, checked by its SHA-256 fingerprint.</span></li>
         <li><span class="dot done"></span><span><b>One-time pairing codes</b> that expire after 10 minutes and are cancelled after 5 wrong tries.</span></li>
         <li><span class="dot done"></span><span><b>Your PC keeps only hashes</b> of phone tokens. Remove a phone and its access stops at once.</span></li>
-        <li><span class="dot done"></span><span><b>No files, no settings, no logins.</b> The phone can do only what you could do inside the panes.</span></li>
+        <li><span class="dot needs"></span><span><b>As powerful as your keyboard in the panes.</b> The phone can type into agents, and agents run with your Windows permissions, so through them it can reach your files. Besides that it can only make an empty project folder (New project). It can't change settings, see account logins or start agents outside your workspaces. Treat it like a key.</span></li>
       </ul>
     </div>
     <div class="f-vis">
-      <div class="note"><b>Honest limits.</b> Android only for now (8.0 and up). Away from home you need Tailscale on both devices; its Personal plan is free for non-commercial use. There's no cloud push service, so alerts while the app is closed need "Stay connected" and unrestricted battery use. Status detection reads the agents' English terminal text, so treat it as a strong signal, not a guarantee.</div>
+      <div class="note"><b>Honest limits.</b> Android only for now (8.0 and up). Away from home you need Tailscale on both devices; its Personal plan is free for non-commercial use. When Tailscale can't link the devices directly, it relays the encrypted traffic through its own DERP servers. There's no cloud push service, so alerts while the app is closed need "Stay connected" and unrestricted battery use. Status detection reads the agents' English terminal text, so treat it as a strong signal, not a guarantee.</div>
     </div>
   </div>
 </section>

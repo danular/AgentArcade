@@ -1,6 +1,6 @@
 ---
 title: Agent Arcade · Run every AI coding agent side by side on Windows
-description: Run Claude Code, Codex, Gemini CLI, GitHub Copilot CLI and Cursor side by side on Windows, with a status dot on every pane and a free Android remote. Free for personal use.
+description: Run Claude Code, Codex, GitHub Copilot CLI, Cursor and Gemini CLI (API key or Code Assist) side by side on Windows, with a status dot on every pane and a free Android remote. Free for personal use.
 nav: home
 cockpit: yes
 ---
@@ -9,14 +9,14 @@ cockpit: yes
     <div class="hero-text">
       <a class="pill" href="changelog.html"><span class="dot done"></span>New in 1.3 · Phone remote for Android <span aria-hidden="true">→</span></a>
       <h1>Run every AI coding agent side by side on Windows<span class="h-dot" aria-hidden="true"></span></h1>
-      <p class="lead">Claude Code, Codex, Gemini CLI, GitHub Copilot CLI and Cursor, each in its own live terminal pane, with a status dot that shows which one is working, which is done and which needs you. Watch and approve them from your Android phone, directly over Wi-Fi or Tailscale, with no Agent Arcade server in between.</p>
+      <p class="lead">Claude Code, Codex, GitHub Copilot CLI, Cursor and Gemini CLI (API key or Code Assist), each in its own live terminal pane, with a status dot that shows which one is working, which is done and which needs you. Watch and approve them from your Android phone over Wi-Fi or Tailscale, with no Agent Arcade server in between.</p>
       <div class="ctas" style="justify-content:center">
         <a class="btn btn-accent" href="{{download}}">{{download_icon}}Download for Windows, free</a>
         <a class="btn btn-ghost" href="#film" data-film="assets/video/agent-arcade-promo.mp4" data-poster="assets/video/poster.jpg" data-captions="assets/video/agent-arcade-promo.vtt">▶ Watch the 30-second film</a>
       </div>
       <p class="meta">v{{version}} · Windows 11 x64 · Free for personal use · Pro EUR 25/user/mo excl. VAT</p>
       <div class="agents-line" aria-label="Agents that work with Agent Arcade">
-        <span class="chip">Claude Code</span><span class="chip">Codex</span><span class="chip">Gemini CLI</span><span class="chip">GitHub Copilot CLI</span><span class="chip">Cursor</span><span class="chip dashed">+ any CLI agent</span>
+        <span class="chip">Claude Code</span><span class="chip">Codex</span><span class="chip">GitHub Copilot CLI</span><span class="chip">Cursor</span><span class="chip">Gemini CLI (API key or Code Assist)</span><span class="chip dashed">+ any CLI agent</span>
       </div>
       <p class="muted small">Each agent signs in through its own official login. Your subscriptions stay yours.</p>
     </div>
@@ -30,7 +30,7 @@ cockpit: yes
 
     <div class="facts">
       <div><b>5</b>built-in agents</div>
-      <div><b>0</b>relay servers</div>
+      <div><b>0</b>Agent Arcade servers</div>
       <div><b>1</b>QR scan to pair</div>
       <div><b>EUR 0</b>for personal use</div>
     </div>
@@ -52,7 +52,7 @@ cockpit: yes
     <div class="cards3">
       <div class="card"><span class="dot working"></span><h3>Every agent, one window</h3><p>Five built-in agents plus any command-line agent, each in a real Windows terminal. The grid arranges itself, and dragging panes never restarts an agent.</p></div>
       <div class="card"><span class="dot needs"></span><h3>Never miss a "needs you"</h3><p>A status dot on every pane and every sidebar entry. Windows notifies you only when you aren't looking, and one click takes you to the pane.</p></div>
-      <div class="card"><span class="dot done"></span><h3>Your desk in your pocket</h3><p>The Android remote shows each agent's live terminal and lets you approve, answer, start and stop, straight from your phone to your PC.</p></div>
+      <div class="card"><span class="dot done"></span><h3>Your desk in your pocket</h3><p>The Android remote shows each agent's live terminal and lets you approve, answer, start and stop from your phone, with no Agent Arcade server in between.</p></div>
     </div>
   </div>
 </section>
@@ -112,7 +112,8 @@ cockpit: yes
         <ul>
           <li><span class="dot amber"></span><span><b>Numbered and yes/no prompts become buttons.</b> Tap "1 Yes" and the pane on your PC carries on. Menus get on-screen Esc, Tab, arrow and Enter keys.</span></li>
           <li><span class="dot done"></span><span><b>Type a reply, start, stop or resume agents,</b> and browse your history by project.</span></li>
-          <li><span class="dot done"></span><span><b>Nothing you do on the phone moves your PC's view.</b> It talks straight to your PC over Wi-Fi or Tailscale.</span></li>
+          <li><span class="dot done"></span><span><b>Nothing you do on the phone moves your PC's view.</b> It connects to your PC over Wi-Fi or Tailscale.</span></li>
+          <li><span class="dot needs"></span><span><b>As powerful as your keyboard in the panes.</b> Agents run with your Windows permissions, so a paired phone can reach what they can. Remove a lost phone in the Phone dialog.</span></li>
         </ul>
         <div class="ctas"><a class="btn btn-ghost" href="phone.html">About the phone remote</a></div>
       </div>
@@ -152,12 +153,12 @@ cockpit: yes
     <div class="feature">
       <div class="f-text">
         <span class="num">05 / 05</span>
-        <h2>Talk, don't type <span class="pro-pill" style="font-size:.9rem;vertical-align:6px">Pro · Windows</span></h2>
-        <p class="muted">Pro includes {{voice}}, a dictation app for Windows built for prompting coding agents. Hold <span class="kbd">Ctrl</span> <span class="kbd">Shift</span> <span class="kbd">Space</span> to talk, and the cleaned-up text is pasted where your cursor is.</p>
+        <h2>Talk, don't type <span class="pro-pill" style="font-size:.9rem;vertical-align:6px">Coming · Pro</span></h2>
+        <p class="muted">{{voice}} is coming: a dictation app for Windows built for prompting coding agents, planned as part of Pro. Hold <span class="kbd">Ctrl</span> <span class="kbd">Shift</span> <span class="kbd">Space</span> to talk, and the cleaned-up text is pasted where your cursor is.</p>
         <ul>
-          <li><span class="dot done"></span><span><b>Whisper runs on your own PC.</b> Audio stays in memory and is never uploaded.</span></li>
+          <li><span class="dot done"></span><span><b>Whisper on your own PC.</b> Audio is kept in memory, not uploaded.</span></li>
           <li><span class="dot done"></span><span><b>Cleanup that understands code.</b> Fillers and stutters go; npm, .env and C# stay as you write them.</span></li>
-          <li><span class="dot done"></span><span><b>Prompt Coach</b> scores your prompts and shows the habits that cost you corrections.</span></li>
+          <li><span class="dot done"></span><span><b>Planned: Prompt Coach,</b> to score your prompts and show the habits that cost you corrections.</span></li>
         </ul>
         <div class="ctas"><a class="btn btn-ghost" href="voice.html">About Voice</a></div>
       </div>
@@ -176,9 +177,9 @@ cockpit: yes
 
 <section class="section" aria-labelledby="privacy">
   <div class="wrap">
-    <div class="sec-head"><p class="eyebrow">Private by design</p><h2 id="privacy">Your phone talks to your PC. Nothing else.</h2>
-      <p class="lead">No Agent Arcade cloud, no telemetry, no account with us, and no handling of your AI logins.</p></div>
-    <div class="link-diagram" role="img" aria-label="Phone and PC joined directly over Wi-Fi or Tailscale, with no cloud relay">
+    <div class="sec-head"><p class="eyebrow">Private by design</p><h2 id="privacy">Agent screens and your typing go only between your phone and your PC</h2>
+      <p class="lead">No Agent Arcade cloud, no telemetry, no account with us, and no handling of your AI logins. Away from home Tailscale carries the connection; when it can't link the two devices directly, it relays the encrypted traffic through its own DERP servers.</p></div>
+    <div class="link-diagram" role="img" aria-label="Phone and PC joined over Wi-Fi or Tailscale, with no Agent Arcade server in between">
       <div class="node"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><rect x="14" y="4" width="20" height="40" rx="4"/><path d="M21 38h6"/></svg>Your phone</div>
       <div class="line"><span>Wi-Fi or Tailscale · TLS, pinned</span><div class="cloud"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 36h22a8 8 0 0 0 0-16 12 12 0 0 0-23-2A9 9 0 0 0 14 36Z"/></svg></div></div>
       <div class="node"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="40" height="26" rx="3"/><path d="M18 42h12M24 34v8"/></svg>Your PC</div>
@@ -188,8 +189,9 @@ cockpit: yes
         <caption class="sr-only" style="position:absolute;left:-9999px">What leaves your PC</caption>
         <tr><th scope="row">Agent Arcade itself</th><td>No telemetry, no analytics, no account with us. Vendor installers download only when you click Install.</td></tr>
         <tr><th scope="row">Your AI logins</th><td>Stay with the AI tools. Agent Arcade never asks for, reads or stores passwords or login tokens.</td></tr>
-        <tr><th scope="row">Chat history</th><td>On your PC only: titles, agent, account, folder and times. Never the conversation itself.</td></tr>
-        <tr><th scope="row">Phone remote</th><td>Phone to PC only, over your network or Tailscale. Off until you turn it on.</td></tr>
+        <tr><th scope="row">Chat history</th><td>On your PC only: titles, agent, account, folder and times. Never the conversation itself, but a title can be the start of your first message.</td></tr>
+        <tr><th scope="row">Phone remote</th><td>Agent screens and your typing go only between your phone and your PC, over your network or Tailscale (through Tailscale's encrypted relays when needed). Off until you turn it on.</td></tr>
+        <tr><th scope="row">The window (WebView2)</th><td>From 1.3.3, SmartScreen checks are off and crash dumps stay on your PC. Before 1.3.3, WebView2's defaults applied: SmartScreen checked page addresses with Microsoft, and crash reports went to Microsoft as your Windows diagnostic-data setting allowed.</td></tr>
         <tr><th scope="row">Your agents</th><td>Talk to their own vendors under your accounts, exactly as they would in any terminal.</td></tr>
       </table>
     </div>
@@ -217,7 +219,7 @@ cockpit: yes
       <div class="card plan">
         <p class="eyebrow">Personal</p>
         <p class="price">EUR 0 <small>no time limit</small></p>
-        <p class="muted">Learning, hobby projects, unpaid open source and your own content.</p>
+        <p class="muted">Learning, hobby projects, unpaid open-source work and your own content.</p>
         <ul><li>Every agent, every pane, every status dot</li><li>Side panel, history, multiple accounts</li><li>The Android remote</li></ul>
         <div class="ctas"><a class="btn btn-primary" href="{{download}}">Download free</a></div>
       </div>
@@ -225,7 +227,8 @@ cockpit: yes
         <p class="eyebrow">Pro <span class="pro-pill">For work</span></p>
         <p class="price">EUR 25 <small>per user / month, excl. VAT</small></p>
         <p class="muted">Freelancers, employees, agencies and companies.</p>
-        <ul><li>Everything in Personal, with a commercial licence</li><li>{{voice}} and Prompt Coach</li><li>VAT invoices and priority support</li></ul>
+        <ul><li>Everything in Personal, with a commercial licence</li><li>{{voice}}, when it's ready</li><li>VAT invoices</li></ul>
+        <p class="muted small">Pro checkout isn't open yet.</p>
         <div class="ctas"><a class="btn btn-accent" href="pricing.html">See Pro</a></div>
       </div>
     </div>
@@ -237,14 +240,14 @@ cockpit: yes
   <div class="wrap">
     <div class="sec-head"><p class="eyebrow">FAQ</p><h2 id="faq-h">Questions people ask first</h2></div>
     <div class="faq">
-      <details><summary>Is Agent Arcade really free?</summary><div><p>Yes, for personal use: learning, hobby projects, unpaid open source and your own content. You get every feature, including the Android remote. No account, no key, no time limit. The only thing it doesn't include is {{voice}}, which comes with Pro.</p></div></details>
-      <details><summary>Do I need Pro?</summary><div><p>Only if Agent Arcade is part of paid or organisational work: freelance or client work, your job (even if your employer doesn't pay for it), an agency, or a company. Licences are per person, not per PC. When a side project starts earning, you have 30 days to switch. <a href="pricing.html#need-pro">See examples</a>.</p></div></details>
+      <details><summary>Is Agent Arcade really free?</summary><div><p>Yes, for personal use: learning, hobby projects, unpaid open-source work and your own content. You get every feature, including the Android remote. No account, no key, no time limit. {{voice}} isn't part of it: it's coming with Pro.</p></div></details>
+      <details><summary>Do I need Pro?</summary><div><p>Only if Agent Arcade is part of paid or organisational work: freelance or client work, your job (even if your employer doesn't pay for it), an agency, or a company. Licences are per person, not per PC. When a side project starts earning, you have 30 days to switch. Pro checkout isn't open yet; if you need Pro for work before then, ask in <a href="{{discuss}}">GitHub Discussions</a>. <a href="pricing.html#need-pro">See examples</a>.</p></div></details>
       <details><summary>Are my Claude, ChatGPT, Gemini, Copilot or Cursor plans included?</summary><div><p>No. Agent Arcade runs each vendor's official CLI, and each one signs in with your own account and plan. We don't resell AI usage or add a markup. Running several agents in parallel uses up those plans' limits faster.</p></div></details>
-      <details><summary>Does Agent Arcade see my logins or my code?</summary><div><p>Your AI logins stay with the AI tools: Agent Arcade never asks for, reads or stores passwords or login tokens. It has no telemetry and no cloud of its own, and its history keeps only titles, folders, times and ids, never chat contents. Your agents do send your prompts and code to their own vendors under your accounts, just as they would in any terminal.</p></div></details>
-      <details><summary>How does the phone remote work without a cloud?</summary><div><p>Turn on Phone remote on the PC (it's off by default), scan the QR code with the Android app, and check that the same fingerprint shows on both screens. From then on your phone connects directly to your PC over Wi-Fi, or over Tailscale when you're away, using TLS checked against your PC's own certificate.</p></div></details>
+      <details><summary>Does Agent Arcade see my logins or my code?</summary><div><p>Your AI logins stay with the AI tools: Agent Arcade never asks for, reads or stores passwords or login tokens. It has no telemetry and no cloud of its own, and its history keeps only titles, folders, times and ids, never chat contents (a title can be the start of your first message). Your agents do send your prompts and code to their own vendors under your accounts, just as they would in any terminal.</p></div></details>
+      <details><summary>How does the phone remote work without an Agent Arcade server?</summary><div><p>Turn on Phone remote on the PC (it's off by default), scan the QR code with the Android app, and check that the same fingerprint shows on both screens. From then on your phone connects to your PC over Wi-Fi, or over Tailscale when you're away, using TLS checked against your PC's own certificate. When Tailscale can't link the devices directly, it relays the encrypted traffic through its own DERP servers. A paired phone is as powerful as your keyboard in the panes, so treat it like a key.</p></div></details>
       <details><summary>Can several agents work in the same project safely?</summary><div><p>They share the project folder, each in its own pane. There's no per-agent git worktree isolation yet, so give them separate tasks, or open separate folders as separate workspaces. The Changes tab shows every edit live. Agents aren't sandboxed and run with your Windows permissions.</p></div></details>
       <details><summary>Is there a Mac version or an iPhone app?</summary><div><p>Not yet. Agent Arcade runs on Windows 11 (x64), and the remote is Android only. Say you want one in <a href="{{discuss}}">GitHub Discussions</a> so we know who's waiting.</p></div></details>
-      <details><summary>Why does Windows warn me when I start it?</summary><div><p>The download isn't code-signed yet, so SmartScreen may say it "protected your PC". Click <b>More info</b>, then <b>Run anyway</b>. You can check the file against the SHA-256 on the <a href="download.html">download page</a>, and the full source is on <a href="{{github}}">GitHub</a>.</p></div></details>
+      <details><summary>Why does Windows warn me when I start it?</summary><div><p>The download isn't code-signed yet, so SmartScreen may say it "protected your PC". Click <b>More info</b>, then <b>Run anyway</b>. If Smart App Control is on, Windows blocks unsigned apps and offers no per-app exception, so Agent Arcade can't run there until it is code-signed. You can check the file against the SHA-256 on the <a href="download.html#verify">download page</a>, and the full source is on <a href="{{github}}">GitHub</a>.</p></div></details>
     </div>
   </div>
 </section>
@@ -252,7 +255,7 @@ cockpit: yes
 <section class="final">
   <div class="wrap">
     <h2 style="font-size:clamp(2rem,1.3rem+2.6vw,3.2rem)">What are we building today<span class="h-dot" aria-hidden="true"></span></h2>
-    <p class="lead">Free for personal use. Pro for work, with voice dictation.</p>
+    <p class="lead">Free for personal use. Pro for work; voice dictation is coming.</p>
     <div class="ctas" style="justify-content:center"><a class="btn btn-accent" href="{{download}}">{{download_icon}}Download for Windows, free</a><a class="btn btn-ghost" href="{{github}}">View the source</a></div>
   </div>
 </section>
