@@ -952,7 +952,7 @@ static class RemoteSelfCheck
                 && Names(state.GetProperty("agents")[0], "name command installed version color")
                 && Names(state.GetProperty("accounts")[0], "key agent name main signedIn email plan")
                 && Names(chat, "id agent account accountName workspace title named startedAt endedAt open session resume")
-                && Names(JsonSerializer.SerializeToElement(RemoteModel.Hello()), "app api version pc")
+                && Names(JsonSerializer.SerializeToElement(RemoteModel.Hello()), "app api version pc minClientApi features")
                 && Names(JsonSerializer.SerializeToElement(RemoteModel.PairAnswer("t", "d_000000")), "token deviceId pc")
                 && state.GetProperty("agents")[0].GetProperty("color").GetString() == "#d97757"
                 && state.GetProperty("accounts")[0].GetProperty("key").GetString() == "Claude Code|main"
@@ -989,6 +989,28 @@ static class RemoteSelfCheck
                 && cutScreen.GetProperty("lines")[3][0].GetProperty("t").GetString() == "last"
                 && whole.RootElement.GetProperty("screen").GetProperty("from").GetInt32() == 90,
             "ids, keys, phone names, line counts, the local-network address filter and cutting a screen to the lines a phone wants");
+
+        // What the page answers goes to the phone only with a code the contract's table gives for its status.
+        using var typed = JsonDocument.Parse("{\"typed\":true}");
+        var fromPage = new[]
+        {
+            RemoteReply.FromPage(409, typed.RootElement, "Enter wasn't pressed.", "dialogOpen"),
+            RemoteReply.FromPage(409, null, "Changed.", "badRequest"),
+            RemoteReply.FromPage(409, null, "Changed.", null),
+            RemoteReply.FromPage(404, null, "", "sessionNotFound"),
+            RemoteReply.FromPage(201, null, "ignored", "ignored"),
+        };
+        using var withCode = JsonDocument.Parse(RemoteModel.ReplyJson(fromPage[0]));
+        using var chatOpen = JsonDocument.Parse(RemoteModel.ReplyJson(new RemoteReply(409, JsonSerializer.SerializeToElement(new { id = "s3", code = "x", error = "x" }), "That chat is already open.", "chatOpen")));
+        check(
+            "remote-error-codes",
+            fromPage[0] is { Status: 409, Code: "dialogOpen" } && Names(withCode.RootElement, "typed error code") && Json.Str(withCode.RootElement, "code") == "dialogOpen"
+                && fromPage.Skip(1).Take(3).All(reply => reply is { Status: 500, Code: "internal", Error: "Something went wrong on the PC." })
+                && fromPage[4] is { Status: 201, Code: null, Error: null }
+                && Names(chatOpen.RootElement, "id error code") && Json.Str(chatOpen.RootElement, "code") == "chatOpen" && Json.Str(chatOpen.RootElement, "error") == "That chat is already open."
+                && RemoteModel.IsCode(403, "notApproved") && RemoteModel.IsCode(503, "busy") && !RemoteModel.IsCode(404, "busy") && !RemoteModel.IsCode(400, "nope")
+                && RemoteReply.Busy.Code == "busy" && RemoteReply.Internal is { Status: 500, Code: "internal" },
+            "every error body carries a code from REMOTE_API.md's table, next to error and the body's own fields; a page reply with a code that doesn't fit its status becomes 500 internal");
     }
 
     static List<string> PublicNetworkNames()
@@ -1081,9 +1103,9 @@ static class RemoteSelfCheck
             check(
                 "remote-pair",
                 pair.StatusCode == HttpStatusCode.OK && RemoteDevices.IsToken(token) && server.Devices.All().Single().Name == "Self check phone"
-                    && reuse.StatusCode == HttpStatusCode.Forbidden && Json.Str(reuseBody, "error").Contains("already used", StringComparison.Ordinal)
+                    && reuse.StatusCode == HttpStatusCode.Forbidden && Json.Str(reuseBody, "error").Contains("already used", StringComparison.Ordinal) && Json.Str(reuseBody, "code") == "codeUsed"
                     && state.StatusCode == HttpStatusCode.OK && stateBody.TryGetProperty("sessions", out _) && stateBody.TryGetProperty("hosts", out _)
-                    && wrongToken.StatusCode == HttpStatusCode.Unauthorized && Json.Str(wrongBody, "error") == NotPaired
+                    && wrongToken.StatusCode == HttpStatusCode.Unauthorized && Json.Str(wrongBody, "error") == NotPaired && Json.Str(wrongBody, "code") == "notPaired"
                     && noToken.StatusCode == HttpStatusCode.Unauthorized
                     && !host.Logged.Any(line => line.Contains(token, StringComparison.Ordinal) || line.Contains(code, StringComparison.Ordinal)),
                 "pairing with the code gives a token that works; the code works once; a wrong token gets 401; no token or code in the log");
@@ -1091,11 +1113,14 @@ static class RemoteSelfCheck
             using var input = await Send(http, HttpMethod.Post, root + "sessions/s1/input", token, new { text = "hi", submit = true });
             var inputBody = await Body(input);
             using var notJson = await Send(http, HttpMethod.Post, root + "sessions/s1/input", token, raw: "not json");
+            var notJsonBody = await Body(notJson);
             using var longText = await Send(http, HttpMethod.Post, root + "sessions/s1/input", token, new { text = new string('x', 16 * 1024 + 1) });
+            var longTextBody = await Body(longText);
             using var huge = await Send(http, HttpMethod.Post, root + "sessions/s1/input", token, raw: "\"" + new string('x', 70 * 1024) + "\"", expectContinue: true);
             using var badKey = await Send(http, HttpMethod.Post, root + "sessions/s1/keys", token, new { keys = new[] { "f13" } });
             var badKeyBody = await Body(badKey);
             using var badId = await Send(http, HttpMethod.Post, root + "sessions/x1/stop", token);
+            var badIdBody = await Body(badId);
             using var unknown = await Send(http, HttpMethod.Get, root + "nothing", token);
             var unknownBody = await Body(unknown);
             using var started = await Send(http, HttpMethod.Post, root + "sessions", token, new { account = "Claude Code|main", workspace = folder });
@@ -1107,13 +1132,15 @@ static class RemoteSelfCheck
             check(
                 "remote-requests",
                 input.StatusCode == HttpStatusCode.OK && inputBody.TryGetProperty("ok", out var ok) && ok.GetBoolean() && host.Asked.Contains(("remoteInput", deviceId))
-                    && notJson.StatusCode == HttpStatusCode.BadRequest
-                    && longText.StatusCode == HttpStatusCode.RequestEntityTooLarge && huge.StatusCode == HttpStatusCode.RequestEntityTooLarge
-                    && badKey.StatusCode == HttpStatusCode.BadRequest && Json.Str(badKeyBody, "error") == "Unknown key: f13"
-                    && badId.StatusCode == HttpStatusCode.NotFound
-                    && unknown.StatusCode == HttpStatusCode.NotFound && Json.Str(unknownBody, "error") == "Unknown request."
+                    && !inputBody.TryGetProperty("code", out _)
+                    && notJson.StatusCode == HttpStatusCode.BadRequest && Json.Str(notJsonBody, "code") == "badRequest"
+                    && longText.StatusCode == HttpStatusCode.RequestEntityTooLarge && Json.Str(longTextBody, "code") == "tooLarge" && huge.StatusCode == HttpStatusCode.RequestEntityTooLarge
+                    && badKey.StatusCode == HttpStatusCode.BadRequest && Json.Str(badKeyBody, "error") == "Unknown key: f13" && Json.Str(badKeyBody, "code") == "unknownKey"
+                    && badId.StatusCode == HttpStatusCode.NotFound && Json.Str(badIdBody, "code") == "sessionNotFound"
+                    && unknown.StatusCode == HttpStatusCode.NotFound && Json.Str(unknownBody, "error") == "Unknown request." && Json.Str(unknownBody, "code") == "unknownRequest"
                     && started.StatusCode == HttpStatusCode.Created && Json.Str(startedBody, "id") == "s9" && host.Asked.Contains(("remoteStart", deviceId))
                     && badProject.StatusCode == HttpStatusCode.BadRequest && Json.Str(badProjectBody, "error") == "Windows keeps NUL for itself. Choose another name."
+                    && Json.Str(badProjectBody, "code") == "badName"
                     && project.StatusCode == HttpStatusCode.Created && Json.Str(projectBody, "workspace") == "RiverRun" && host.Projects.SequenceEqual(["RiverRun"]),
                 "input reaches the page with the phone's device id; bad JSON 400, too long 413, unknown key 400, bad pane id 404, unknown route 404, start 201, "
                     + "a new project's name is trimmed and checked before it reaches the window");
@@ -1211,7 +1238,7 @@ static class RemoteSelfCheck
                     "a fifth phone gets 1013, an unpaired phone 4401 and 401, 20 requests a second, turning off sends 1001 and tells the page to drop all queued typing");
                 check(
                     "remote-lockout",
-                    blocked.StatusCode == HttpStatusCode.TooManyRequests && Json.Str(blockedBody, "error").Contains("without a valid pairing", StringComparison.Ordinal),
+                    blocked.StatusCode == HttpStatusCode.TooManyRequests && Json.Str(blockedBody, "error").Contains("without a valid pairing", StringComparison.Ordinal) && Json.Str(blockedBody, "code") == "lockedOut",
                     "20 wrong tokens lock out the address they came from; X-Forwarded-For can't move that, even with forwarded headers switched on in the environment");
             }
             finally
@@ -1315,7 +1342,7 @@ static class RemoteSelfCheck
             var fifthBody = await Body(fifth);
             check(
                 "remote-in-flight",
-                fifth.StatusCode == HttpStatusCode.TooManyRequests && Json.Str(fifthBody, "error") == "Too many requests. Wait a moment."
+                fifth.StatusCode == HttpStatusCode.TooManyRequests && Json.Str(fifthBody, "error") == "Too many requests. Wait a moment." && Json.Str(fifthBody, "code") == "tooManyRequests"
                     && atOnce && answers.All(answer => answer.StatusCode == HttpStatusCode.Unauthorized) && host.Cancelled.Contains(device),
                 "a fifth request waiting for the page gets 429; removing the phone answers its four with 401 at once and tells the page to drop its typing");
             foreach (var answer in answers) answer.Dispose();
@@ -1712,8 +1739,8 @@ static class RemoteFixtures
             ["screen.json"] = RemoteModel.ScreenMessage(Page(Screen()), 6),
             ["attention.json"] = RemoteModel.Event(new { type = "attention", attention = RemoteModel.Redacted(Page(Attention())) }),
             // Error bodies; the status is in the file name.
-            ["error-409-dialogChanged.json"] = RemoteModel.ReplyJson(RemoteReply.Fail(409, DialogChanged)),
-            ["error-403-notApproved.json"] = RemoteModel.ReplyJson(RemoteReply.Fail(403, NotApproved)),
+            ["error-409-dialogChanged.json"] = RemoteModel.ReplyJson(RemoteReply.Fail(409, "dialogChanged", DialogChanged)),
+            ["error-403-notApproved.json"] = RemoteModel.ReplyJson(RemoteReply.Fail(403, "notApproved", NotApproved)),
         };
     }
 

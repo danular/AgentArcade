@@ -1394,12 +1394,14 @@ sealed class MainForm : Form, IRemoteHost
     void RemoteReplied(JsonElement m)
     {
         if (!_pageRequests.TryRemove(Json.Str(m, "requestId"), out var request)) return;
-        var status = Int(m, "status");
         JsonElement? body = m.TryGetProperty("body", out var found) && found.ValueKind == JsonValueKind.Object ? found.Clone() : null;
-        var error = Json.Str(m, "error");
-        if (status is not (200 or 201 or 400 or 404 or 409 or 413 or 429 or 503)) (status, error) = (500, "Something went wrong on the PC.");
-        if (status == 200 && body != null) request.Received?.Invoke(body.Value);
-        request.Done.TrySetResult(new RemoteReply(status, body, error.Length > 0 ? error : null));
+        // Only the statuses the page answers with; with a code from the contract's table, else 500 internal.
+        var status = Int(m, "status");
+        var reply = status is 200 or 201 or 400 or 401 or 404 or 409 or 413 or 429 or 503
+            ? RemoteReply.FromPage(status, body, Json.Str(m, "error"), Json.Str(m, "code"))
+            : RemoteReply.Internal;
+        if (reply.Status == 200 && body != null) request.Received?.Invoke(body.Value);
+        request.Done.TrySetResult(reply);
     }
 
     // Requests the page can't answer any more (it reloaded, or the window is closing) get 503 at once.
@@ -1428,7 +1430,7 @@ sealed class MainForm : Form, IRemoteHost
             // the removal happens before remoteCancel is queued, so a request posted after it is caught here.
             if (device != null && (!_remote.Running || !_remote.Devices.Exists(device)))
             {
-                request.Done.TrySetResult(_remote.Running ? RemoteReply.Fail(401, RemoteServer.NotPaired) : RemoteReply.Busy);
+                request.Done.TrySetResult(_remote.Running ? RemoteReply.Fail(401, "notPaired", RemoteServer.NotPaired) : RemoteReply.Busy);
                 return;
             }
             // remoteStatus also tells the page how many phones are connected. Counted as it goes out, so it can't overtake a newer count.
@@ -1552,11 +1554,11 @@ sealed class MainForm : Form, IRemoteHost
     List<object> RemoteChats() => RemoteModel.Chats(_history, _agents, chat => _sessions.FirstOrDefault(pair => pair.Value.Chat == chat).Key);
 
     // A phone may only start a known account in a project that is in the sidebar. The page gets the stored spelling.
-    (string? Project, string? Problem) CheckRemoteStart(string account, string workspace)
+    (string? Project, RemoteReply? Problem) CheckRemoteStart(string account, string workspace)
     {
-        if (FindAccount(account) == null) return (null, "That agent account isn't on the PC any more.");
+        if (FindAccount(account) == null) return (null, RemoteReply.Fail(404, "accountNotFound", "That agent account isn't on the PC any more."));
         var project = _settings.Projects.FirstOrDefault(path => path.Equals(workspace, StringComparison.OrdinalIgnoreCase));
-        return project == null ? (null, "That project isn't in the sidebar on the PC any more.") : (project, null);
+        return project == null ? (null, RemoteReply.Fail(404, "workspaceNotFound", "That project isn't in the sidebar on the PC any more.")) : (project, null);
     }
 
     // Every pane's newest summary from the page. When it doesn't answer, the last ones it sent stay.
@@ -1582,7 +1584,7 @@ sealed class MainForm : Form, IRemoteHost
     async Task<RemoteReply> IRemoteHost.StartAsync(string device, string account, string workspace)
     {
         var (project, problem) = await OnUiAsync(() => CheckRemoteStart(account, workspace));
-        if (problem != null) return RemoteReply.Fail(404, problem);
+        if (problem != null) return problem;
         return await AskPageAsync("remoteStart", device, new() { ["account"] = account, ["workspace"] = project }, null);
     }
 

@@ -2390,20 +2390,22 @@ function sendScreen(id) {
 // ---------- phone remote: requests ----------
 
 const remoteOk = (body = { ok: true }, status = 200) => ({ status, body });
-const remoteRefuse = (status, error, body) => ({ status, error, body });
+// code: from REMOTE_API.md's error table (Errors); the C# side turns an error without a known code into 500 internal.
+const remoteRefuse = (status, error, code, body) => ({ status, error, code, body });
 
 async function remoteRequest(message, handler) {
   let result;
   try {
     result = typeof message.device === 'string' && remote.removed.has(message.device)
-      ? remoteRefuse(401, "This phone isn't paired any more. Pair it again on your PC.")
+      ? remoteRefuse(401, "This phone isn't paired any more. Pair it again on your PC.", 'notPaired')
       : await handler(message);
   } catch {
-    result = remoteRefuse(500, 'Something went wrong on the PC.');
+    result = remoteRefuse(500, 'Something went wrong on the PC.', 'internal');
   }
   const reply = { type: 'remoteReply', requestId: message.requestId, status: result.status };
   if (result.body) reply.body = result.body;
   if (result.error) reply.error = result.error;
+  if (result.code) reply.code = result.code;
   send(reply);
 }
 
@@ -2422,9 +2424,9 @@ function inOrder(session, message, job, duration = 0) {
   const ticket = { device: typeof message.device === 'string' ? message.device : null, at: Date.now(), cancelled: false };
   remote.jobs.add(ticket);
   const run = (session.remoteQueue || session.begun).then(() => {
-    if (ticket.cancelled || Date.now() - ticket.at + duration > JOB_WAIT_MS) return remoteRefuse(503, BUSY);
-    if (sessions.get(session.id) !== session) return remoteRefuse(404, NOT_OPEN);
-    if (!session.running) return remoteRefuse(409, HAS_ENDED);
+    if (ticket.cancelled || Date.now() - ticket.at + duration > JOB_WAIT_MS) return remoteRefuse(503, BUSY, 'busy');
+    if (sessions.get(session.id) !== session) return remoteRefuse(404, NOT_OPEN, 'sessionNotFound');
+    if (!session.running) return remoteRefuse(409, HAS_ENDED, 'sessionEnded');
     return job(ticket);
   }).finally(() => remote.jobs.delete(ticket));
   session.remoteQueue = run.catch(() => {});
@@ -2449,15 +2451,15 @@ function notReady(agent) {
 
 function remoteGetScreen(message) {
   const session = sessions.get(message.id);
-  if (!session) return remoteRefuse(404, NOT_OPEN);
+  if (!session) return remoteRefuse(404, NOT_OPEN, 'sessionNotFound');
   return remoteOk(screenOf(session, clampLines(message.lines)));
 }
 
 // Typed like a paste at the PC, so titles, amber and "done" keep working through term.onData.
 function remoteInput(message) {
   const session = sessions.get(message.id);
-  if (!session) return remoteRefuse(404, NOT_OPEN);
-  if (!session.running) return remoteRefuse(409, HAS_ENDED);
+  if (!session) return remoteRefuse(404, NOT_OPEN, 'sessionNotFound');
+  if (!session.running) return remoteRefuse(409, HAS_ENDED, 'sessionEnded');
   const text = typeof message.text === 'string' ? message.text.replace(CONTROL, '') : '';
   return inOrder(session, message, async ticket => {
     if (text) {
@@ -2467,8 +2469,8 @@ function remoteInput(message) {
     }
     if (message.submit !== true) return remoteOk();
     await wait(150);
-    if (ticket.cancelled) return remoteRefuse(503, BUSY);
-    if (!session.running) return remoteRefuse(409, HAS_ENDED);
+    if (ticket.cancelled) return remoteRefuse(503, BUSY, 'busy');
+    if (!session.running) return remoteRefuse(409, HAS_ENDED, 'sessionEnded');
     session.term.input('\r');
     return remoteOk();
   }, message.submit === true ? 150 : 0);
@@ -2476,17 +2478,17 @@ function remoteInput(message) {
 
 function remoteKeys(message) {
   const session = sessions.get(message.id);
-  if (!session) return remoteRefuse(404, NOT_OPEN);
-  if (!session.running) return remoteRefuse(409, HAS_ENDED);
+  if (!session) return remoteRefuse(404, NOT_OPEN, 'sessionNotFound');
+  if (!session.running) return remoteRefuse(409, HAS_ENDED, 'sessionEnded');
   const keys = Array.isArray(message.keys) ? message.keys : [];
-  if (!keys.length || keys.length > 32) return remoteRefuse(400, 'Send between 1 and 32 keys.');
+  if (!keys.length || keys.length > 32) return remoteRefuse(400, 'Send between 1 and 32 keys.', 'badRequest');
   const unknown = keys.findIndex(name => Remote.keySequence(name, false) === null);
-  if (unknown >= 0) return remoteRefuse(400, `Unknown key: ${Remote.cut(String(keys[unknown]).replace(CONTROL, ''), 40)}`);
+  if (unknown >= 0) return remoteRefuse(400, `Unknown key: ${Remote.cut(String(keys[unknown]).replace(CONTROL, ''), 40)}`, 'unknownKey');
   return inOrder(session, message, async ticket => {
     for (const [i, name] of keys.entries()) {
       if (i) await wait(40);
-      if (ticket.cancelled) return remoteRefuse(503, BUSY);
-      if (!session.running) return remoteRefuse(409, HAS_ENDED);
+      if (ticket.cancelled) return remoteRefuse(503, BUSY, 'busy');
+      if (!session.running) return remoteRefuse(409, HAS_ENDED, 'sessionEnded');
       session.term.input(Remote.keySequence(name, session.term.modes.applicationCursorKeysMode));
     }
     return remoteOk();
@@ -2496,36 +2498,37 @@ function remoteKeys(message) {
 function remoteStart(message) {
   const account = accountOf(message.account);
   const agent = agentOf(account);
-  if (!account || !agent) return remoteRefuse(404, "That account isn't on the PC any more.");
+  if (!account || !agent) return remoteRefuse(404, "That account isn't on the PC any more.", 'accountNotFound');
   const workspace = workspaceOf(message.workspace);
-  if (!workspace) return remoteRefuse(404, "That project isn't in the sidebar on the PC any more.");
-  if (!workspace.exists) return remoteRefuse(409, `The ${workspace.name} folder is missing on the PC.`);
+  if (!workspace) return remoteRefuse(404, "That project isn't in the sidebar on the PC any more.", 'workspaceNotFound');
+  if (!workspace.exists) return remoteRefuse(409, `The ${workspace.name} folder is missing on the PC.`, 'folderMissing');
   const problem = notReady(agent);
-  if (problem) return remoteRefuse(409, problem);
+  if (problem) return remoteRefuse(409, problem, 'agentNotReady');
   const session = openSession(account.key, 'start', null, { workspace: workspace.path, remote: true });
-  return session ? remoteOk({ id: session.id }, 201) : remoteRefuse(409, `${agent.name} couldn't start on the PC.`);
+  return session ? remoteOk({ id: session.id }, 201) : remoteRefuse(409, `${agent.name} couldn't start on the PC.`, 'startFailed');
 }
 
 function remoteResume(message) {
   const chat = chatOf(message.chat);
-  if (!chat) return remoteRefuse(404, 'That chat is no longer in the history.');
+  if (!chat) return remoteRefuse(404, 'That chat is no longer in the history.', 'chatNotFound');
   const holders = [...sessions.values()].filter(session => session.chat === chat.id || (session.running && session.resumeOf === chat.id));
   const running = holders.find(session => session.running);
-  if (running) return remoteRefuse(409, 'That chat is already open.', { id: running.id });
+  if (running) return remoteRefuse(409, 'That chat is already open.', 'chatOpen', { id: running.id });
   const open = holders[0];
   const problem = resumeProblem(chat);
-  if (problem) return remoteRefuse(409, problem);
-  if (!workspaceOf(chat.workspace)) return remoteRefuse(409, `Add ${folderName(chat.workspace)} back to the sidebar on the PC first.`);
+  // An agent that isn't installed is agentNotReady, like at start; the rest is about this chat.
+  if (problem) return remoteRefuse(409, problem, problem.endsWith(" isn't installed.") ? 'agentNotReady' : 'cantResume');
+  if (!workspaceOf(chat.workspace)) return remoteRefuse(409, `Add ${folderName(chat.workspace)} back to the sidebar on the PC first.`, 'cantResume');
   const agent = state.agents.find(item => item.name === chat.agent);
   const waiting = notReady(agent);
-  if (waiting) return remoteRefuse(409, waiting);
+  if (waiting) return remoteRefuse(409, waiting, 'agentNotReady');
   // A pane where this chat ended makes way for it, like its Resume button on the PC. If the PC had that pane
   // maximized, the new one is.
   const order = open?.order;
   const wasMaxed = !!open && maxed === open.id;
   if (open) closeSession(open, true);
   const session = openSession(chat.account, 'resume', chat, { remote: true });
-  if (!session) return remoteRefuse(409, `${agent.name} couldn't start on the PC.`);
+  if (!session) return remoteRefuse(409, `${agent.name} couldn't start on the PC.`, 'startFailed');
   if (order) session.order = order;
   if (wasMaxed) maxed = session.id;
   if (order || wasMaxed) renderPanes();
@@ -2534,8 +2537,8 @@ function remoteResume(message) {
 
 function remoteStop(message) {
   const session = sessions.get(message.id);
-  if (!session) return remoteRefuse(404, NOT_OPEN);
-  if (!session.running) return remoteRefuse(409, HAS_ENDED);
+  if (!session) return remoteRefuse(404, NOT_OPEN, 'sessionNotFound');
+  if (!session.running) return remoteRefuse(409, HAS_ENDED, 'sessionEnded');
   // The C# side stops the agent and sends no exit for it.
   send({ type: 'close', session: session.id });
   endSession(session, { phone: true });
@@ -2544,16 +2547,16 @@ function remoteStop(message) {
 
 async function remoteClose(message) {
   const session = sessions.get(message.id);
-  if (!session) return remoteRefuse(404, NOT_OPEN);
-  if (session.running) return remoteRefuse(409, 'Stop the agent first.');
+  if (!session) return remoteRefuse(404, NOT_OPEN, 'sessionNotFound');
+  if (session.running) return remoteRefuse(409, 'Stop the agent first.', 'sessionRunning');
   await closeSession(session, true);
   return remoteOk();
 }
 
 function remoteRename(message) {
   const session = sessions.get(message.id);
-  if (!session) return remoteRefuse(404, NOT_OPEN);
-  if (!isChat(session)) return remoteRefuse(400, 'Only chats can be renamed.');
+  if (!session) return remoteRefuse(404, NOT_OPEN, 'sessionNotFound');
+  if (!isChat(session)) return remoteRefuse(400, 'Only chats can be renamed.', 'badRequest');
   setCustomTitle(session, typeof message.title === 'string' ? message.title.replace(CONTROL, ' ') : '');
   return remoteOk();
 }

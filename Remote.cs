@@ -30,14 +30,25 @@ namespace AgentArcade;
 // Phone remote: the HTTPS and WebSocket server the phone app "Agent Arcade Remote" talks to.
 // The contract is docs/phone-remote/REMOTE_API.md. Tokens, pairing codes and terminal text never go into the log.
 
-// The page's answer to a phone's request: the HTTP status, a JSON object and a sentence the phone shows.
-sealed record RemoteReply(int Status, JsonElement? Body = null, string? Error = null)
+// The page's answer to a phone's request: the HTTP status, a JSON object, and for an error a sentence the phone shows
+// with its code from REMOTE_API.md's error table.
+sealed record RemoteReply(int Status, JsonElement? Body = null, string? Error = null, string? Code = null)
 {
     public static RemoteReply Ok(object body) => new(200, JsonSerializer.SerializeToElement(body, RemoteModel.Wire));
 
-    public static RemoteReply Fail(int status, string error) => new(status, null, error);
+    public static RemoteReply Fail(int status, string code, string error) => new(status, null, error, code);
 
-    public static RemoteReply Busy => Fail(503, "Agent Arcade is busy, try again.");
+    public static RemoteReply Busy => Fail(503, "busy", "Agent Arcade is busy, try again.");
+
+    public static RemoteReply Internal => Fail(500, "internal", "Something went wrong on the PC.");
+
+    // The page's remoteReply. An error needs a sentence and a code the table gives for its status; anything else
+    // becomes 500 internal, so a phone never gets an error without a code.
+    public static RemoteReply FromPage(int status, JsonElement? body, string? error, string? code)
+    {
+        if (status is 200 or 201) return new(status, body);
+        return error is { Length: > 0 } && RemoteModel.IsCode(status, code) ? new(status, body, error, code) : Internal;
+    }
 }
 
 sealed record RemoteWatch(string Id, int Lines);
@@ -644,16 +655,16 @@ static partial class NewProject
         return null;
     }
 
-    // Why name (already trimmed) can't be made in folder right now, with the status the phone gets; null when it can.
-    // The page's New project dialog asks this while you type.
-    public static (int Status, string Problem)? Refusal(string? folder, string name)
+    // Why name (already trimmed) can't be made in folder right now, with the status and code the phone gets; null when
+    // it can. The page's New project dialog asks this while you type.
+    public static (int Status, string Code, string Problem)? Refusal(string? folder, string name)
     {
-        if (Problem(name) is { } problem) return (400, problem);
-        if (folder == null || !Directory.Exists(folder)) return (404, "Agent Arcade on your PC has no projects folder. Add a project there first.");
+        if (Problem(name) is { } problem) return (400, "badName", problem);
+        if (folder == null || !Directory.Exists(folder)) return (404, "noProjectsFolder", "Agent Arcade on your PC has no projects folder. Add a project there first.");
         var path = Path.Combine(folder, name);
         if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), Path.TrimEndingDirectorySeparator(folder), StringComparison.OrdinalIgnoreCase))
-            return (400, "That name can't be a folder.");
-        if (Directory.Exists(path) || File.Exists(path)) return (409, "There's already a folder called " + name + " in " + folder + ".");
+            return (400, "badName", "That name can't be a folder.");
+        if (Directory.Exists(path) || File.Exists(path)) return (409, "folderExists", "There's already a folder called " + name + " in " + folder + ".");
         return null;
     }
 
@@ -661,7 +672,7 @@ static partial class NewProject
     public static (string? Path, RemoteReply Reply) Create(string? folder, string name)
     {
         name = name.Trim();
-        if (Refusal(folder, name) is { } refusal) return (null, RemoteReply.Fail(refusal.Status, refusal.Problem));
+        if (Refusal(folder, name) is { } refusal) return (null, RemoteReply.Fail(refusal.Status, refusal.Code, refusal.Problem));
         var path = Path.Combine(folder!, name);
         try
         {
@@ -669,7 +680,7 @@ static partial class NewProject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return (null, RemoteReply.Fail(409, "Windows didn't let Agent Arcade make " + name + " in " + folder + "."));
+            return (null, RemoteReply.Fail(409, "folderFailed", "Windows didn't let Agent Arcade make " + name + " in " + folder + "."));
         }
         return (path, Made(path));
     }
@@ -693,6 +704,28 @@ static partial class NewProject
 static class RemoteModel
 {
     public const int Api = 1;
+    // The lowest API a phone must speak to use this PC (hello.minClientApi).
+    public const int MinClientApi = 1;
+
+    // What this PC does beyond contract 1.0 (hello.features). A name is listed only once it works end to end.
+    public static readonly string[] Features = ["errorCodes"];
+
+    // REMOTE_API.md's error table: each code and the one status it comes with. Codes are never renamed or reused.
+    static readonly Dictionary<string, int> Codes = new()
+    {
+        ["badRequest"] = 400, ["unknownKey"] = 400, ["badName"] = 400,
+        ["notPaired"] = 401,
+        ["noCode"] = 403, ["wrongCode"] = 403, ["codeExpired"] = 403, ["codeUsed"] = 403, ["codeCancelled"] = 403, ["denied"] = 403, ["notApproved"] = 403,
+        ["unknownRequest"] = 404, ["sessionNotFound"] = 404, ["chatNotFound"] = 404, ["accountNotFound"] = 404, ["workspaceNotFound"] = 404, ["noProjectsFolder"] = 404,
+        ["sessionEnded"] = 409, ["sessionRunning"] = 409, ["chatOpen"] = 409, ["cantResume"] = 409, ["agentNotReady"] = 409, ["folderMissing"] = 409,
+        ["startFailed"] = 409, ["folderExists"] = 409, ["folderFailed"] = 409, ["dialogChanged"] = 409, ["dialogOpen"] = 409, ["runChanged"] = 409,
+        ["tooLarge"] = 413,
+        ["tooManyRequests"] = 429, ["tooManyPairAttempts"] = 429, ["lockedOut"] = 429,
+        ["internal"] = 500,
+        ["busy"] = 503,
+    };
+
+    public static bool IsCode(int status, string? code) => code != null && Codes.TryGetValue(code, out var known) && known == status;
 
     // Non-ASCII text such as box drawing stays as it is instead of becoming \uXXXX escapes.
     public static readonly JsonSerializerOptions Wire = new() { Encoder = JavaScriptEncoder.Create(UnicodeRanges.All) };
@@ -718,7 +751,7 @@ static class RemoteModel
     public static object Hello() => Hello(Pc, Version);
 
     // The contract fixtures (Program.cs) pass a made-up PC name and version; everything else passes this PC's.
-    public static object Hello(string pc, string version) => new { app = "Agent Arcade", api = Api, version, pc };
+    public static object Hello(string pc, string version) => new { app = "Agent Arcade", api = Api, version, pc, minClientApi = MinClientApi, features = Features };
 
     public static object PairAnswer(string token, string deviceId) => new { token, deviceId, pc = Pc };
 
@@ -904,7 +937,7 @@ static class RemoteModel
             || (b[0] == 100 && b[1] is >= 64 and <= 127);
     }
 
-    // The HTTP body of a reply: its JSON object, plus "error" when it has an error sentence.
+    // The HTTP body of a reply: its JSON object, plus "error" and "code" when it is an error.
     public static byte[] ReplyJson(RemoteReply reply)
     {
         var stream = new MemoryStream();
@@ -914,9 +947,10 @@ static class RemoteModel
             if (reply.Body is { ValueKind: JsonValueKind.Object } body)
             {
                 foreach (var property in body.EnumerateObject())
-                    if (!property.NameEquals("error")) property.WriteTo(writer);
+                    if (!property.NameEquals("error") && !property.NameEquals("code")) property.WriteTo(writer);
             }
             if (reply.Error != null) writer.WriteString("error", reply.Error);
+            if (reply.Code != null) writer.WriteString("code", reply.Code);
             writer.WriteEndObject();
         }
         return stream.ToArray();
@@ -1169,10 +1203,10 @@ sealed class RemoteServer
     const int MaxPageRequests = 4, MaxConnections = 8;
     public const string NotPaired = "This phone isn't paired any more. Pair it again on your PC.";
 
-    static readonly RemoteReply Unknown = RemoteReply.Fail(404, "Unknown request.");
-    static readonly RemoteReply Invalid = RemoteReply.Fail(400, "That request isn't valid.");
-    static readonly RemoteReply PaneGone = RemoteReply.Fail(404, "That agent isn't open on the PC any more.");
-    static readonly RemoteReply TooMany = RemoteReply.Fail(429, "Too many requests. Wait a moment.");
+    static readonly RemoteReply Unknown = RemoteReply.Fail(404, "unknownRequest", "Unknown request.");
+    static readonly RemoteReply Invalid = RemoteReply.Fail(400, "badRequest", "That request isn't valid.");
+    static readonly RemoteReply PaneGone = RemoteReply.Fail(404, "sessionNotFound", "That agent isn't open on the PC any more.");
+    static readonly RemoteReply TooMany = RemoteReply.Fail(429, "tooManyRequests", "Too many requests. Wait a moment.");
 
     // The requests one phone has waiting for the page, and the signal that answers them all at once.
     sealed class PageRequests
@@ -1344,7 +1378,7 @@ sealed class RemoteServer
         {
             // Checked under the lock EndPageRequests takes, so a request is either ended by a removal or sees it.
             if (!Running) return RemoteReply.Busy;
-            if (!Devices.Exists(device)) return RemoteReply.Fail(401, NotPaired);
+            if (!Devices.Exists(device)) return RemoteReply.Fail(401, "notPaired", NotPaired);
             if (!_pageRequests.TryGetValue(device, out var found)) _pageRequests[device] = found = new();
             if (found.Count >= MaxPageRequests) return TooMany;
             waiting = found;
@@ -1593,7 +1627,7 @@ sealed class RemoteServer
         {
             // Only what went wrong, never the request itself.
             _host.Log("Phone request failed: " + ex.GetType().Name + ": " + ex.Message);
-            if (!context.Response.HasStarted) await WriteAsync(context, RemoteReply.Fail(500, "Something went wrong on the PC."));
+            if (!context.Response.HasStarted) await WriteAsync(context, RemoteReply.Internal);
         }
     }
 
@@ -1623,7 +1657,7 @@ sealed class RemoteServer
         var address = context.Connection.RemoteIpAddress is { } remote ? RemoteModel.Plain(remote) : IPAddress.None;
         if (_failures.Blocked(address))
         {
-            await WriteAsync(context, RemoteReply.Fail(429, "Too many requests without a valid pairing. Wait a minute and try again."));
+            await WriteAsync(context, RemoteReply.Fail(429, "lockedOut", "Too many requests without a valid pairing. Wait a minute and try again."));
             return;
         }
         var header = request.Headers.Authorization.ToString();
@@ -1631,7 +1665,7 @@ sealed class RemoteServer
         if (device == null)
         {
             _failures.Failed(address);
-            await WriteAsync(context, RemoteReply.Fail(401, NotPaired));
+            await WriteAsync(context, RemoteReply.Fail(401, "notPaired", NotPaired));
             return;
         }
         if (!_limiter.Allow(device.Id))
@@ -1658,7 +1692,7 @@ sealed class RemoteServer
         }
         var reply = await AnswerAsync(context, device.Id, get, post, path);
         // A phone that was removed while its request waited gets no answer.
-        if (!Devices.Exists(device.Id)) reply = RemoteReply.Fail(401, NotPaired);
+        if (!Devices.Exists(device.Id)) reply = RemoteReply.Fail(401, "notPaired", NotPaired);
         await WriteAsync(context, reply);
     }
 
@@ -1681,7 +1715,7 @@ sealed class RemoteServer
             case ["chats", var chat, "resume"] when post:
                 return RemoteModel.IsChatId(chat)
                     ? await AskPageAsync(device, "remoteResume", new() { ["chat"] = chat })
-                    : RemoteReply.Fail(404, "That chat is no longer in the history.");
+                    : RemoteReply.Fail(404, "chatNotFound", "That chat is no longer in the history.");
             case ["sessions", var id, "screen"] when get:
                 return await AskPageAsync(device, "remoteGetScreen", new() { ["id"] = id, ["lines"] = RemoteModel.Lines(context.Request.Query["lines"].ToString()) });
             case ["sessions", var id, "input"] when post:
@@ -1701,7 +1735,7 @@ sealed class RemoteServer
 
     async Task<RemoteReply> PairAsync(HttpContext context)
     {
-        if (!Pairing.Attempt()) return RemoteReply.Fail(429, "Too many pairing attempts. Wait a minute and try again.");
+        if (!Pairing.Attempt()) return RemoteReply.Fail(429, "tooManyPairAttempts", "Too many pairing attempts. Wait a minute and try again.");
         var (body, problem) = await ReadBodyAsync(context);
         if (body == null) return problem!;
         string code, device;
@@ -1715,15 +1749,15 @@ sealed class RemoteServer
         switch (result)
         {
             case PairResult.None:
-                return RemoteReply.Fail(403, "Phone remote has no pairing code right now. Open the Phone dialog on your PC.");
+                return RemoteReply.Fail(403, "noCode", "Phone remote has no pairing code right now. Open the Phone dialog on your PC.");
             case PairResult.Wrong:
-                return RemoteReply.Fail(403, "That pairing code is wrong. Scan the QR code on your PC again.");
+                return RemoteReply.Fail(403, "wrongCode", "That pairing code is wrong. Scan the QR code on your PC again.");
             case PairResult.Expired:
-                return RemoteReply.Fail(403, "That pairing code has expired. Press New code on your PC and scan again.");
+                return RemoteReply.Fail(403, "codeExpired", "That pairing code has expired. Press New code on your PC and scan again.");
             case PairResult.Used:
-                return RemoteReply.Fail(403, "That pairing code was already used. Press New code on your PC and scan again.");
+                return RemoteReply.Fail(403, "codeUsed", "That pairing code was already used. Press New code on your PC and scan again.");
             case PairResult.Cancelled:
-                return RemoteReply.Fail(403, "Too many wrong codes. Press New code on your PC and scan again.");
+                return RemoteReply.Fail(403, "codeCancelled", "Too many wrong codes. Press New code on your PC and scan again.");
         }
         var (added, token) = Devices.Add(name);
         _host.Log("Phone paired: " + name);
@@ -1740,7 +1774,7 @@ sealed class RemoteServer
         {
             if (!TryString(body.RootElement, "account", out account) || !TryString(body.RootElement, "workspace", out workspace)) return Invalid;
         }
-        if (account.Length == 0 || workspace.Length == 0) return RemoteReply.Fail(400, "Choose an agent account and a project.");
+        if (account.Length == 0 || workspace.Length == 0) return RemoteReply.Fail(400, "badRequest", "Choose an agent account and a project.");
         return await WaitForPageAsync(device, () => _host.StartAsync(device, account, workspace));
     }
 
@@ -1754,7 +1788,7 @@ sealed class RemoteServer
             if (!TryString(body.RootElement, "name", out name)) return Invalid;
         }
         name = name.Trim();
-        if (NewProject.Problem(name) is { } bad) return RemoteReply.Fail(400, bad);
+        if (NewProject.Problem(name) is { } bad) return RemoteReply.Fail(400, "badName", bad);
         return await _host.CreateProjectAsync(device, name);
     }
 
@@ -1768,7 +1802,7 @@ sealed class RemoteServer
         {
             if (!TryString(body.RootElement, "text", out text) || !TryBool(body.RootElement, "submit", out submit)) return Invalid;
         }
-        if (Encoding.UTF8.GetByteCount(text) > MaxText) return RemoteReply.Fail(413, "That message is too long. Send at most 16 KB.");
+        if (Encoding.UTF8.GetByteCount(text) > MaxText) return RemoteReply.Fail(413, "tooLarge", "That message is too long. Send at most 16 KB.");
         return await AskPageAsync(device, "remoteInput", new() { ["id"] = id, ["text"] = text, ["submit"] = submit });
     }
 
@@ -1780,11 +1814,11 @@ sealed class RemoteServer
         using (body)
         {
             if (!body.RootElement.TryGetProperty("keys", out var list) || list.ValueKind != JsonValueKind.Array) return Invalid;
-            if (list.GetArrayLength() is < 1 or > 32) return RemoteReply.Fail(400, "Send from 1 to 32 keys.");
+            if (list.GetArrayLength() is < 1 or > 32) return RemoteReply.Fail(400, "badRequest", "Send from 1 to 32 keys.");
             foreach (var item in list.EnumerateArray())
             {
                 var name = item.ValueKind == JsonValueKind.String && TryText(item, out var text) ? text : "";
-                if (!RemoteModel.IsKey(name)) return RemoteReply.Fail(400, "Unknown key: " + RemoteModel.Cut(name.Length > 0 ? name : item.ValueKind.ToString(), 40));
+                if (!RemoteModel.IsKey(name)) return RemoteReply.Fail(400, "unknownKey", "Unknown key: " + RemoteModel.Cut(name.Length > 0 ? name : item.ValueKind.ToString(), 40));
                 keys.Add(name);
             }
         }
@@ -1806,7 +1840,7 @@ sealed class RemoteServer
     // Reads the body with its own limit, so a body that is too large still gets a JSON answer.
     static async Task<(JsonDocument? Body, RemoteReply? Problem)> ReadBodyAsync(HttpContext context)
     {
-        var tooLarge = RemoteReply.Fail(413, "That request is too large.");
+        var tooLarge = RemoteReply.Fail(413, "tooLarge", "That request is too large.");
         if (context.Request.ContentLength > MaxBody) return (null, tooLarge);
         var buffer = new byte[MaxBody + 1];
         var count = 0;
@@ -1831,7 +1865,7 @@ sealed class RemoteServer
         {
             // Answered below.
         }
-        return (null, RemoteReply.Fail(400, "That request isn't valid JSON."));
+        return (null, RemoteReply.Fail(400, "badRequest", "That request isn't valid JSON."));
     }
 
     // A string field. Missing or null counts as empty; any other kind of value is invalid.
@@ -1881,7 +1915,7 @@ sealed class RemoteServer
     {
         if (!context.WebSockets.IsWebSocketRequest)
         {
-            await WriteAsync(context, RemoteReply.Fail(400, "This address only takes a WebSocket connection."));
+            await WriteAsync(context, RemoteReply.Fail(400, "badRequest", "This address only takes a WebSocket connection."));
             return;
         }
         // No context takeover: each message is compressed on its own, so one screen can't help guess another.
