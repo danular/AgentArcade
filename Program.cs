@@ -17,6 +17,11 @@ static class Program
     [STAThread]
     static int Main(string[] args)
     {
+        // cmd.exe looks for a bare program name in its current folder before PATH, and npm's .cmd shims run a bare
+        // "node". Agents run in project folders, which may be cloned from anyone, so a node.cmd planted there would
+        // run before the agent. With this set, cmd skips the current folder; every program this app starts inherits it.
+        Environment.SetEnvironmentVariable("NoDefaultCurrentDirectoryInExePath", "1");
+
         if (args.Any(arg => arg == "--self-check"))
             return SelfCheck.Run();
 
@@ -145,6 +150,84 @@ static class SelfCheck
                 extra.Contains("set \"CLAUDE_CONFIG_DIR=C:\\Accounts\\claude-work\"", StringComparison.Ordinal) &&
                 extra.Contains("pushd \"C:\\Game\"", StringComparison.Ordinal),
                 "main clears the folder setting, extra accounts set it");
+        }
+
+        // A node.bat or node.cmd planted in a project must not run in place of Node. npm's .cmd shims run a bare "node"
+        // when no node.exe sits next to them, and cmd looks in its current folder (the project) before PATH. The shim
+        // starts the way StartSession starts it, and through the Windows Terminal script without this app's environment.
+        var shimRoot = Path.Combine(Path.GetTempPath(), "AgentArcade-shim-" + Environment.ProcessId);
+        try
+        {
+            var workspace = Path.Combine(shimRoot, "cloned repo");
+            var npm = Path.Combine(shimRoot, "npm");
+            var launch = Path.Combine(shimRoot, "launch");
+            foreach (var folder in new[] { workspace, npm, launch }) Directory.CreateDirectory(folder);
+            var markers = new Dictionary<string, string>();
+            foreach (var planted in new[] { "node.bat", "node.cmd" })
+            {
+                // Each one leaves a file next to itself when it runs.
+                File.WriteAllText(Path.Combine(workspace, planted), "@echo planted>\"%~dp0" + planted + ".ran\"\r\n");
+                markers[planted] = Path.Combine(workspace, planted + ".ran");
+            }
+            // npm's cmd-shim, with --version in place of the agent's script.
+            var shim = Path.Combine(npm, "fake-agent.cmd");
+            File.WriteAllText(shim, string.Join("\r\n",
+                "@ECHO off", "GOTO start", ":find_dp0", "SET dp0=%~dp0", "EXIT /b", ":start", "SETLOCAL", "CALL :find_dp0",
+                "IF EXIST \"%dp0%\\node.exe\" (", "  SET \"_prog=%dp0%\\node.exe\"", ") ELSE (", "  SET \"_prog=node\"", "  SET PATHEXT=%PATHEXT:;.JS;=;%", ")",
+                "endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & \"%_prog%\" --version") + "\r\n");
+            var codex = AgentStore.Defaults().First(agent => agent.Command == "codex");
+            var account = new AgentAccount { Agent = codex.Name, Name = "main" };
+
+            // Which planted programs ran (they are deleted again for the next run), or that it didn't end in time.
+            string Started(string commandLine, string directory, Dictionary<string, string?> env)
+            {
+                using (var done = new ManualResetEventSlim())
+                using (var pty = PtySession.Start(commandLine, directory, env, 100, 30))
+                {
+                    pty.Exited += _ => done.Set();
+                    pty.Begin();
+                    if (!done.Wait(15000)) return "no exit within 15 s";
+                }
+                var ran = markers.Where(item => File.Exists(item.Value)).ToList();
+                foreach (var item in ran) File.Delete(item.Value);
+                return ran.Count == 0 ? "" : string.Join(" and ", ran.Select(item => item.Key)) + " ran";
+            }
+
+            // An agent pane: StartSession's command line, folder and environment.
+            var env = AccountStore.EnvFor(codex, account);
+            MainForm.SessionEnv(env);
+            var pane = Started(MainForm.CommandLine(shim, "", workspace), workspace, env);
+
+            // A Windows Terminal tab: cmd runs the launch script from its folder, without this app's environment.
+            var script = Terminal.Script(workspace, shim, "", AccountStore.EnvFor(codex, account));
+            File.WriteAllText(Path.Combine(launch, "launch.cmd"), script, new UTF8Encoding(false));
+            var unset = new Dictionary<string, string?> { ["NoDefaultCurrentDirectoryInExePath"] = null };
+            var tab = Started(Path.Combine(Environment.SystemDirectory, "cmd.exe") + " /d /c .\\launch.cmd", launch, unset);
+            var setLine = script.IndexOf("set \"NoDefaultCurrentDirectoryInExePath=1\"", StringComparison.Ordinal);
+
+            // Without the setting the planted program does run, so this check can see the hole.
+            var bare = AccountStore.EnvFor(codex, account);
+            bare["NoDefaultCurrentDirectoryInExePath"] = null;
+            var control = Started(MainForm.CommandLine(shim, "", workspace), workspace, bare);
+
+            var passed = pane.Length == 0 && tab.Length == 0 && control.EndsWith(" ran", StringComparison.Ordinal)
+                && setLine >= 0 && setLine < script.IndexOf("pushd ", StringComparison.Ordinal);
+            Check(
+                "npm-shim-cwd",
+                passed,
+                passed
+                    ? "a node.bat or node.cmd in the project doesn't run in place of Node, in a pane or a Windows Terminal tab (without the setting " + control + ")"
+                    : "pane: " + (pane.Length == 0 ? "nothing planted ran" : pane) + "; Windows Terminal: " + (tab.Length == 0 ? "nothing planted ran" : tab)
+                        + (setLine < 0 ? " (the script doesn't set NoDefaultCurrentDirectoryInExePath)" : "")
+                        + "; without the setting: " + (control.Length == 0 ? "nothing planted ran either" : control));
+        }
+        catch (Exception ex)
+        {
+            Check("npm-shim-cwd", false, ex.Message);
+        }
+        finally
+        {
+            try { Directory.Delete(shimRoot, true); } catch { /* temp folder */ }
         }
 
         {

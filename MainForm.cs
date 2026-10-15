@@ -97,6 +97,8 @@ sealed class MainForm : Form, IRemoteHost
             var options = new CoreWebView2EnvironmentOptions
             {
                 AdditionalBrowserArguments = "--disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows",
+                // Crash dumps stay on this PC (the environment's FailureReportFolderPath) instead of going to Microsoft.
+                IsCustomCrashReportingEnabled = true,
             };
             var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(AppSettings.Folder, "webview"), options);
             await _web.EnsureCoreWebView2Async(environment);
@@ -115,6 +117,16 @@ sealed class MainForm : Form, IRemoteHost
         core.Settings.AreDevToolsEnabled = Environment.GetEnvironmentVariable("AGENT_ARCADE_DEVTOOLS") == "1";
         core.Settings.AreBrowserAcceleratorKeysEnabled = false;
         core.Settings.IsStatusBarEnabled = false;
+        // No SmartScreen lookups: the addresses of the pages shown here (the app's own page, previews of local servers
+        // and project files) aren't sent to Microsoft. A runtime too old for the setting just keeps its default.
+        try
+        {
+            core.Settings.IsReputationCheckingRequired = false;
+        }
+        catch (NotImplementedException)
+        {
+            Log("this WebView2 runtime can't switch off SmartScreen lookups");
+        }
         core.SetVirtualHostNameToFolderMapping(Host, Path.Combine(AppContext.BaseDirectory, "web"), CoreWebView2HostResourceAccessKind.DenyCors);
         _images.Attach(core);
         _preview.Attach(core);
@@ -455,7 +467,7 @@ sealed class MainForm : Form, IRemoteHost
                 directory = workspace;
                 env = AccountStore.EnvFor(agent, account);
             }
-            env["COLORTERM"] = "truecolor";
+            SessionEnv(env);
 
             var pty = PtySession.Start(commandLine, directory, env, cols, rows);
             var session = new Session { Pty = pty, AccountKey = accountKey, Mode = mode, Workspace = workspace, Chat = chat };
@@ -939,7 +951,16 @@ sealed class MainForm : Form, IRemoteHost
 
     static string Cmd() => Path.Combine(Environment.SystemDirectory, "cmd.exe");
 
-    static string CommandLine(string exe, string args, string directory)
+    // The environment of every agent pane (install, sign-in and chats) on top of the app's own. cmd must not run a
+    // program from the project folder when an npm shim asks for a bare "node" (Program.Main sets this for the whole
+    // app too; here it holds even if the block is ever built from a copy).
+    internal static void SessionEnv(Dictionary<string, string?> env)
+    {
+        env["COLORTERM"] = "truecolor";
+        env["NoDefaultCurrentDirectoryInExePath"] = "1";
+    }
+
+    internal static string CommandLine(string exe, string args, string directory)
     {
         var line = "\"" + exe + "\"" + (string.IsNullOrWhiteSpace(args) ? "" : " " + args);
         var extension = Path.GetExtension(exe);

@@ -576,7 +576,9 @@ static class Terminal
     {
         // In a batch file % must be doubled. pushd also works for network folders, where cd can't.
         static string Batch(string value) => value.Replace("%", "%%");
-        var lines = new List<string> { "@echo off", "chcp 65001 >nul" };
+        // A Windows Terminal tab doesn't get this app's environment, so the script itself tells cmd not to run a
+        // program from the project folder when the agent's npm shim asks for a bare "node".
+        var lines = new List<string> { "@echo off", "set \"NoDefaultCurrentDirectoryInExePath=1\"", "chcp 65001 >nul" };
         foreach (var (name, value) in env) lines.Add("set \"" + name + "=" + Batch(value ?? "") + "\"");
         lines.Add("pushd \"" + Batch(projectPath) + "\"");
         // Last line, so no "call" is needed for .cmd agents (call would double any ^ in the path).
