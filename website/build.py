@@ -28,7 +28,7 @@ import sys
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 HERE = Path(__file__).parent
 PAGES = HERE / 'pages'
@@ -39,6 +39,8 @@ RELEASE_API = f'https://api.github.com/repos/{REPO}/releases/latest'
 # Every release carries exactly these two names (release.ps1).
 ZIP_ASSET = 'AgentArcade-win-x64.zip'
 APK_ASSET = 'AgentArcadeRemote.apk'
+# The Android app's application id (applicationId in the Android project), for the Obtainium link.
+APK_ID = 'nl.danular.remote'
 
 # Only for a local build that can't reach the releases API: the 1.3.2 release.
 FALLBACK = {
@@ -74,6 +76,23 @@ SITE = {
     'notices': 'https://github.com/danular/AgentArcade/blob/main/THIRD-PARTY-NOTICES.md',
     'year': '2026',
 }
+
+
+def obtainium_link():
+    """The 'Add to Obtainium' link: obtainium://app/ and the URL-encoded app config (wiki.obtainium.imranr.dev/deep_links).
+    Obtainium then follows this repo's GitHub releases and installs only the APK with the stable name; the filter
+    skips the Windows zip and any other APK. additionalSettings is itself a JSON string, as in Obtainium's exports.
+    Version detection is off because a release's tag is the PC app's version, not the APK's: Obtainium could never
+    match it to the installed app and would keep offering the same APK."""
+    settings = {'apkFilterRegEx': SITE['apk_filter'], 'versionDetection': False}
+    config = {'id': APK_ID, 'url': SITE['github'], 'author': REPO.split('/')[0], 'name': SITE['remote'],
+              'additionalSettings': json.dumps(settings, separators=(',', ':'))}
+    return 'obtainium://app/' + quote(json.dumps(config, separators=(',', ':')), safe='')
+
+
+# Obtainium's APK filter (a regular expression on the release file's name): only the stable APK name.
+SITE['apk_filter'] = '^' + re.escape(APK_ASSET) + '$'
+SITE['obtainium'] = obtainium_link()
 
 NAV = [('phone', 'phone.html', 'Phone'), ('voice', 'voice.html', 'Voice'), ('pricing', 'pricing.html', 'Pricing'),
        ('security', 'security.html', 'Security'), ('docs', 'docs.html', 'Docs'), ('changelog', 'changelog.html', 'Changelog')]
