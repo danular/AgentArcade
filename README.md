@@ -16,7 +16,7 @@ Then click **Install** in the sidebar for any agent you don't have yet. Building
 
 - Each agent signs in with its own official login. Agent Arcade never reads or stores passwords or login tokens.
 - Extra accounts (for example a second Claude subscription) get their own folder, and the sidebar shows which email each account uses.
-- Workspaces are your project folders. Agents always start in the selected one.
+- Workspaces are your project folders. Agents always start in the selected one. **+** adds a folder you already have; **New project** (the folder icon next to it) makes an empty folder next to your current project and opens it.
 - Each pane shows the chat's title: the one the agent gives it, or else your first message. Double-click the title to rename it.
 - The sidebar lists each project's running agents. The arrow next to a project hides them, and the arrow next to Agents hides the whole agent list (it then shows how many are running). The button left of the project name hides the whole sidebar, so the panes get its width; click it again to bring the sidebar back.
 - Drag a pane by its header onto another pane to swap their places in the grid.

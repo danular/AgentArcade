@@ -643,18 +643,25 @@ static partial class NewProject
         return null;
     }
 
+    // Why name (already trimmed) can't be made in folder right now, with the status the phone gets; null when it can.
+    // The page's New project dialog asks this while you type.
+    public static (int Status, string Problem)? Refusal(string? folder, string name)
+    {
+        if (Problem(name) is { } problem) return (400, problem);
+        if (folder == null || !Directory.Exists(folder)) return (404, "Agent Arcade on your PC has no projects folder. Add a project there first.");
+        var path = Path.Combine(folder, name);
+        if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), Path.TrimEndingDirectorySeparator(folder), StringComparison.OrdinalIgnoreCase))
+            return (400, "That name can't be a folder.");
+        if (Directory.Exists(path) || File.Exists(path)) return (409, "There's already a folder called " + name + " in " + folder + ".");
+        return null;
+    }
+
     // Makes the empty folder name in folder: 201 { workspace }, or 400, 404, 409 with the sentence the phone shows.
     public static (string? Path, RemoteReply Reply) Create(string? folder, string name)
     {
         name = name.Trim();
-        if (Problem(name) is { } problem) return (null, RemoteReply.Fail(400, problem));
-        if (folder == null || !Directory.Exists(folder))
-            return (null, RemoteReply.Fail(404, "Agent Arcade on your PC has no projects folder. Add a project there first."));
-        var path = Path.Combine(folder, name);
-        if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), Path.TrimEndingDirectorySeparator(folder), StringComparison.OrdinalIgnoreCase))
-            return (null, RemoteReply.Fail(400, "That name can't be a folder."));
-        if (Directory.Exists(path) || File.Exists(path))
-            return (null, RemoteReply.Fail(409, "There's already a folder called " + name + " in " + folder + "."));
+        if (Refusal(folder, name) is { } refusal) return (null, RemoteReply.Fail(refusal.Status, refusal.Problem));
+        var path = Path.Combine(folder!, name);
         try
         {
             Directory.CreateDirectory(path);
@@ -663,8 +670,22 @@ static partial class NewProject
         {
             return (null, RemoteReply.Fail(409, "Windows didn't let Agent Arcade make " + name + " in " + folder + "."));
         }
-        return (path, new RemoteReply(201, JsonSerializer.SerializeToElement(new { workspace = path }, RemoteModel.Wire)));
+        return (path, Made(path));
     }
+
+    // Create, then lists the folder at the end of projects. A listed folder that was missing on disk stays where it is,
+    // so it never shows twice; the path is then the listed one.
+    public static (string? Path, RemoteReply Reply) CreateAndList(string? folder, string name, List<string> projects)
+    {
+        var (path, reply) = Create(folder, name);
+        if (path == null) return (null, reply);
+        var listed = projects.FirstOrDefault(item => string.Equals(Path.TrimEndingDirectorySeparator(item), path, StringComparison.OrdinalIgnoreCase));
+        if (listed != null) return (listed, Made(listed));
+        projects.Add(path);
+        return (path, reply);
+    }
+
+    static RemoteReply Made(string path) => new(201, JsonSerializer.SerializeToElement(new { workspace = path }, RemoteModel.Wire));
 }
 
 // The JSON the phone gets, and the checks on what it sends.

@@ -644,6 +644,7 @@ body.resizing-panel iframe { pointer-events: none; }
 .modal-body p { margin: 0; }
 .modal-body label { display: flex; flex-direction: column; gap: 6px; color: var(--text); font-weight: 500; }
 .modal-error { color: var(--red); font-size: 12.5px; }
+.new-project-path { margin-top: -4px; color: var(--muted); font: 12px/1.5 var(--mono); word-break: break-all; user-select: text; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .cmd {
   margin: 0;

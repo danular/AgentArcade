@@ -482,6 +482,21 @@ static class RemoteSelfCheck
                 && none.Status == 404 && sneaky.Status == 400,
             "names follow the contract's rules; the folder holds the workspace; 201 makes an empty folder, 409 when it is there, 404 without a folder");
 
+        // The page's New project and the phone's share CreateAndList.
+        var listed = new List<string> { Path.Combine(projects, "First"), Path.Combine(projects, "Gone") };
+        var (second, _) = NewProject.CreateAndList(projects, "Second", listed);
+        var (gone, goneReply) = NewProject.CreateAndList(projects, "gone", listed);
+        var (refused, refusedReply) = NewProject.CreateAndList(projects, "Second", listed);
+        check(
+            "new-project-list",
+            second == Path.Combine(projects, "Second") && gone == Path.Combine(projects, "Gone") && Directory.Exists(gone)
+                && goneReply.Status == 201 && goneReply.Body?.GetProperty("workspace").GetString() == gone
+                && refused == null && refusedReply.Status == 409
+                && listed.SequenceEqual([Path.Combine(projects, "First"), Path.Combine(projects, "Gone"), Path.Combine(projects, "Second")])
+                && NewProject.Refusal(projects, "Second")?.Status == 409 && NewProject.Refusal(projects, "Third") == null
+                && NewProject.Refusal(null, "Third")?.Status == 404 && NewProject.Refusal(projects, "a?b")?.Status == 400,
+            "a new folder is listed at the end; a listed folder that was missing on disk is made but not listed twice; the check while typing gives the reason");
+
         var agents = AgentStore.Defaults();
         var claude = agents.First(agent => agent.Command == "claude");
         using var summary = JsonDocument.Parse("{\"id\":\"s1\"}");

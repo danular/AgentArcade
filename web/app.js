@@ -33,6 +33,7 @@ const ICONS = {
   close: '<path d="M18 6 6 18M6 6l12 12"/>',
   refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/>',
   folder: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z"/>',
+  'folder-plus': '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z"/><path d="M12 10.5v5M9.5 13h5"/>',
   cube: '<path d="M12 2.5 3.5 7.25v9.5L12 21.5l8.5-4.75v-9.5z"/><path d="M3.5 7.25 12 12l8.5-4.75M12 12v9.5"/>',
   doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
@@ -213,8 +214,10 @@ document.addEventListener('contextmenu', event => {
   if (!event.target.closest('.xterm, input, select, textarea')) event.preventDefault();
 });
 
-// Resolves with the dialog's field values (or {}) when confirmed, and null when cancelled.
-function modal({ title, body, confirm = 'OK', cancel = 'Cancel', danger = false, validate }) {
+// Resolves with the dialog's field values (or {}) when confirmed, and null when cancelled. opened(root) runs once the
+// dialog shows. submit(values) is for an answer that comes later: it returns a promise of a problem (the dialog stays
+// open and shows it) or null (the dialog closes).
+function modal({ title, body, confirm = 'OK', cancel = 'Cancel', danger = false, validate, opened, submit }) {
   closeMenu();
   return new Promise(resolve => {
     const root = document.createElement('div');
@@ -229,16 +232,27 @@ function modal({ title, body, confirm = 'OK', cancel = 'Cancel', danger = false,
       root.remove();
       resolve(result);
     };
+    const showProblem = problem => {
+      const error = root.querySelector('.modal-error');
+      error.textContent = problem;
+      error.hidden = false;
+    };
+    let waiting = false;
     const accept = () => {
+      if (waiting) return;
       const result = values();
       const problem = validate && validate(result);
-      if (problem) {
-        const error = root.querySelector('.modal-error');
-        error.textContent = problem;
-        error.hidden = false;
-        return;
-      }
-      finish(result);
+      if (problem) return showProblem(problem);
+      if (!submit) return finish(result);
+      waiting = true;
+      const yes = root.querySelector('[data-answer="yes"]');
+      yes.disabled = true;
+      submit(result).then(later => {
+        waiting = false;
+        yes.disabled = false;
+        if (later) showProblem(later);
+        else finish(result);
+      });
     };
     const onKey = event => {
       if (event.key === 'Escape') {
@@ -260,6 +274,7 @@ function modal({ title, body, confirm = 'OK', cancel = 'Cancel', danger = false,
     root.querySelector('[data-answer="no"]')?.addEventListener('click', () => finish(null));
     document.body.append(root);
     (root.querySelector('input, select') || root.querySelector('[data-answer="yes"]')).focus();
+    opened?.(root);
   });
 }
 
@@ -1703,6 +1718,55 @@ async function askInstall(agent) {
   if (main) openSession(main.key, 'install');
 }
 
+// New project: C# checks the name and makes the folder next to the current workspace (NewProject in Remote.cs). The
+// page only shows where it goes and what C# says, while you type and after Create.
+let newProjectChecked = null;
+let newProjectAnswer = null;
+
+async function newProject() {
+  if (!state.projectsFolder) {
+    await modal({
+      title: 'New project',
+      body: '<p>A new project goes next to your current one, but there is no folder for it yet. Add a project folder with + first.</p>',
+      cancel: null,
+    });
+    return;
+  }
+  const base = state.projectsFolder.replace(/[\\/]+$/, '') + '\\';
+  let timer = 0;
+  await modal({
+    title: 'New project',
+    body: '<p>Agent Arcade makes an empty folder and adds it to the workspaces.</p>' +
+      '<input name="name" placeholder="Project name" maxlength="80" spellcheck="false" autocomplete="off" aria-label="Project name">' +
+      '<div class="new-project-path"></div>',
+    confirm: 'Create',
+    opened: root => {
+      const input = root.querySelector('[name="name"]');
+      const path = root.querySelector('.new-project-path');
+      const error = root.querySelector('.modal-error');
+      const showPath = () => { path.textContent = base + (input.value.trim() || '…'); };
+      // An empty field isn't a problem until you press Create.
+      newProjectChecked = (name, problem) => {
+        if (name !== input.value) return;
+        error.textContent = problem || '';
+        error.hidden = !problem || !name.trim();
+      };
+      input.addEventListener('input', () => {
+        showPath();
+        clearTimeout(timer);
+        timer = setTimeout(() => send({ type: 'newProjectCheck', name: input.value }), 120);
+      });
+      showPath();
+    },
+    submit: values => new Promise(resolve => {
+      newProjectAnswer = resolve;
+      send({ type: 'newProject', name: values.name });
+    }),
+  });
+  clearTimeout(timer);
+  newProjectChecked = newProjectAnswer = null;
+}
+
 async function addAccount(agentName) {
   const choices = state.agents.filter(agent => agent.multi && agent.installed);
   if (!choices.length) return toast('Install Claude Code, Codex or Gemini first.', 'error');
@@ -2620,6 +2684,7 @@ $('#grid').addEventListener('dblclick', event => {
 
 $('#logo').innerHTML = LOGO;
 $('#add-workspace').innerHTML = icon('plus', 15);
+$('#new-project').innerHTML = icon('folder-plus', 15);
 $('#refresh').innerHTML = icon('refresh', 15);
 $('#add-account').innerHTML = icon('plus', 15);
 $('#open-unity').innerHTML = icon('cube', 15) + '<span>Open Unity</span>';
@@ -2632,6 +2697,7 @@ $('#images-refresh').innerHTML = icon('refresh', 14);
 renderAgents();
 
 $('#add-workspace').addEventListener('click', () => send({ type: 'addWorkspace' }));
+$('#new-project').addEventListener('click', () => newProject());
 $('#refresh').addEventListener('click', () => send({ type: 'refresh' }));
 $('#add-account').addEventListener('click', () => addAccount());
 $('#toggle-agents').addEventListener('click', () => {
@@ -2726,6 +2792,13 @@ if (bridge) {
         }
         break;
       }
+      case 'newProjectProblem':
+        newProjectChecked?.(message.name, message.problem);
+        break;
+      case 'newProjectResult':
+        newProjectAnswer?.(message.problem || null);
+        newProjectAnswer = null;
+        break;
       case 'history':
         history = message.chats || [];
         renderHistory();

@@ -324,6 +324,14 @@ sealed class MainForm : Form, IRemoteHost
                 case "addWorkspace":
                     AddWorkspace();
                     break;
+                case "newProjectCheck":
+                    var checkName = Json.Str(m, "name");
+                    var refusal = NewProject.Refusal(NewProject.Folder(_settings.ProjectPath, _settings.Projects), checkName.Trim());
+                    Post(new { type = "newProjectProblem", name = checkName, problem = refusal?.Problem });
+                    break;
+                case "newProject":
+                    NewProjectFromPage(Json.Str(m, "name"));
+                    break;
                 case "selectWorkspace":
                     SelectWorkspace(Json.Str(m, "path"));
                     break;
@@ -1040,6 +1048,28 @@ sealed class MainForm : Form, IRemoteHost
         PostState();
     }
 
+    // New project, from the page or a phone: an empty folder next to the current workspace, listed in the sidebar.
+    (string? Path, RemoteReply Reply) CreateProject(string name)
+    {
+        var made = NewProject.CreateAndList(NewProject.Folder(_settings.ProjectPath, _settings.Projects), name, _settings.Projects);
+        if (made.Path != null) _settings.Save();
+        return made;
+    }
+
+    // The page's New project: like + with a folder it makes, so the new workspace opens. The dialog stays open until
+    // the answer comes back, and shows the problem when there is one.
+    void NewProjectFromPage(string name)
+    {
+        var (path, reply) = CreateProject(name);
+        if (path != null)
+        {
+            _settings.ProjectPath = path;
+            _settings.Save();
+            PostState();
+        }
+        Post(new { type = "newProjectResult", problem = reply.Error });
+    }
+
     // Puts a project from the history back in the sidebar and opens it.
     void RestoreWorkspace(string path)
     {
@@ -1396,10 +1426,8 @@ sealed class MainForm : Form, IRemoteHost
     // Like + with a folder that is already there, but the folder is new and the PC keeps showing its workspace.
     Task<RemoteReply> IRemoteHost.CreateProjectAsync(string device, string name) => OnUiAsync(() =>
     {
-        var (path, reply) = NewProject.Create(NewProject.Folder(_settings.ProjectPath, _settings.Projects), name);
+        var (path, reply) = CreateProject(name);
         if (path == null) return reply;
-        _settings.Projects.Add(path);
-        _settings.Save();
         Log("New project from a phone: " + path);
         PostState();
         return reply;
@@ -1433,6 +1461,8 @@ sealed class MainForm : Form, IRemoteHost
             type = "state",
             workspace = _settings.ProjectPath,
             workspaces = RemoteModel.Workspaces(_settings.Projects),
+            // Where New project makes its folder, for the dialog's preview; null when there is nowhere.
+            projectsFolder = NewProject.Folder(_settings.ProjectPath, _settings.Projects),
             agents = _agents.Select(agent =>
             {
                 ToolStatus? tool = null;
