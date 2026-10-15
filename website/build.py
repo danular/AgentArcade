@@ -35,6 +35,12 @@ SITE = {
     'sha256': '2f4d6ef0bcfa4ba3c9fcc3e0668ebceb0d6be852f0ee257e1108d6a89141ee75',
     'github': 'https://github.com/danular/AgentArcade',
     'download': 'https://github.com/danular/AgentArcade/releases/latest/download/AgentArcade-win-x64.zip',
+    # The Android app rides along on every GitHub release (release.ps1 copies it), so this name always serves the newest.
+    'apk': 'https://github.com/danular/AgentArcade/releases/latest/download/AgentArcadeRemote.apk',
+    'apk_version': '1.0',
+    'apk_size': '3.6 MB',
+    'apk_sha256': '846153b823f219cf54def52f8542fbcaf87d92dbf9fd79988c9c7d464906df18',
+    'apk_cert': '01e68ee0fb88710fb42780eae6e5532e9982d21a7546e9a60e8114c064086dce',
     'releases': 'https://github.com/danular/AgentArcade/releases',
     'discuss': 'https://github.com/danular/AgentArcade/discussions',
     'issues': 'https://github.com/danular/AgentArcade/issues',

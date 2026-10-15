@@ -38,14 +38,14 @@
     <p class="eyebrow">Download · v1.3.1 · 15 Oct 2026</p>
     <h1>Get Agent Arcade for Windows</h1>
     <p class="lead">One zip with everything inside, including the .NET runtime. Unzip it, start it, and add your first project folder.</p>
-    <div class="ctas"><a class="btn btn-accent" href="https://github.com/danular/AgentArcade/releases/latest/download/AgentArcade-win-x64.zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>Download AgentArcade-win-x64.zip</a><a class="btn btn-ghost" href="https://github.com/danular/AgentArcade/releases">All releases on GitHub</a></div>
+    <div class="ctas"><a class="btn btn-accent" href="https://github.com/danular/AgentArcade/releases/latest/download/AgentArcade-win-x64.zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>Download AgentArcade-win-x64.zip</a><a class="btn btn-ghost" href="#phone">Android app</a><a class="btn btn-ghost" href="https://github.com/danular/AgentArcade/releases">All releases on GitHub</a></div>
     <p class="meta">63 MB · Windows 11 x64 · self-contained · free for personal use</p>
   </div>
 </section>
 
 <section class="section" style="padding-top:48px">
   <div class="wrap docs">
-    <nav class="toc" aria-label="On this page"><a href="#install">Install</a><a href="#smartscreen">SmartScreen</a><a href="#verify">Check the file</a><a href="#agents">Get your agents</a><a href="#phone">Phone remote</a><a href="#requirements">Requirements</a><a href="#source">Build from source</a></nav>
+    <nav class="toc" aria-label="On this page"><a href="#install">Install</a><a href="#smartscreen">SmartScreen</a><a href="#verify">Check the file</a><a href="#agents">Get your agents</a><a href="#phone">Android app</a><a href="#requirements">Requirements</a><a href="#source">Build from source</a></nav>
     <div class="prose">
       <h2 id="install" style="margin-top:0">Install in three steps</h2>
       <ol class="steps">
@@ -66,8 +66,21 @@
       <h2 id="agents">Get your agents</h2>
       <p>Agent Arcade runs the official command-line agents. Click <b>Install</b> in the sidebar for any you don't have yet: it shows you the vendor's install command first, then runs it in a pane you can watch. Codex, Gemini CLI and GitHub Copilot CLI need <a href="https://nodejs.org">Node.js</a>; Cursor installs with its own PowerShell installer. Each agent then signs in through its own official login.</p>
 
-      <h2 id="phone">The phone remote</h2>
-      <p>Agent Arcade Remote for Android is in early access and not on Google Play yet. The PC side is already in this download: <b>Phone</b> at the bottom of the sidebar. <a href="phone.html">Read how it works</a>, or ask for early access in <a href="https://github.com/danular/AgentArcade/discussions">GitHub Discussions</a>.</p>
+      <h2 id="phone">The Android app</h2>
+      <p>Agent Arcade Remote lets you watch and drive your agents from your phone. It isn't on Google Play yet, so you install the APK yourself. The PC side is already in the zip above: <b>Phone</b> at the bottom of the sidebar. <a href="phone.html">Read how it works</a>.</p>
+      <div class="ctas"><a class="btn btn-accent" href="https://github.com/danular/AgentArcade/releases/latest/download/AgentArcadeRemote.apk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>Download AgentArcadeRemote.apk</a></div>
+      <p class="muted small">v1.0 · 3.6 MB · Android 8.0 and up · free</p>
+      <ol class="steps">
+        <li><div><b>Download it on your phone.</b> Open this page in your phone's browser and tap the button.</div></li>
+        <li><div><b>Open the downloaded file.</b> If Android asks, allow your browser to <i>install unknown apps</i>, then go back.</div></li>
+        <li><div><b>Tap Install.</b> If Google Play Protect says it doesn't know the app, tap <b>More details</b>, then <b>Install anyway</b>.</div></li>
+        <li><div><b>Pair it with your PC:</b> see <a href="docs.html#phone">Pair your phone</a>.</div></li>
+      </ol>
+      <p>To update, download the newest APK and install it over the old one. Your pairing stays.</p>
+      <p>The SHA-256 of AgentArcadeRemote.apk v1.0:</p>
+      <div class="codeblock"><pre>846153b823f219cf54def52f8542fbcaf87d92dbf9fd79988c9c7d464906df18</pre></div>
+      <p>Every version is signed with the same key, and Android refuses an update signed with another one. The SHA-256 of the signing certificate:</p>
+      <div class="codeblock"><pre>01e68ee0fb88710fb42780eae6e5532e9982d21a7546e9a60e8114c064086dce</pre></div>
 
       <h2 id="requirements">Requirements</h2>
       <ul>

@@ -36,7 +36,7 @@ Then click **Install** in the sidebar for any agent you don't have yet. Building
 
 ## Phone remote
 
-The Android app **Agent Arcade Remote** shows every pane's status and progress, alerts you when an agent needs you, and lets you read a pane's terminal, approve or refuse what it asks, type to it, and start, stop, resume and rename agents. The phone talks to this PC directly, over your Wi-Fi or over [Tailscale](https://tailscale.com); nothing goes through a cloud service. The build plan and the API are in [docs/phone-remote](docs/phone-remote/README.md).
+The Android app **Agent Arcade Remote** shows every pane's status and progress, alerts you when an agent needs you, and lets you read a pane's terminal, approve or refuse what it asks, type to it, and start, stop, resume and rename agents. The phone talks to this PC directly, over your Wi-Fi or over [Tailscale](https://tailscale.com); nothing goes through a cloud service. It isn't on Google Play yet: open [AgentArcadeRemote.apk](https://github.com/danular/AgentArcade/releases/latest/download/AgentArcadeRemote.apk) on your phone (Android 8.0 or newer) and install it. The build plan and the API are in [docs/phone-remote](docs/phone-remote/README.md).
 
 1. Sidebar → **Phone** → switch on **Let my phone watch and drive these agents**. Agent Arcade listens on port 47821 (`RemotePort` in `settings.json`) only while this is on.
 2. The first time, Windows asks whether Agent Arcade may use the network. Allow it on **private** networks. Your Wi-Fi must be set to *Private* in Windows (Settings → Network & internet → Wi-Fi → your network); on a *Public* network Windows blocks the phone.

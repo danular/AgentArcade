@@ -1,6 +1,12 @@
 # Builds the download for a GitHub release: a self-contained win-x64 zip of the committed code (HEAD), so
-# uncommitted changes never end up in a release. Prints the zip's path and SHA-256.
-#   powershell -ExecutionPolicy Bypass -File release.ps1
+# uncommitted changes never end up in a release. Prints the zip's path and SHA-256. It also copies the Android app's
+# release APK next to it, so every release carries the phone app too.
+#   powershell -ExecutionPolicy Bypass -File release.ps1 [-Apk <path to a signed APK>]
+param(
+    # gradlew assembleRelease in the Android project. Gradle names an unsigned build app-release-unsigned.apk, so this
+    # file is only there when keystore.properties signed it.
+    [string]$Apk = (Join-Path $env:USERPROFILE 'AndroidStudioProjects\AgentArcade\app\build\outputs\apk\release\app-release.apk')
+)
 $ErrorActionPreference = 'Stop'
 [xml]$proj = Get-Content (Join-Path $PSScriptRoot 'AgentArcade.csproj')
 $version = $proj.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
@@ -34,3 +40,19 @@ Copy-Item $zip (Join-Path (Split-Path $zip) 'AgentArcade-win-x64.zip') -Force
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 Write-Host $zip
 Write-Host "SHA-256 $hash"
+
+# The website links to releases/latest/download/AgentArcadeRemote.apk, so every release needs the APK under that name.
+if (Test-Path $Apk) {
+    $meta = Join-Path (Split-Path $Apk) 'output-metadata.json'
+    $apkVersion = if (Test-Path $meta) { (Get-Content $meta -Raw | ConvertFrom-Json).elements[0].versionName } else { $null }
+    $apkName = if ($apkVersion) { "AgentArcadeRemote-$apkVersion.apk" } else { 'AgentArcadeRemote.apk' }
+    $apkOut = Join-Path (Split-Path $zip) $apkName
+    Copy-Item $Apk $apkOut -Force
+    Copy-Item $Apk (Join-Path (Split-Path $zip) 'AgentArcadeRemote.apk') -Force
+    $apkFile = Get-Item $apkOut
+    Write-Host $apkOut
+    Write-Host ("APK v{0}, built {1:d MMM yyyy HH:mm}, {2:0.0} MB" -f $apkVersion, $apkFile.LastWriteTime, ($apkFile.Length / 1MB))
+    Write-Host "APK SHA-256 $((Get-FileHash $apkOut -Algorithm SHA256).Hash.ToLower())"
+} else {
+    Write-Warning "No signed APK at $Apk. Without it this release has no AgentArcadeRemote.apk and the website's Android download fails."
+}
