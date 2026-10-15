@@ -29,8 +29,9 @@ static class Json
 
 sealed class AppSettings
 {
-    // The active workspace. Projects lists every workspace shown in the sidebar.
-    public string ProjectPath { get; set; } = @"C:\Users\daans\HimalayanExpedition";
+    // The active workspace. Projects lists every workspace shown in the sidebar. A new install starts in the
+    // user's Documents folder, which always exists, until they add a project folder of their own.
+    public string ProjectPath { get; set; } = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
     public List<string> Projects { get; set; } = new();
     // Phone remote: off until the user switches it on in the Phone dialog.
     public bool RemoteEnabled { get; set; }
@@ -66,7 +67,7 @@ sealed class AppSettings
             }
             catch
             {
-                // A broken settings file falls back to the Unity project default.
+                // A broken settings file falls back to the default (the Documents folder).
             }
         }
         return new AppSettings().WithActiveListed();
@@ -857,15 +858,23 @@ static class Probe
 // single source; the other agents get a small file that points to it. Nothing is overwritten.
 static class SharedInstructions
 {
-    const string Starter =
-        "# Project instructions for AI agents\n\n" +
-        "## The game\n" +
-        "- What it is:\n" +
-        "- Unity version: see ProjectSettings/ProjectVersion.txt\n\n" +
-        "## Rules\n" +
-        "- Don't open or edit Library/, Temp/ or Logs/, and don't edit scene or prefab files unless asked.\n" +
-        "- Make small changes and say which files you changed.\n" +
-        "- Before you stop, write progress to HANDOFF.md: what changed, what works, next steps.\n";
+    // A Unity project (it has ProjectSettings/ProjectVersion.txt) gets the Unity rules; any other project a general start.
+    static string Starter(string projectPath) => File.Exists(Path.Combine(projectPath, "ProjectSettings", "ProjectVersion.txt"))
+        ? "# Project instructions for AI agents\n\n" +
+          "## The game\n" +
+          "- What it is:\n" +
+          "- Unity version: see ProjectSettings/ProjectVersion.txt\n\n" +
+          "## Rules\n" +
+          "- Don't open or edit Library/, Temp/ or Logs/, and don't edit scene or prefab files unless asked.\n" +
+          "- Make small changes and say which files you changed.\n" +
+          "- Before you stop, write progress to HANDOFF.md: what changed, what works, next steps.\n"
+        : "# Project instructions for AI agents\n\n" +
+          "## The project\n" +
+          "- What it is:\n" +
+          "- How to build and test it:\n\n" +
+          "## Rules\n" +
+          "- Make small changes and say which files you changed.\n" +
+          "- Before you stop, write progress to HANDOFF.md: what changed, what works, next steps.\n";
 
     public static List<string> Ensure(string projectPath)
     {
@@ -882,7 +891,7 @@ static class SharedInstructions
             return done;
         }
 
-        if (!File.Exists(agents)) Write(agents, Starter, done);
+        if (!File.Exists(agents)) Write(agents, Starter(projectPath), done);
         Write(claude, "# Claude Code instructions\n\nThe shared instructions for every AI agent are in AGENTS.md:\n\n@AGENTS.md\n", done);
         Write(gemini, "# Gemini CLI instructions\n\nThe shared instructions for every AI agent are in AGENTS.md:\n\n@./AGENTS.md\n", done);
         return done;
