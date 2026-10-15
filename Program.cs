@@ -25,11 +25,19 @@ static class Program
         if (args.Any(arg => arg == "--self-check"))
             return SelfCheck.Run();
 
-        // One window only: starting the app again brings the open window to the front.
+        // One window only: starting the app again brings the open window to the front. A copy from another folder
+        // can't take over that window, so it says where Agent Arcade runs instead of quietly doing nothing.
         using var single = new Mutex(true, AppSettings.InstanceName, out var first);
         if (!first)
         {
-            ShowExistingWindow();
+            if (ShowExistingWindow() is { } elsewhere)
+            {
+                ApplicationConfiguration.Initialize();
+                MessageBox.Show(
+                    (elsewhere.Length > 0 ? "Agent Arcade is already running from " + elsewhere + "." : "Agent Arcade is already running.") +
+                    " Close it first to start this copy.",
+                    "Agent Arcade", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
             return 0;
         }
 
@@ -38,21 +46,32 @@ static class Program
         return 0;
     }
 
-    static void ShowExistingWindow()
+    // Brings the open window of this same exe to the front and returns null; also null while that copy is still
+    // starting (no window yet). Otherwise returns the folder of the copy that runs from somewhere else ("" when unknown).
+    static string? ShowExistingWindow()
     {
         using var current = System.Diagnostics.Process.GetCurrentProcess();
         var path = Environment.ProcessPath;
+        var samePath = false;
+        var elsewhere = new List<string>();
         foreach (var process in System.Diagnostics.Process.GetProcessesByName(current.ProcessName))
         {
             using (process)
             {
                 try
                 {
-                    if (process.Id == current.Id || process.MainWindowHandle == IntPtr.Zero) continue;
-                    if (!string.Equals(process.MainModule?.FileName, path, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (process.Id == current.Id) continue;
+                    var file = process.MainModule?.FileName;
+                    if (!string.Equals(file, path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (Path.GetDirectoryName(file) is { Length: > 0 } folder && !elsewhere.Contains(folder, StringComparer.OrdinalIgnoreCase)) elsewhere.Add(folder);
+                        continue;
+                    }
+                    samePath = true;
+                    if (process.MainWindowHandle == IntPtr.Zero) continue;
                     if (IsIconic(process.MainWindowHandle)) ShowWindow(process.MainWindowHandle, 9);
                     SetForegroundWindow(process.MainWindowHandle);
-                    return;
+                    return null;
                 }
                 catch
                 {
@@ -60,6 +79,8 @@ static class Program
                 }
             }
         }
+        // Copies with another data folder (AGENT_ARCADE_HOME) can run too, so more than one folder may be listed.
+        return samePath ? null : string.Join(" or ", elsewhere);
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
