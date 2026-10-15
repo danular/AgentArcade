@@ -198,7 +198,7 @@ static class AgentStore
         {
             Name = "Gemini CLI",
             Command = "gemini",
-            LoginHint = "Gemini CLI needs a paid Gemini API key or Code Assist Standard/Enterprise. Personal Google accounts: use Antigravity CLI.",
+            LoginHint = "Gemini CLI needs a Gemini API key or Code Assist Standard/Enterprise. Personal Google accounts: use Antigravity CLI.",
             Install = "npm install -g @google/gemini-cli",
             HomeVar = "GEMINI_CLI_HOME",
             AccountCheck = "gemini",
