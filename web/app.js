@@ -77,7 +77,9 @@ function toggleFold(key) {
 let state = { workspace: '', workspaces: [], agents: [], accounts: [] };
 let history = [];
 const sessions = new Map();
-let sessionCount = 0;
+// Pane ids start at a random number each run, so a phone screen or alert from before a restart can't reach another
+// agent that got the same id. They stay "s" and at most 9 digits, as Remote.cs accepts.
+let sessionCount = 100000 + crypto.getRandomValues(new Uint32Array(1))[0] % 799900000;
 let maxed = null;
 let openMenu = null;
 let drag = null;
@@ -458,18 +460,34 @@ function agentTitle(session, raw) {
   setAutoTitle(session, title);
 }
 
-// Until the agent names the chat, the first thing the user asks becomes its title.
+// Keys and tokens, as TextGuard in Backend.cs knows them: a line with one never becomes a title.
+const TOKEN_SHAPE = /sk-ant-[\w-]+|(?<![\w-])sk-(?:proj-)?[\w-]{20,}|AIza[\w-]{30,}|\bgh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|\bxox[abeprs]-[A-Za-z0-9-]{10,}|\bAKIA[0-9A-Z]{16}\b|eyJ[\w-]{5,}\.eyJ[\w-]{5,}\./;
+const AUTO_TITLE_MAX = 60;
+
+// A typed line that may name the chat: not a command or a handoff prompt, not one long word (a key typed or pasted
+// where the agent doesn't mark pastes), and nothing shaped like a key.
+const titleWorthy = line => line.length >= 3 && !line.startsWith('/') && line !== SAVE_PROMPT && line !== CONTINUE_PROMPT
+  && !(line.length >= 20 && !/\s/.test(line)) && !TOKEN_SHAPE.test(line);
+
+function autoTitleOf(line) {
+  const chars = [...line];
+  return chars.length > AUTO_TITLE_MAX ? chars.slice(0, AUTO_TITLE_MAX - 1).join('').trimEnd() + '…' : line;
+}
+
+// Until the agent names the chat, the first thing the user types becomes its title. Pasted text never counts (it may
+// be a key pasted at an agent's key prompt): a paste in the pane, or bracketed paste. Text from a phone does count;
+// the phone types through a paste.
 function trackPrompt(session, data) {
-  if (!isChat(session) || session.customTitle || session.autoTitle) return;
+  if (!isChat(session) || session.customTitle || session.autoTitle || session.pasting) return;
   const text = data
-    .replace(/\x1b\[200~([\s\S]*?)\x1b\[201~/g, (_, pasted) => pasted.replace(/[\r\n]+/g, ' '))
+    .replace(/\x1b\[200~([\s\S]*?)(?:\x1b\[201~|$)/g, (_, pasted) => session.phoneTyping ? pasted.replace(/[\r\n]+/g, ' ') : '')
     .replace(/\x1b(\[[0-9;?]*[ -/]*[@-~]|O.|.)/g, '');
   for (const c of text) {
     if (c === '\r' || c === '\n') {
       const line = session.typed.trim();
       session.typed = '';
-      if (line.length >= 3 && !line.startsWith('/') && line !== SAVE_PROMPT && line !== CONTINUE_PROMPT) {
-        setAutoTitle(session, line.slice(0, 120));
+      if (titleWorthy(line)) {
+        setAutoTitle(session, autoTitleOf(line));
         return;
       }
     } else if (c === '\x7f' || c === '\b') {
@@ -639,6 +657,11 @@ function openSession(key, mode = 'start', chat = null, options = {}) {
     term.loadAddon(webgl);
   } catch { /* the standard renderer works without a GPU */ }
   term.attachCustomKeyEventHandler(event => handleKey(session, event));
+  // A paste in the pane (Ctrl+V, right-click) reaches term.onData during this event. It isn't typed, so it names nothing.
+  session.el.addEventListener('paste', () => {
+    session.pasting = true;
+    setTimeout(() => { session.pasting = false; });
+  }, true);
   term.onData(data => {
     if (!session.running) return;
     send({ type: 'input', session: id, data });
@@ -2344,7 +2367,11 @@ function remoteInput(message) {
   if (!session.running) return remoteRefuse(409, HAS_ENDED);
   const text = typeof message.text === 'string' ? message.text.replace(CONTROL, '') : '';
   return inOrder(session, message, async ticket => {
-    if (text) session.term.paste(text);
+    if (text) {
+      // Typed on the phone, so it may name the chat (trackPrompt) although it arrives as a paste.
+      session.phoneTyping = true;
+      try { session.term.paste(text); } finally { session.phoneTyping = false; }
+    }
     if (message.submit !== true) return remoteOk();
     await wait(150);
     if (ticket.cancelled) return remoteRefuse(503, BUSY);
