@@ -11,11 +11,14 @@ No dependencies beyond Python 3. Each page starts with a small header:
     ---
 
 Values in SITE can be used in any page as {{key}}. The product names live here, so a rename is one edit.
+SITE['base'] is the public address (GitHub Pages, deployed by .github/workflows/pages.yml); canonical and og: URLs,
+sitemap.xml and the 404 page's links are built from it.
 """
 import html
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 HERE = Path(__file__).parent
 PAGES = HERE / 'pages'
@@ -23,6 +26,7 @@ OUT = HERE / 'site'
 
 SITE = {
     'name': 'Agent Arcade',
+    'base': 'https://danular.github.io/AgentArcade/',
     'voice': 'Agent Arcade Voice',
     'remote': 'Agent Arcade Remote',
     'version': '1.3.1',
@@ -66,14 +70,15 @@ LAYOUT = '''<!doctype html>
 <meta property="og:type" content="website">
 <meta property="og:title" content="%%title_full%%">
 <meta property="og:description" content="%%description%%">
-<meta property="og:image" content="assets/img/og.png">
+<meta property="og:url" content="%%url%%">
+<meta property="og:image" content="{{base}}assets/img/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/img/icon-32.png">
 <link rel="icon" type="image/png" sizes="64x64" href="assets/img/icon-64.png">
 <link rel="apple-touch-icon" href="assets/img/icon-180.png">
 <link rel="preload" href="assets/fonts/source-serif-4-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="assets/css/site.css">
-%%head_extra%%</head>
+%%canonical%%%%head_extra%%</head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="nav">
@@ -139,7 +144,14 @@ def json_ld():
     return '<script type="application/ld+json">' + json.dumps(data) + '</script>\n'
 
 
+def rooted(text):
+    """404.html is served at any missing path, so its own links and assets must not be relative."""
+    root = urlparse(SITE['base']).path
+    return re.sub(r'(href|src)="(?![a-z]+:|/|#|\{\{)', lambda m: f'{m.group(1)}="{root}', text)
+
+
 def build():
+    urls = []
     for src in sorted(PAGES.glob('*.html')):
         meta, body = page(src)
         name = src.stem
@@ -161,12 +173,27 @@ def build():
             head_extra += json_ld()
         if meta.get('noindex') == 'yes':
             head_extra += '<meta name="robots" content="noindex">\n'
-        parts = {'title_full': html.escape(fill(title_full)), 'description': html.escape(fill(meta.get('description', ''))),
+        url = SITE['base'] + ('' if name == 'index' else f'{name}.html')
+        canonical = ''
+        if name != '404':
+            canonical = f'<link rel="canonical" href="{url}">\n'
+            if meta.get('noindex') != 'yes':
+                urls.append(url)
+        parts = {'url': url, 'canonical': canonical, 'title_full': html.escape(fill(title_full)), 'description': html.escape(fill(meta.get('description', ''))),
                  'nav_links': nav_links, 'body': body.strip(), 'scripts': scripts, 'head_extra': head_extra,
                  'disclaimer': html.escape(DISCLAIMER)}
         out = re.sub(r'%%(\w+)%%', lambda m: parts[m.group(1)], LAYOUT)
+        if name == '404':
+            out = rooted(out)
         (OUT / f'{name}.html').write_text(fill(out), encoding='utf-8', newline='\n')
         print('wrote', f'site/{name}.html')
+    sitemap = ''.join(f'  <url><loc>{u}</loc></url>\n' for u in urls)
+    (OUT / 'sitemap.xml').write_text('<?xml version="1.0" encoding="UTF-8"?>\n'
+                                     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+                                     + sitemap + '</urlset>\n', encoding='utf-8', newline='\n')
+    (OUT / 'robots.txt').write_text(f"User-agent: *\nAllow: /\nSitemap: {SITE['base']}sitemap.xml\n",
+                                    encoding='utf-8', newline='\n')
+    print('wrote site/sitemap.xml, site/robots.txt')
 
 
 if __name__ == '__main__':

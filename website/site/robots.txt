@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://danular.github.io/AgentArcade/sitemap.xml

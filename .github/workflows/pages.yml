@@ -1,0 +1,56 @@
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths: ['website/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Build the site
+        run: python website/build.py
+      - name: Check the site
+        shell: python
+        run: |
+          import re
+          from pathlib import Path
+          site = Path('website/site')
+          pages = [p.stem for p in Path('website/pages').glob('*.html')]
+          missing = [n for n in pages if not (site / f'{n}.html').exists()]
+          missing += [f for f in ('sitemap.xml', 'robots.txt', 'assets/css/site.css', 'assets/video/agent-arcade-promo.mp4',
+                                  'assets/video/poster.jpg', 'assets/img/og.png') if not (site / f).exists()]
+          assert not missing, f'missing in website/site: {missing}'
+          # GitHub Pages serves 404.html at any missing path, so relative links there would break.
+          relative = re.findall(r'(?:href|src)="(?![a-z]+:|/|#)([^"]*)"', (site / '404.html').read_text(encoding='utf-8'))
+          assert not relative, f'404.html has relative links: {relative}'
+          print('site ok:', len(pages), 'pages')
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
