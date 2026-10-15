@@ -1302,6 +1302,8 @@ sealed class RemoteServer
     public const string DialogOpenTyped = "The agent started asking a question on your PC, so Enter wasn't pressed.";
 
     public static readonly RemoteReply RunChanged = RemoteReply.Fail(409, "runChanged", "Agent Arcade started again on your PC, so nothing was sent. That agent isn't open any more.");
+    public static readonly RemoteReply PairDenied = RemoteReply.Fail(403, "denied", Denied);
+    public static readonly RemoteReply PairNotApproved = RemoteReply.Fail(403, "notApproved", NotApproved);
 
     static readonly RemoteReply Unknown = RemoteReply.Fail(404, "unknownRequest", "Unknown request.");
     static readonly RemoteReply Invalid = RemoteReply.Fail(400, "badRequest", "That request isn't valid.");
@@ -1912,7 +1914,7 @@ sealed class RemoteServer
         if (context.RequestAborted.IsCancellationRequested)
         {
             _host.Log("Phone pairing ended, the phone left: " + name);
-            return (RemoteReply.Fail(403, "notApproved", NotApproved), null);
+            return (PairNotApproved, null);
         }
         if (allowed == true)
         {
@@ -1923,10 +1925,10 @@ sealed class RemoteServer
         if (allowed == false)
         {
             _host.Log("Phone pairing denied: " + name);
-            return (RemoteReply.Fail(403, "denied", Denied), null);
+            return (PairDenied, null);
         }
         _host.Log("Phone pairing not allowed: " + name);
-        return (RemoteReply.Fail(403, "notApproved", NotApproved), null);
+        return (PairNotApproved, null);
     }
 
     // Asks in the Phone dialog and waits for Allow (true) or Deny (false). Null when the wait ended without either:

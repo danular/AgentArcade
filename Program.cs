@@ -1938,8 +1938,9 @@ static class RemoteSelfCheck
 // gets, made by the server's own serializers and options (RemoteModel) from made-up data. The Android app pins each
 // file's SHA-256 and decodes it (ContractFixturesTest), so the PC and the phone can't drift apart unnoticed.
 // Nothing in them comes from this PC: no machine name, version, path, account, terminal text or clock.
-// Session, Screen and Attention are built by the page (web/app.js); here a made-up object in the page's field order
-// stands in for it and goes through the same C# steps as the page's (Redacted, ScreenMessage, Event).
+// Session, Screen, Attention and the page's errors are built by the page (web/app.js); here a made-up object in the
+// page's field order stands in for it and goes through the same C# steps as the page's (Summary, ScreenMessage, Event,
+// RemoteReply.FromPage).
 static class RemoteFixtures
 {
     const string Pc = "DESKTOP-ARCADE", Version = "1.4.0", Projects = @"C:\Projects";
@@ -1948,10 +1949,6 @@ static class RemoteFixtures
     const string FoamQuestion = "Do you want to make this edit to WaterSurface.shader?";
     // A fixed run, the contract's example, so the files are the same each time.
     const string FixedRun = "9c4e1a7f03b2d865";
-
-    // The sentences REMOTE_API.md's error table gives for these codes.
-    const string DialogChanged = "The question on your PC changed, so nothing was sent. Check it and answer again.";
-    const string NotApproved = "Nobody allowed this phone on your PC in time. Press New code on your PC, scan again and click Allow.";
 
     public static void Run(Action<string, bool, string> check, string? folder)
     {
@@ -1966,8 +1963,10 @@ static class RemoteFixtures
                 return json.RootElement.ValueKind == JsonValueKind.Object;
             });
             var local = LocalNames().Where(name => files.Values.Any(bytes => Encoding.UTF8.GetString(bytes).Contains(name, StringComparison.OrdinalIgnoreCase))).ToList();
-            var built = same && objects && local.Count == 0;
-            var detail = files.Count + " files, the same bytes each time, " + (local.Count == 0 ? "nothing from this PC in them" : "this PC's name or folder in them");
+            var contract = HasContract11(files);
+            var built = same && objects && local.Count == 0 && contract;
+            var detail = files.Count + " files, the same bytes each time, " + (local.Count == 0 ? "nothing from this PC in them" : "this PC's name or folder in them")
+                + (contract ? ", with the 1.1 fields" : ", WITHOUT the 1.1 fields (features, minClientApi, run, code)");
             if (folder == null)
             {
                 check("remote-fixtures", built, detail + "; not written (--fixtures <folder> writes them)");
@@ -1990,6 +1989,34 @@ static class RemoteFixtures
         {
             check("remote-fixtures", false, ex.GetType().Name + ": " + ex.Message);
         }
+    }
+
+    // Contract 1.1 in the files: hello lists every feature with minClientApi 1, State, every Session and Attention carry the
+    // fixed run, and every error body has a code (dialogOpen-typed also typed: true).
+    static bool HasContract11(SortedDictionary<string, byte[]> files)
+    {
+        JsonElement Read(string name)
+        {
+            using var json = JsonDocument.Parse(files[name]);
+            return json.RootElement.Clone();
+        }
+        var hello = Read("hello.json");
+        var state = Read("state.json");
+        return hello.GetProperty("minClientApi").GetInt32() == 1
+            && hello.GetProperty("features").EnumerateArray().Select(feature => feature.GetString()).Order()
+                .SequenceEqual(new[] { "clientHeader", "errorCodes", "expect", "pairApproval", "run" })
+            && Json.Str(state, "run") == FixedRun && state.GetProperty("sessions").EnumerateArray().All(session => Json.Str(session, "run") == FixedRun)
+            && Json.Str(Read("session.json").GetProperty("session"), "run") == FixedRun
+            && Json.Str(Read("attention.json").GetProperty("attention"), "run") == FixedRun
+            // error-<status>-<code>[-variant].json: the code is in the name and fits the status.
+            && files.Keys.Where(name => name.StartsWith("error-", StringComparison.Ordinal)).All(name =>
+            {
+                var parts = name[..^".json".Length].Split('-');
+                var body = Read(name);
+                return parts.Length >= 3 && int.TryParse(parts[1], out var status) && Json.Str(body, "code") == parts[2]
+                    && RemoteModel.IsCode(status, parts[2]) && Json.Str(body, "error").Length > 0;
+            })
+            && Read("error-409-dialogOpen-typed.json").GetProperty("typed").GetBoolean();
     }
 
     // File name -> its bytes, in name order.
@@ -2038,9 +2065,14 @@ static class RemoteFixtures
             ["session.json"] = RemoteModel.Event(new { type = "session", session = RemoteModel.Summary(Page(Working()), FixedRun) }),
             ["screen.json"] = RemoteModel.ScreenMessage(Page(Screen()), 6),
             ["attention.json"] = RemoteModel.Event(new { type = "attention", attention = RemoteModel.Summary(Page(Attention()), FixedRun) }),
-            // Error bodies; the status is in the file name.
-            ["error-409-dialogChanged.json"] = RemoteModel.ReplyJson(RemoteReply.Fail(409, "dialogChanged", DialogChanged)),
-            ["error-403-notApproved.json"] = RemoteModel.ReplyJson(RemoteReply.Fail(403, "notApproved", NotApproved)),
+            // Error bodies; the status is in the file name. The page's refusals come through FromPage, as MainForm takes
+            // them from its remoteReply; the server's are its own replies.
+            ["error-409-dialogChanged.json"] = RemoteModel.ReplyJson(RemoteReply.FromPage(409, null, RemoteServer.DialogChanged, "dialogChanged")),
+            ["error-409-dialogOpen.json"] = RemoteModel.ReplyJson(RemoteReply.FromPage(409, null, RemoteServer.DialogOpen, "dialogOpen")),
+            ["error-409-dialogOpen-typed.json"] = RemoteModel.ReplyJson(RemoteReply.FromPage(409, Page(new { typed = true }), RemoteServer.DialogOpenTyped, "dialogOpen")),
+            ["error-409-runChanged.json"] = RemoteModel.ReplyJson(RemoteServer.RunChanged),
+            ["error-403-denied.json"] = RemoteModel.ReplyJson(RemoteServer.PairDenied),
+            ["error-403-notApproved.json"] = RemoteModel.ReplyJson(RemoteServer.PairNotApproved),
         };
     }
 
