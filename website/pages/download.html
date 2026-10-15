@@ -58,15 +58,17 @@ nav: download
 
       <h2 id="phone">The Android app</h2>
       <p>{{remote}} lets you watch and drive your agents from your phone. It isn't on Google Play yet, so you install the APK yourself. The PC side is already in the zip above: <b>Phone</b> at the bottom of the sidebar. <a href="phone.html">Read how it works</a>.</p>
-      <div class="ctas"><a class="btn btn-accent" href="{{apk}}">{{download_icon}}Download AgentArcadeRemote.apk</a></div>
+      <div class="ctas"><a class="btn btn-accent" href="{{apk}}">{{download_icon}}Download AgentArcadeRemote.apk</a><a class="btn btn-ghost" href="{{obtainium}}">Add to Obtainium</a></div>
       <p class="muted small">v{{apk_version}} · {{apk_size}} · Android 8.0 and up · free</p>
       <ol class="steps">
-        <li><div><b>Download it on your phone.</b> Open this page in your phone's browser and tap the button.</div></li>
+        <li><div><b>Download it on your phone.</b> Open this page in your phone's browser and tap the download button.</div></li>
         <li><div><b>Open the downloaded file.</b> If Android asks, allow your browser to <i>install unknown apps</i>, then go back.</div></li>
         <li><div><b>Tap Install.</b> If Google Play Protect says it doesn't know the app, tap <b>More details</b>, then <b>Install anyway</b>.</div></li>
         <li><div><b>Pair it with your PC:</b> see <a href="docs.html#phone">Pair your phone</a>.</div></li>
       </ol>
       <p>To update, download the newest APK and install it over the old one. Your pairing stays.</p>
+      <p id="obtainium"><b>Updates with Obtainium.</b> Until {{remote}} is on Google Play, <a href="https://obtainium.imranr.dev">Obtainium</a> can keep it up to date: it checks this project's GitHub releases and offers the AgentArcadeRemote.apk of each new one. On a phone with Obtainium installed, tap <b>Add to Obtainium</b> and confirm the import. Every release carries the APK, so a release that only changed the PC app offers the same APK again; installing it changes nothing.</p>
+      <p>To add it to Obtainium by hand instead, give Obtainium <code>{{github}}</code>, set <i>Filter APKs by regular expression</i> to <code>{{apk_filter}}</code> so it takes only that file, and switch off <i>Reconcile version string with version detected from OS</i>, because a release's version is the PC app's.</p>
       <p><b>Coming from version 1.0?</b> Version 1.1 is a new app to Android (its app id changed to prepare for Google Play), so it can't install over 1.0. Uninstall the old {{remote}} first, install 1.1, and pair again: remove the old phone in the PC's Phone dialog, then scan a new code.</p>
       <p>The SHA-256 of AgentArcadeRemote.apk v{{apk_version}}, from the v{{version}} release:</p>
       <div class="codeblock"><pre>{{apk_sha256}}</pre></div>
