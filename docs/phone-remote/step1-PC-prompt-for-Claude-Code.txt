@@ -1,0 +1,50 @@
+Add "Phone remote" to Agent Arcade, so my Android app "Agent Arcade Remote" can watch and drive the agents from my phone: see every pane's status and progress, read its terminal, answer approvals, type messages, and start, stop, resume and rename agents.
+
+Read these first: CLAUDE.md, README.md and docs/phone-remote/REMOTE_API.md. REMOTE_API.md is the contract the phone app is built against: follow it exactly (paths, field names, status codes, close codes, limits). If something in it can't work, tell me before you change it. Then read MainForm.cs, Backend.cs, Program.cs and web/app.js, make a short plan, and build it in the order below. Build and run the self-check after each step.
+
+1. Settings
+- RemoteEnabled (default false) and RemotePort (default 47821) in settings.json.
+
+2. Remote.cs: the server. It runs only while Phone remote is on.
+- Kestrel with <FrameworkReference Include="Microsoft.AspNetCore.App" />, minimal APIs and WebSockets (KeepAliveInterval 20 s, permessage-deflate on). HTTPS only, on all IPv4 addresses at RemotePort.
+- Certificate: create it once (ECDSA P-256, CN=Agent Arcade Remote, server-auth EKU, valid 20 years) and keep it in the CurrentUser\My store with the friendly name "Agent Arcade Remote". SChannel needs a persisted private key, so re-import the PFX with PersistKeySet (X509CertificateLoader) before you use it. Its fingerprint for the pairing link is the SHA-256 of the DER, lowercase hex.
+- Devices in %LOCALAPPDATA%\AgentArcade\remote.json: id, name, SHA-256 hash of the token (base64url), paired, lastSeen. Never store or log a token. Compare hashes with CryptographicOperations.FixedTimeEquals.
+- Pairing codes, rate limits, size limits, every endpoint and every WebSocket message exactly as REMOTE_API.md describes.
+- Addresses for the pairing link: IPv4 addresses of network adapters that are up and have a default gateway (so no Hyper-V, WSL or Docker switches), then any Tailscale address (100.64.0.0/10), each with the port.
+- Threading: Kestrel runs on the thread pool. Everything that touches _sessions, _history, settings or the page must run on the UI thread (BeginInvoke). Requests that need the page (screen, input, keys, start, resume, stop, close, rename) post a message with a requestId and await the page's remoteReply (TaskCompletionSource, 10 s timeout, then 503).
+- Turning Phone remote off, or closing the app, stops the server and closes every socket with 1001. Removing a phone deletes its hash and closes its sockets with 4401. More than 4 phones: close with 1013.
+
+3. MainForm.cs: wiring
+- New page messages. Page to C#: remoteSessions, remoteScreen, remoteAttention, remoteReply. C# to page: remoteStatus, remoteWatch, remoteGetScreen, remoteInput, remoteKeys, remoteStart, remoteResume, remoteStop, remoteClose, remoteRename. The names must match on both sides (CLAUDE.md rule).
+- The phone's State and Chat come from the same data as PostState and PostHistory, plus the session summaries the page sends. Add "color" (the same brand colors as BRAND_COLORS in app.js) and, in history entries, "session" (the id of the pane that has the chat open) and "resume" as exact / agent / none.
+- Send session, closed, state, history, attention and screen events to the connected phones. Only phones that watch a pane get its screen events.
+- Windows notifications stay as they are. Phones get attention events whatever the Windows notification setting is.
+
+4. web/app.js: the page has the screens, titles and "needs you" state, so it builds what the phone sees
+- remoteSummary(session) returns the Session object from REMOTE_API.md, using its status rules. Remember the time of the last Enter as turnStartedAt (armed gets cleared, so don't reuse it), and the time of the last output for every pane (outputArrived only does that while armed).
+- Find activity, plan, choices, question and preview in the xterm buffer as REMOTE_API.md describes. Write the parsers as small pure functions over an array of line strings.
+- Read OSC 9;4 progress in the existing OSC 9 handler (keep returning false for it).
+- Send remoteSessions (only the summaries that changed) at most every 500 ms while at least one phone is connected (remoteStatus tells the page how many), and right away when a pane starts, ends, gets a new title or turns amber.
+- Screen serializer for watched panes: the last N lines (from watch, default 200, at most 2000) as spans with hex colors resolved through THEME and the 256-color table, style bits, inverse applied, hidden text as spaces, the empty trailing cell of wide characters skipped, trailing blanks trimmed. At most 4 per second per pane, and only when something changed.
+- Remote input must behave like typing at the PC, so titles and "done" detection keep working: for text, session.term.paste(text) and then, when submit is true, term.input('\r') 150 ms later. For keys, term.input(sequence), with application cursor mode for the arrows. Never type into an ended pane; reply with an error instead.
+- remoteStart opens a pane for that account in the requested workspace without switching the workspace the PC shows (openSession needs a workspace parameter), and replies with the new session id. remoteResume uses the existing resume path. remoteStop ends the agent but keeps the pane with "— stopped from your phone —" and the usual Resume / New chat / Close. remoteClose removes an ended pane. remoteRename works like renaming the title on the PC.
+- Whenever needsYou() runs, or a pane ends, send remoteAttention with the title, message, question and seenOnPc (the pane is visible and focused and the document has focus).
+
+5. The Phone dialog (index.html, app.css, app.js, in the style of the other dialogs)
+- A "Phone" text button in the sidebar foot next to "Text size", with a green dot while a phone is connected.
+- The dialog: a switch "Let my phone watch and drive these agents". When it is on: the QR code of the pairing link (made in C# with the QRCoder NuGet package and sent to the page as a PNG data URL; black on white in a white rounded card, at least 220 px), the short fingerprint (first 8 bytes, like 3F:A2:91:0C:7B:44:E1:D0), "Valid for 10 minutes", "New code" and "Copy link" buttons, the addresses it listens on, and the paired phones (name, last seen, Remove).
+- This note at the bottom: "A paired phone can read your panes and type into your agents, like you can at this PC. Only pair your own phone. If Windows asks, allow Agent Arcade on private networks."
+
+6. --self-check
+- Certificate create and load, and its fingerprint; token hashing and the constant-time compare; pairing code expiry, single use and the five-tries limit; the pairing link format; the JSON names of State, Session, Screen, Chat and Attention exactly as in REMOTE_API.md; the server starts on a free port and answers /api/v1/hello.
+
+7. Docs
+- README.md: what Phone remote does, how to pair, the firewall prompt, Tailscale for use away from home, and the new files.
+- CLAUDE.md: rules: the contract lives in docs/phone-remote/REMOTE_API.md and both sides change together; never log tokens, pairing codes or terminal text; the phone gets nothing a person at the PC couldn't see in the panes.
+
+Rules
+- Keep to CLAUDE.md, especially: never touch the agents' login tokens or credential files, the page must not reload while agents run, and message types must match on both sides.
+- No file access, settings changes or account tokens for the phone.
+- Keep the repo's style: plain code, small functions, comments only where the reason isn't obvious.
+
+When it builds and the self-check passes, test it for real. Turn Phone remote on, copy the pairing link, and pair with curl from Git Bash (section 7 of REMOTE_API.md). Then check /state, /history, a screen, input and keys into a test pane, and the WebSocket: hello, session updates while an agent works, and an attention event when it finishes. Tell me what you tested, what worked and what didn't.

@@ -46,6 +46,11 @@ const ICONS = {
   eraser: '<path d="m7 21-4-4L14 6l7 7-8 8zM9 12l6 6"/>',
   history: '<path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>',
   pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  text: '<path d="M4 7V5h11v2M9.5 5v14M7 19h5M14 12v-1.5h7V12M17.5 10.5V19M16 19h3"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+  sidebar: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
 };
 
 const LOGO = '<img src="icon.png" alt="" draggable="false">';
@@ -274,7 +279,7 @@ function renderWorkspaces() {
     const shut = isFolded('ws:' + workspace.path);
     const children = list.length && !shut
       ? `<div class="ws-sessions">${list.map(session =>
-          `<button class="ws-session" data-session="${session.id}"><span class="dot ${session.running ? 'on' : 'off'}"></span>` +
+          `<button class="ws-session" data-session="${session.id}"><span class="${DOT_CLASS[session.dotStatus] || (session.running ? 'dot on' : 'dot off')}"></span>` +
           `<span class="ellipsis">${esc(titleOf(session))}</span></button>`).join('')}</div>`
       : '';
     const fold = list.length
@@ -329,6 +334,8 @@ function renderTopbar() {
   $('#ws-name').textContent = workspace ? workspace.name : 'No workspace';
   $('#ws-path').textContent = state.workspace || '';
   $('#open-unity').hidden = !workspace?.unity;
+  // The bar's buttons changed, so their room did too.
+  fitTopbar();
 }
 
 function renderPanes() {
@@ -397,6 +404,7 @@ function showTitle(session) {
   label.classList.toggle('placeholder', isChat(session) && !session.customTitle && !session.autoTitle);
   if (isChat(session)) label.title = titleOf(session) + ' (double-click to rename)';
   renderWorkspaces();
+  remoteSoon();
 }
 
 // The page knows best which title is current; the history gets it a moment later.
@@ -555,11 +563,14 @@ document.addEventListener('pointercancel', () => endDrag(false));
 // ---------- terminal panes ----------
 
 // chat: a history entry to continue; its account and project are used.
-function openSession(key, mode = 'start', chat = null) {
+// options.workspace: the project to start in instead of the one on screen.
+// options.remote: opened from the phone, so the PC keeps showing what it showed: no maximize reset, no focus, no dialogs.
+function openSession(key, mode = 'start', chat = null, options = {}) {
   const account = accountOf(key);
   const agent = agentOf(account);
-  if (!account || !agent) return toast('That account is gone. Click refresh.', 'error');
+  if (!account || !agent) return options.remote ? null : toast('That account is gone. Click refresh.', 'error');
   if (mode !== 'install' && !agent.installed) {
+    if (options.remote) return null;
     if (agent.checking) return toast(`Still checking ${agent.name}. Try again in a moment.`);
     return askInstall(agent);
   }
@@ -567,8 +578,11 @@ function openSession(key, mode = 'start', chat = null) {
   const id = 's' + (++sessionCount);
   const label = mode === 'install' ? `Install ${agent.name}` : mode === 'login' ? `${agent.name} · sign in` : agent.name;
   const session = {
-    id, key, mode, label, workspace: chat ? chat.workspace : state.workspace, running: true, order: sessionCount,
+    id, key, mode, label, workspace: chat ? chat.workspace : options.workspace || state.workspace, running: true, order: sessionCount,
     chat: null, resumeOf: chat?.id || '', customTitle: chat?.named ? chat.title : '', autoTitle: chat && !chat.named ? chat.title : '', typed: '',
+    // For the phone (remoteSummary); times are epoch ms. workedAt: the last output after Enter that counts as work.
+    startedAt: Date.now(), turnStartedAt: null, lastOutputAt: null, endedAt: null, exitCode: null, error: null,
+    progress: null, attentionKind: null, attentionMessage: null, seq: 0, typedAt: 0, workedAt: 0, resizedAt: 0,
   };
   session.el = document.createElement('div');
   session.el.className = 'pane';
@@ -587,13 +601,13 @@ function openSession(key, mode = 'start', chat = null) {
 
   const term = session.term = new Terminal({
     fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace',
-    fontSize: 13,
+    fontSize,
     cursorBlink: true,
     allowProposedApi: true,
     scrollback: 5000,
     theme: THEME,
-    // Links that agents print as OSC 8 hyperlinks open in the normal browser.
-    linkHandler: { activate: (event, uri) => send({ type: 'openUrl', url: uri }) },
+    // Links that agents print as OSC 8 hyperlinks: localhost pages open in the side panel, the rest in the browser.
+    linkHandler: { activate: (event, uri) => openLink(uri) },
   });
   session.fit = new FitAddon.FitAddon();
   term.loadAddon(session.fit);
@@ -601,7 +615,8 @@ function openSession(key, mode = 'start', chat = null) {
     term.loadAddon(new Unicode11Addon.Unicode11Addon());
     term.unicode.activeVersion = '11';
   } catch { /* default widths are fine too */ }
-  term.loadAddon(new WebLinksAddon.WebLinksAddon((event, uri) => send({ type: 'openUrl', url: uri })));
+  term.loadAddon(new WebLinksAddon.WebLinksAddon((event, uri) => openLink(uri)));
+  term.registerLinkProvider({ provideLinks: (y, callback) => callback(imageLinks(session, y)) });
   term.open(session.el.querySelector('.term'));
   try {
     const webgl = new WebglAddon.WebglAddon();
@@ -613,18 +628,57 @@ function openSession(key, mode = 'start', chat = null) {
     if (!session.running) return;
     send({ type: 'input', session: id, data });
     trackPrompt(session, data);
+    watchTurn(session, data);
   });
   term.onTitleChange(title => agentTitle(session, title));
+  term.onWriteParsed(() => screenChanged(session));
+  term.onResize(() => {
+    session.resizedAt = Date.now();
+    screenChanged(session);
+  });
+  // Agents that announce themselves: OSC 9 (Codex, Claude Code's iTerm2 channel), OSC 777 and the bell.
+  // OSC 9;4 and the like are progress reports, not messages; 9;4 is kept for the phone.
+  term.parser.registerOscHandler(9, data => {
+    const progress = Remote.progress(data);
+    if (progress !== undefined) session.progress = progress;
+    if (/^\d+;/.test(data)) return false;
+    needsYou(session, data);
+    return true;
+  });
+  term.parser.registerOscHandler(777, data => {
+    const [kind, title, body] = data.split(';');
+    if (kind !== 'notify') return false;
+    needsYou(session, body || title);
+    return true;
+  });
+  term.onBell(() => {
+    if (session.armed) needsYou(session);
+  });
+  session.el.addEventListener('focusin', () => clearAttention(session));
   new ResizeObserver(() => scheduleFit(session)).observe(session.el.querySelector('.pane-body'));
 
-  maxed = null;
+  if (!options.remote) maxed = null;
   showTitle(session);
   render();
-  requestAnimationFrame(() => {
-    fitNow(session);
-    send({ type: 'start', session: id, account: key, mode, workspace: session.workspace, chat: session.resumeOf, cols: term.cols, rows: term.rows });
-    term.onResize(size => send({ type: 'resize', session: id, cols: size.cols, rows: size.rows }));
-    term.focus();
+  // Resolves once the C# side was told to start the agent; typing from the phone waits for it.
+  session.begun = new Promise(resolve => {
+    let begun = false;
+    const begin = () => {
+      if (begun) return;
+      begun = true;
+      // Stopped or closed before it began (the phone can be that quick): nothing to start.
+      if (!session.running) return resolve();
+      // A pane the PC doesn't show can't be measured; the agent gets a usable size until someone looks at it.
+      if (!fitNow(session)) term.resize(120, 36);
+      send({ type: 'start', session: id, account: key, mode, workspace: session.workspace, chat: session.resumeOf, cols: term.cols, rows: term.rows });
+      term.onResize(size => send({ type: 'resize', session: id, cols: size.cols, rows: size.rows }));
+      if (!options.remote) term.focus();
+      remoteSoon();
+      resolve();
+    };
+    requestAnimationFrame(begin);
+    // Animation frames wait while the window is minimized, and nobody may be at the PC to restore it.
+    setTimeout(begin, 250);
   });
   return session;
 }
@@ -641,7 +695,50 @@ function handleKey(session, event) {
   }
   // Let the browser paste, so Ctrl+V pastes text instead of sending a control key.
   if (event.ctrlKey && key === 'v') return false;
+  // Ctrl+= / Ctrl+- / Ctrl+0 change the text size of every pane, like zoom in a browser.
+  if (event.ctrlKey && !event.altKey && (key === '=' || key === '+' || (key === '-' && !event.shiftKey) || key === '0')) {
+    setFontSize(key === '0' ? DEFAULT_FONT_SIZE : fontSize + (key === '-' ? -1 : 1));
+    return false;
+  }
   return true;
+}
+
+// ---------- text size ----------
+
+const DEFAULT_FONT_SIZE = 13;
+const clampFontSize = size => Math.min(24, Math.max(9, Math.round(Number(size)) || DEFAULT_FONT_SIZE));
+let fontSize = clampFontSize(localStorage.getItem('fontSize'));
+
+// Every pane uses the same size; refitting tells each agent its new number of rows and columns.
+function setFontSize(size, save = true) {
+  fontSize = clampFontSize(size);
+  if (save) localStorage.setItem('fontSize', String(fontSize));
+  for (const session of sessions.values()) {
+    session.term.options.fontSize = fontSize;
+    scheduleFit(session);
+  }
+  if (consoleTerm) {
+    consoleTerm.options.fontSize = fontSize;
+    fitConsole();
+  }
+}
+
+async function textSizeDialog() {
+  const before = fontSize;
+  const answer = modal({
+    title: 'Text size',
+    body: `<label>Terminal text <span class="size-value">${fontSize} px</span>` +
+      `<input type="range" name="size" min="9" max="24" step="1" value="${fontSize}"></label>` +
+      '<p class="muted">Applies to every pane. Ctrl+= and Ctrl+- change it too; Ctrl+0 goes back to 13.</p>',
+    confirm: 'Done',
+  });
+  const slider = document.querySelector('.modal input[name="size"]');
+  slider.addEventListener('input', () => {
+    setFontSize(slider.value, false);
+    slider.closest('label').querySelector('.size-value').textContent = `${fontSize} px`;
+  });
+  const result = await answer;
+  setFontSize(result ? result.size : before);
 }
 
 function scheduleFit(session) {
@@ -652,33 +749,59 @@ function scheduleFit(session) {
   });
 }
 
+// Returns whether the pane could be measured.
 function fitNow(session) {
-  if (!session.el.isConnected || session.el.hidden) return;
+  if (!session.el.isConnected || session.el.hidden) return false;
   const body = session.el.querySelector('.pane-body');
-  if (body.clientWidth < 60 || body.clientHeight < 40) return;
+  if (body.clientWidth < 60 || body.clientHeight < 40) return false;
   try {
     session.fit.fit();
-  } catch { /* the pane is being removed */ }
+    return true;
+  } catch {
+    return false; // the pane is being removed
+  }
 }
 
 function sessionEnded(message) {
   const session = sessions.get(message.session);
   if (!session || !session.running) return;
+  endSession(session, { code: message.code, error: message.error });
+}
+
+// code and error come from the agent's exit; phone: the phone stopped it (the C# side already did).
+function endSession(session, { code = null, error = null, phone = false } = {}) {
   session.running = false;
-  session.term.write(message.error
-    ? `\r\n\x1b[31m${message.error}\x1b[0m\r\n`
-    : `\r\n\x1b[90m— session ended${message.code ? ` (exit code ${message.code})` : ''} —\x1b[0m\r\n`);
-  session.el.querySelector('.pane-head .dot').className = 'dot off';
+  session.endedAt = Date.now();
+  session.exitCode = typeof code === 'number' ? code : null;
+  session.error = error || null;
+  session.stoppedFromPhone = phone;
+  session.progress = null;
+  session.term.write(error
+    ? `\r\n\x1b[31m${error}\x1b[0m\r\n`
+    : phone
+      ? '\r\n\x1b[90m— stopped from your phone —\x1b[0m\r\n'
+      : `\r\n\x1b[90m— session ended${code ? ` (exit code ${code})` : ''} —\x1b[0m\r\n`);
+  session.attention = false;
+  session.attentionKind = null;
+  session.attentionMessage = null;
+  session.armed = 0;
+  refreshDots();
+  if (isChat(session)) notify(session, error ? `${agentName(session)} stopped with an error.` : endMessage(session));
   const resumable = chatOf(session.chat)?.resume;
   session.el.querySelector('.pane-body').insertAdjacentHTML('beforeend',
     '<div class="pane-ended">Session ended' +
     (resumable ? '<button data-act="resume" title="Continue this chat">Resume</button>' : '') +
     (isChat(session) ? '<button data-act="fresh">New chat</button>' : '<button data-act="restart">Restart</button>') +
     '<button data-act="close">Close</button></div>');
-  if (session.mode === 'login' && !message.error) toast('Sign-in finished. The sidebar shows the email in a moment.');
+  if (session.mode === 'login' && !error && !phone) toast('Sign-in finished. The sidebar shows the email in a moment.');
   renderWorkspaces();
   renderAgents();
+  remoteAttention(session, 'ended', endMessage(session));
+  remoteSoon();
 }
+
+const endMessage = session => session.error ||
+  (session.stoppedFromPhone ? `${agentName(session)} was stopped from your phone.` : `${agentName(session)} stopped.`);
 
 async function closeSession(session, force = false) {
   if (session.running && !force) {
@@ -694,6 +817,7 @@ async function closeSession(session, force = false) {
   session.running = false;
   session.el.remove();
   sessions.delete(session.id);
+  paneClosed(session.id);
   try {
     session.term.dispose();
   } catch { /* the pane is already gone from the screen */ }
@@ -797,12 +921,686 @@ document.addEventListener('drop', event => {
     }
     return;
   }
+  const imagePath = event.dataTransfer.getData(IMAGE_DRAG);
+  if (imagePath) return pastePaths(session, [imagePath]);
   const text = event.dataTransfer.getData('text/plain');
   if (text) {
     session.term.paste(text);
     session.term.focus();
   }
 });
+
+// ---------- needing attention ----------
+
+// An agent that worked for a while after you pressed Enter and then went quiet is done or waiting for
+// you: agents animate a spinner while they work. Agents that send their own notification are believed
+// straight away. Windows notifications only show when you can't see the pane; MainForm checks the window.
+const QUIET_MS = 5000;
+const MIN_WORK_MS = 4000;
+// A resize makes ConPTY repaint the pane; output this soon after one isn't the agent writing.
+const REPAINT_MS = 600;
+const APPROVAL = /do you want|would you like to|allow (this|command|execution)|apply this change|\(y\/n\)|\[y\/n\]/i;
+// Focus and mouse reports that xterm.js sends for the agent; nobody typed them.
+const REPORTS = /^(?:\x1b\[[IO]|\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[M[\s\S]{3})+$/;
+let notifyOn = localStorage.getItem('notifications') !== 'off';
+
+const agentName = session => agentOf(accountOf(session.key))?.name || 'The agent';
+
+// typedAt: when you started typing after the last Enter; the echo of a draft isn't the agent working.
+function watchTurn(session, data) {
+  clearAttention(session);
+  if (REPORTS.test(data)) return;
+  if (data.includes('\r')) {
+    session.armed = Date.now();
+    session.turnStartedAt = session.armed;
+    session.busyStart = 0;
+    session.typedAt = 0;
+  } else if (picking(session)) {
+    // Answering a dialog with a digit, y or an arrow lets the agent go on, so its next stop is noticed again.
+    // A turn that is still armed keeps the work it already did.
+    if (!session.armed) {
+      session.armed = Date.now();
+      session.busyStart = 0;
+    }
+    session.typedAt = 0;
+  } else {
+    session.typedAt ||= Date.now();
+  }
+}
+
+function outputArrived(session) {
+  const now = Date.now();
+  if (now - (session.resizedAt || 0) >= REPAINT_MS) {
+    session.lastOutputAt = now;
+    if (session.turnStartedAt && !session.typedAt) session.workedAt = now;
+  }
+  if (!session.armed) return;
+  session.lastOutput = now;
+  session.busyStart ||= session.lastOutput;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const session of sessions.values()) {
+    if (session.running && session.armed && session.busyStart && now - session.lastOutput > QUIET_MS &&
+        session.lastOutput - session.busyStart >= MIN_WORK_MS) needsYou(session);
+  }
+  refreshDots();
+}, 1000);
+
+// ---------- status dots ----------
+
+// Orange: working. Red: needs you. Green: idle or done. Grey: ended. The phone uses the same statuses (paneStatus).
+const DOT_CLASS = { working: 'dot working', needsYou: 'dot needs', done: 'dot on', idle: 'dot on', ended: 'dot off' };
+
+// Sets each pane's dot, and its dot in the sidebar, from paneStatus. The sidebar dot changes in place: redrawing the
+// sidebar every time a status changes could swallow a click that is halfway through.
+function refreshDots() {
+  for (const session of sessions.values()) {
+    const status = session.running ? paneStatus(session, screenParts(session)) : 'ended';
+    if (status === session.dotStatus) continue;
+    session.dotStatus = status;
+    session.el.querySelector('.pane-head .dot').className = DOT_CLASS[status];
+    const listed = document.querySelector(`#workspaces .ws-session[data-session="${CSS.escape(session.id)}"] .dot`);
+    if (listed) listed.className = DOT_CLASS[status];
+  }
+}
+
+function needsYou(session, text = '') {
+  session.armed = 0;
+  session.busyStart = 0;
+  if (Date.now() - (session.notifiedAt || 0) < 8000) return;
+  session.notifiedAt = Date.now();
+  const own = String(text).replace(/[\x00-\x1f]/g, ' ').trim();
+  const screen = screenParts(session);
+  const asks = own ? Remote.asksOk(own) : screen.asks || screen.choices.length > 0 || screen.menu;
+  const kind = asks ? 'needsYou' : 'done';
+  const message = Remote.cut(own, 200) ||
+    (asks ? `${agentName(session)} needs your OK to continue.` : `${agentName(session)} is done and waiting for you.`);
+  if (!seenOnPc(session)) {
+    session.attention = true;
+    session.attentionKind = kind;
+    session.attentionMessage = message;
+    refreshDots();
+    remoteSoon();
+  }
+  notify(session, own.slice(0, 200) || attentionText(session));
+  remoteAttention(session, kind, message, asks ? screen.question : null);
+}
+
+// Someone is looking at this pane on the PC right now.
+const seenOnPc = session => !session.el.hidden && document.hasFocus() && session.el.contains(document.activeElement);
+
+// The bottom of the screen shows whether the agent asks to run or change something.
+function attentionText(session) {
+  const buffer = session.term.buffer.active;
+  const bottom = [];
+  for (let y = Math.max(0, buffer.baseY + buffer.cursorY - 12); y < buffer.length; y++) bottom.push(buffer.getLine(y)?.translateToString(true) || '');
+  return APPROVAL.test(bottom.join('\n')) ? `${agentName(session)} needs your OK to continue.` : `${agentName(session)} is done and waiting for you.`;
+}
+
+function notify(session, body) {
+  const title = session.customTitle || session.autoTitle || session.label;
+  if (notifyOn) send({ type: 'notify', session: session.id, title, body, visible: !session.el.hidden });
+}
+
+function clearAttention(session) {
+  if (!session.attention) return;
+  session.attention = false;
+  session.attentionKind = null;
+  session.attentionMessage = null;
+  refreshDots();
+  remoteSoon();
+}
+
+function showSession(id) {
+  const session = sessions.get(id);
+  if (!session) return;
+  if (!same(session.workspace, state.workspace)) selectWorkspace(session.workspace);
+  focusSession(id);
+}
+
+// ---------- images in a pane ----------
+
+// Image paths an agent prints can be clicked to view them in the pane. Quoted paths may contain spaces.
+const IMAGE_PATH = /(["'`])([^"'`\n]+?\.(?:png|jpe?g|gif|webp|bmp))\1|([^\s"'`<>|()[\]{}*?]+\.(?:png|jpe?g|gif|webp|bmp))(?![\w-]|\.\w)/gi;
+
+// A path can wrap onto the next rows, so the whole wrapped line is searched.
+function imageLinks(session, y) {
+  const buffer = session.term.buffer.active;
+  const cols = session.term.cols;
+  let first = y - 1;
+  while (first > 0 && y - 1 - first < 20 && buffer.getLine(first)?.isWrapped) first--;
+  let last = y - 1;
+  while (last - first < 40 && buffer.getLine(last + 1)?.isWrapped) last++;
+  let text = '';
+  for (let row = first; row <= last; row++) text += buffer.getLine(row)?.translateToString(row === last) || '';
+  const at = index => ({ x: index % cols + 1, y: first + Math.floor(index / cols) + 1 });
+  const links = [];
+  for (const match of text.matchAll(IMAGE_PATH)) {
+    const path = match[2] || match[3];
+    if (path.includes('://')) continue;
+    const start = match.index + (match[2] ? 1 : 0);
+    const range = { start: at(start), end: at(start + path.length - 1) };
+    if (range.start.y > y || range.end.y < y) continue;
+    links.push({
+      range, text: path,
+      decorations: { underline: true, pointerCursor: true },
+      activate: () => send({ type: 'openImage', session: session.id, workspace: session.workspace, path }),
+    });
+  }
+  return links.length ? links : undefined;
+}
+
+// open: the user clicked a path, so it is shown in the pane. Otherwise an image just appeared in a project folder or
+// an agent's image folder: the Images tab lists it if it shows.
+function imageArrived(message) {
+  if (!message.open) return loadImagesSoon();
+  const session = sessions.get(message.session);
+  if (!session) return;
+  const images = session.images ||= [];
+  const known = images.findIndex(image => image.path.toLowerCase() === message.path.toLowerCase());
+  if (known >= 0) images.splice(known, 1);
+  images.push({ url: message.url, path: message.path, name: message.name, version: Date.now() });
+  if (images.length > 24) images.shift();
+  viewImage(session, images.length - 1);
+}
+
+const imageSrc = image => `${image.url}?v=${image.version}`;
+
+// ---------- Images tab ----------
+
+// The side panel's Images tab: the images in the current project and in its agents' own image folders. Drag one
+// onto a pane to paste its path into that agent's prompt. The Images button in the top bar opens the tab, or
+// hides the panel when the tab already shows.
+const IMAGE_DRAG = 'application/x-agent-arcade-image';
+// Each request is numbered; a scan that finishes late doesn't replace the answer to a newer one.
+let imagesAsked = 0;
+let imagesShown = 0;
+let imagesKey = '';
+let imagesTimer = 0;
+
+function toggleImages() {
+  if (panelShows('images')) return setPanel(false);
+  panelTab = 'images';
+  setPanel(true);
+}
+
+function loadImages() {
+  if (!panelShows('images')) return;
+  if (!state.workspace) return showImageList(null, []);
+  send({ type: 'listImages', workspace: state.workspace, seq: ++imagesAsked });
+}
+
+// New images come in bursts (a test run saving screenshots): one look once they stop.
+function loadImagesSoon() {
+  clearTimeout(imagesTimer);
+  imagesTimer = setTimeout(loadImages, 800);
+}
+
+// total: how many images there are; the C# side sends only the newest ones.
+function showImageList(workspace, items, total = items.length) {
+  if (!panelShows('images') || (workspace && !same(workspace, state.workspace))) return;
+  // The time is in the key and the image URL: an image written again under the same name shows anew.
+  const key = JSON.stringify([total, items.map(item => [item.path, item.time])]);
+  if (key === imagesKey) return;
+  imagesKey = key;
+  const count = $('#images-count');
+  count.textContent = !items.length ? '' : total > items.length ? `${items.length} of ${total}` : String(items.length);
+  count.title = total > items.length ? `The ${items.length} newest of ${total} images` : '';
+  const grid = $('#images-grid');
+  const scroll = grid.scrollTop;
+  // Lazy: only the tiles scrolled into view load their (full-size) image.
+  grid.innerHTML = items.length
+    ? items.map(item => `<figure class="image-tile" draggable="true" data-path="${esc(item.path)}" title="${esc(item.path)}">` +
+        `<img src="${esc(`${item.url}?v=${item.time || 0}`)}" alt="" draggable="false" loading="lazy" decoding="async"><figcaption>${esc(item.name)}</figcaption></figure>`).join('')
+    : `<p class="panel-empty">${state.workspace ? 'No images in this project yet. Images that appear here show up on their own.' : 'Pick a project in the sidebar first.'}</p>`;
+  grid.scrollTop = scroll;
+}
+
+function imageListArrived(message) {
+  if ((message.seq || 0) < imagesShown) return;
+  imagesShown = message.seq || 0;
+  const items = message.items || [];
+  showImageList(message.workspace, items, Math.max(message.total || 0, items.length));
+}
+
+// ---------- hiding the sidebar ----------
+
+// The button left of the project name hides the sidebar, so the panes get the whole width. Survives restarts.
+// The panes refit through their ResizeObserver; there is no animation, so each agent gets one resize, not dozens.
+function setSidebar(hidden) {
+  $('.app').classList.toggle('side-hidden', hidden);
+  const button = $('#toggle-sidebar');
+  button.title = hidden ? 'Show the sidebar' : 'Hide the sidebar';
+  button.setAttribute('aria-pressed', String(hidden));
+  localStorage.setItem('sidebar', hidden ? 'hidden' : 'shown');
+  fitTopbar();
+}
+
+// The top bar's buttons drop their labels when they would leave the project name too little room (side panel
+// open, narrow window). Runs on every resize of the bar, and right after the panel or sidebar is shown or hidden.
+function fitTopbar() {
+  const topbar = $('.topbar');
+  topbar.classList.remove('compact');
+  if (topbar.querySelector('.top-actions').offsetWidth + 220 > topbar.clientWidth) topbar.classList.add('compact');
+}
+
+// ---------- side panel: Preview, Images, Changes, Console ----------
+
+// A panel on the right, like the ones in Claude and Codex: preview a page an agent works on, drag its images onto
+// panes, see what changed in the project, or use a console in it. The button at the right of the top bar hides it; its tab and width
+// survive restarts. The phone never sees it.
+const panel = $('#side-panel');
+const PANEL_TABS = ['preview', 'images', 'changes', 'console'];
+let panelTab = PANEL_TABS.includes(localStorage.getItem('panelTab')) ? localStorage.getItem('panelTab') : 'preview';
+const panelShows = tab => !panel.hidden && panelTab === tab;
+
+function setPanel(open) {
+  panel.hidden = !open;
+  $('.app').classList.toggle('panel-open', open);
+  const button = $('#toggle-panel');
+  button.title = open ? 'Hide the side panel' : 'Show the side panel';
+  button.setAttribute('aria-pressed', String(open));
+  localStorage.setItem('panel', open ? 'open' : 'closed');
+  fitTopbar();
+  if (open) showPanelTab(panelTab);
+}
+
+function showPanelTab(tab) {
+  panelTab = PANEL_TABS.includes(tab) ? tab : 'preview';
+  localStorage.setItem('panelTab', panelTab);
+  for (const button of panel.querySelectorAll('.panel-tab')) {
+    button.classList.toggle('active', button.dataset.tab === panelTab);
+    button.setAttribute('aria-selected', String(button.dataset.tab === panelTab));
+  }
+  for (const view of panel.querySelectorAll('.panel-view')) view.hidden = view.dataset.view !== panelTab;
+  if (panelTab === 'preview' && state.workspace) send({ type: 'listDocs', workspace: state.workspace });
+  if (panelTab === 'images') loadImages();
+  if (panelTab === 'changes') loadChanges();
+  if (panelTab === 'console') openConsole();
+}
+
+// Another project was picked: a project file in the preview and the picked change belonged to the old one.
+function panelWorkspaceChanged() {
+  if (previewFile) resetPreview();
+  imagesKey = '';
+  changesSelected = null;
+  changesKey = '';
+  diffShown = null;
+  changesFiles = [];
+  changesWaiting = 0;
+  diffWaiting = 0;
+  $('#changes-list').innerHTML = '<p class="panel-empty">Looking…</p>';
+  $('#changes-diff').innerHTML = '';
+  $('#changes-branch').textContent = '';
+  $('#changes-count').textContent = '';
+  if (!panel.hidden) showPanelTab(panelTab);
+}
+
+// Dragged by its left edge. As a column it leaves the panes at least MIN_PANES px; when the window is too narrow for
+// that, it floats over the panes instead (panel-overlay), so they keep their width.
+const MIN_PANES = 360;
+const MIN_PANEL = 280;
+
+function setPanelWidth(width, save = true) {
+  const app = $('.app');
+  // The app's padding (20), the sidebar with its gap (282) and the panel's gap (10).
+  const room = window.innerWidth - 20 - (app.classList.contains('side-hidden') ? 0 : 282) - 10 - MIN_PANES;
+  const overlay = room < MIN_PANEL;
+  const wanted = Math.max(MIN_PANEL, Math.round(Number(width) || 480));
+  const shown = Math.min(wanted, overlay ? window.innerWidth - 20 : room);
+  app.classList.toggle('panel-overlay', overlay);
+  app.style.setProperty('--panel-width', shown + 'px');
+  if (save) localStorage.setItem('panelWidth', String(shown));
+  fitTopbar();
+}
+
+$('#panel-resize').addEventListener('pointerdown', event => {
+  event.preventDefault();
+  const handle = event.currentTarget;
+  handle.setPointerCapture(event.pointerId);
+  document.body.classList.add('resizing-panel');
+  const right = panel.getBoundingClientRect().right;
+  const move = moveEvent => setPanelWidth(right - moveEvent.clientX, false);
+  handle.addEventListener('pointermove', move);
+  handle.addEventListener('lostpointercapture', () => {
+    handle.removeEventListener('pointermove', move);
+    document.body.classList.remove('resizing-panel');
+    setPanelWidth(panel.getBoundingClientRect().width);
+  }, { once: true });
+});
+window.addEventListener('resize', () => setPanelWidth(localStorage.getItem('panelWidth'), false));
+
+// ---------- Preview ----------
+
+// Pages on this PC (localhost) and the project's own files open in the panel; other sites go to the normal browser.
+const LOOPBACK = /^(localhost|127\.0\.0\.1|\[::1\]|[a-z0-9-]+\.localhost)$/i;
+let previewUrl = '';
+// The project file shown, relative to the project; '' for a localhost page.
+let previewFile = '';
+
+function localUrl(text) {
+  const value = String(text || '').trim();
+  const full = /^https?:\/\//i.test(value) ? value
+    : /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?([/?#]|$)/i.test(value) ? 'http://' + value : '';
+  if (!full) return null;
+  try {
+    const url = new URL(full);
+    return LOOPBACK.test(url.hostname) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function openPreview(text) {
+  const value = String(text || '').trim();
+  if (!value) return;
+  const url = localUrl(value);
+  if (url) return showPreview(url, '');
+  // A web address that isn't on this PC (C:\… is a path, not a scheme).
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^[a-z]:[\\/]/i.test(value)) {
+    return toast('Only pages on this PC (localhost) and files in the project open here. Other sites open in your browser.');
+  }
+  if (!state.workspace) return toast('Pick a project in the sidebar first.');
+  send({ type: 'previewFile', workspace: state.workspace, path: value });
+}
+
+// file: the project file behind url, so a reload asks for it fresh.
+function showPreview(url, file) {
+  previewUrl = url;
+  previewFile = file;
+  $('#preview-address').value = file || url;
+  $('#preview-external').hidden = !!file;
+  $('#preview-empty').hidden = true;
+  const frame = $('#preview-frame');
+  frame.hidden = false;
+  frame.src = file ? `${url}?v=${Date.now()}` : url;
+  // Without the query: a link from a terminal can carry a token (Jupyter's ?token=…), which mustn't be kept.
+  localStorage.setItem('previewAddress', file || url.split(/[?#]/)[0]);
+}
+
+function resetPreview() {
+  previewUrl = '';
+  previewFile = '';
+  const frame = $('#preview-frame');
+  frame.removeAttribute('src');
+  frame.hidden = true;
+  $('#preview-empty').hidden = false;
+  $('#preview-external').hidden = false;
+}
+
+function previewUrlArrived(message) {
+  if (!same(message.workspace, state.workspace)) return;
+  showPreview(message.url, message.path);
+}
+
+function docListArrived(message) {
+  if (!same(message.workspace, state.workspace)) return;
+  $('#preview-docs').innerHTML = (message.files || []).map(file => `<option value="${esc(file)}"></option>`).join('');
+}
+
+// Links in a pane or the console: pages on this PC open in the panel, the rest in the normal browser.
+function openLink(uri) {
+  const url = localUrl(uri);
+  if (!url) return send({ type: 'openUrl', url: uri });
+  panelTab = 'preview';
+  setPanel(true);
+  showPreview(url, '');
+}
+
+// ---------- Changes ----------
+
+const STATUS_LETTER = { modified: 'M', new: 'U', added: 'A', deleted: 'D', renamed: 'R', copied: 'C', conflict: '!' };
+let changesFiles = [];
+// The file whose diff shows, and the last list and diff drawn, so a refresh that changes nothing keeps the scroll.
+let changesSelected = null;
+let changesKey = '';
+let diffShown = null;
+// One git status and one git diff at a time: on a big repository they take seconds, and the 5 s refresh must not
+// pile them up. Status requests are numbered and only the newest answer counts. A request without an answer
+// after 30 s counts as lost.
+let changesAsked = 0;
+let changesWaiting = 0;
+let diffWaiting = 0;
+const LOST_MS = 30000;
+
+// again: the 5 s refresh, which waits for the previous answer.
+function loadChanges(again = false) {
+  if (!state.workspace) return changesArrived({ workspace: '', error: 'Pick a project in the sidebar first.' });
+  if (again && changesWaiting && Date.now() - changesWaiting < LOST_MS) return;
+  changesWaiting = Date.now();
+  send({ type: 'gitChanges', workspace: state.workspace, seq: ++changesAsked });
+}
+
+function changesArrived(message) {
+  if (message.seq) {
+    if (message.seq !== changesAsked) return;
+    changesWaiting = 0;
+  }
+  if (!panelShows('changes') || !same(message.workspace, state.workspace)) return;
+  const files = message.files || [];
+  const key = JSON.stringify([message.error, message.branch, message.total, files]);
+  if (key !== changesKey) {
+    changesKey = key;
+    changesFiles = files;
+    $('#changes-branch').textContent = message.error ? '' : message.branch || '';
+    $('#changes-count').textContent = message.error || !files.length ? ''
+      : message.total > files.length ? `${files.length} of ${message.total} files` : `${files.length} file${files.length === 1 ? '' : 's'}`;
+    const list = $('#changes-list');
+    if (message.error || !files.length) {
+      list.innerHTML = `<p class="panel-empty">${esc(message.error || 'No changes: the project matches its last commit.')}</p>`;
+      changesSelected = null;
+      diffShown = null;
+      $('#changes-diff').innerHTML = '';
+      return;
+    }
+    changesSelected = changesSelected && files.find(file => file.path === changesSelected.path) || null;
+    const scroll = list.scrollTop;
+    list.innerHTML = files.map((file, i) => {
+      const slash = file.path.lastIndexOf('/');
+      return `<button class="change-row${file === changesSelected ? ' active' : ''}" data-index="${i}" ` +
+        `title="${esc(file.from ? `${file.from} → ${file.path}` : file.path)} (${esc(file.status)})">` +
+        `<span class="change-status ${esc(file.status)}">${STATUS_LETTER[file.status] || 'M'}</span>` +
+        `<span class="change-name ellipsis">${esc(file.path.slice(slash + 1))}</span>` +
+        `<span class="change-dir ellipsis">${esc(slash > 0 ? file.path.slice(0, slash) : '')}</span></button>`;
+    }).join('');
+    list.scrollTop = scroll;
+    if (!changesSelected) {
+      diffShown = null;
+      $('#changes-diff').innerHTML = '<p class="panel-empty">Pick a file to see what changed.</p>';
+    }
+  }
+  // The file may have changed again without its status changing.
+  if (changesSelected) requestDiff(changesSelected, true);
+}
+
+// again: a refresh, which waits for the previous diff.
+function requestDiff(file, again = false) {
+  if (again && diffWaiting && Date.now() - diffWaiting < LOST_MS) return;
+  diffWaiting = Date.now();
+  send({ type: 'gitDiff', workspace: state.workspace, path: file.path, from: file.from || '', untracked: file.status === 'new' });
+}
+
+const diffClass = line =>
+  /^(diff |index |--- |\+\+\+ |new file|deleted file|similarity |rename |old mode|new mode|Binary files)/.test(line) ? 'meta'
+    : line.startsWith('@@') ? 'hunk' : line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : '';
+
+function diffArrived(message) {
+  diffWaiting = 0;
+  if (!panelShows('changes') || !same(message.workspace, state.workspace) || message.path !== changesSelected?.path) return;
+  if (message.error) {
+    diffShown = null;
+    $('#changes-diff').innerHTML = `<p class="panel-empty">${esc(message.error)}</p>`;
+    return;
+  }
+  const key = message.path + '\0' + message.text;
+  if (key === diffShown) return;
+  diffShown = key;
+  const box = $('#changes-diff');
+  const scroll = box.scrollTop;
+  const lines = String(message.text || '').split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  if (!lines.length) {
+    box.innerHTML = '<p class="panel-empty">No differences to show (only the file mode or line endings changed).</p>';
+    return;
+  }
+  if (message.cut) lines.push('… the rest is cut off: this diff is too long to show here.');
+  box.innerHTML = '<div class="diff-lines">' +
+    lines.map(line => `<div class="diff-line ${diffClass(line)}">${esc(line) || ' '}</div>`).join('') + '</div>';
+  box.scrollTop = scroll;
+}
+
+$('#changes-list').addEventListener('click', event => {
+  const row = event.target.closest('.change-row');
+  if (!row) return;
+  changesSelected = changesFiles[Number(row.dataset.index)] || null;
+  for (const item of $('#changes-list').querySelectorAll('.change-row')) item.classList.toggle('active', item === row);
+  diffShown = null;
+  $('#changes-diff').scrollTop = 0;
+  if (changesSelected) requestDiff(changesSelected);
+});
+
+// Agents change files all the time: while the tab shows, it looks again every 5 seconds.
+setInterval(() => {
+  if (panelShows('changes') && document.visibilityState === 'visible') loadChanges(true);
+}, 5000);
+
+// ---------- Console ----------
+
+// A PowerShell in the project, started the first time the tab opens. It keeps running when you switch projects;
+// the + button starts a new one in the current project.
+let consoleTerm = null;
+let consoleFit = null;
+let consoleRunning = false;
+
+function openConsole() {
+  if (!consoleTerm) {
+    consoleTerm = new Terminal({
+      fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace',
+      fontSize,
+      cursorBlink: true,
+      allowProposedApi: true,
+      scrollback: 5000,
+      theme: THEME,
+      linkHandler: { activate: (event, uri) => openLink(uri) },
+    });
+    consoleFit = new FitAddon.FitAddon();
+    consoleTerm.loadAddon(consoleFit);
+    try {
+      consoleTerm.loadAddon(new Unicode11Addon.Unicode11Addon());
+      consoleTerm.unicode.activeVersion = '11';
+    } catch { /* default widths are fine too */ }
+    consoleTerm.loadAddon(new WebLinksAddon.WebLinksAddon((event, uri) => openLink(uri)));
+    consoleTerm.open($('#console-term'));
+    // Copy, paste and text size work as in the panes.
+    const keys = { term: consoleTerm };
+    consoleTerm.attachCustomKeyEventHandler(event => handleKey(keys, event));
+    consoleTerm.onData(data => {
+      if (consoleRunning) send({ type: 'consoleInput', data });
+    });
+    consoleTerm.onResize(size => {
+      if (consoleRunning) send({ type: 'consoleResize', cols: size.cols, rows: size.rows });
+    });
+    new ResizeObserver(() => fitConsole()).observe($('#console-term'));
+  }
+  fitConsole();
+  // Not before the first state: the page's ready message stops everything that runs, the console too.
+  if (!consoleRunning && state.workspace) startConsole();
+  consoleTerm.focus();
+}
+
+function fitConsole() {
+  if (!consoleTerm || !panelShows('console')) return;
+  const box = $('#console-term');
+  if (box.clientWidth < 60 || box.clientHeight < 40) return;
+  try {
+    consoleFit.fit();
+  } catch { /* not measurable yet */ }
+}
+
+// Each console gets a number, which comes back with its output: what a replaced console still sent is dropped.
+let consoleId = 0;
+
+function startConsole() {
+  consoleRunning = true;
+  $('#console-folder').textContent = state.workspace;
+  $('#console-folder').title = state.workspace;
+  send({ type: 'consoleStart', workspace: state.workspace, cols: consoleTerm.cols, rows: consoleTerm.rows, id: ++consoleId });
+}
+
+const consoleNow = message => message.id === consoleId;
+
+function consoleExited(message) {
+  if (!consoleNow(message)) return;
+  consoleRunning = false;
+  consoleTerm?.write(message.error
+    ? `\r\n\x1b[31m${message.error}\x1b[0m\r\n`
+    : '\r\n\x1b[90m— console ended; + starts a new one —\x1b[0m\r\n');
+}
+
+$('#console-restart').addEventListener('click', () => {
+  if (consoleRunning) send({ type: 'consoleStop' });
+  consoleRunning = false;
+  consoleTerm?.reset();
+  openConsole();
+});
+
+function viewImage(session, index) {
+  const image = session.images?.[index];
+  if (!image) return;
+  session.viewing = index;
+  let view = session.el.querySelector('.image-view');
+  if (!view) {
+    session.el.querySelector('.pane-body').insertAdjacentHTML('beforeend',
+      '<div class="image-view" tabindex="-1"><div class="image-bar">' +
+      `${icon('image', 15)}<span class="image-name ellipsis"></span><span class="image-count"></span>` +
+      `<button class="icon-btn small" data-act="image-paste" title="Paste the path into the pane, so the agent can look at it">${icon('terminal', 15)}</button>` +
+      `<button class="icon-btn small" data-act="image-reveal" title="Show in folder">${icon('folder', 15)}</button>` +
+      `<button class="icon-btn small" data-act="image-close" title="Close (Esc)">${icon('close', 15)}</button>` +
+      '</div><div class="image-stage"><img alt="" draggable="false" title="Click to switch between fit and actual size"></div></div>');
+    view = session.el.querySelector('.image-view');
+    view.addEventListener('keydown', event => imageKey(session, event));
+    view.querySelector('img').addEventListener('click', event => event.currentTarget.closest('.image-stage').classList.toggle('actual'));
+    view.querySelector('img').addEventListener('error', () => toast(`Can't show ${session.images?.[session.viewing]?.name || 'that image'}.`, 'error'));
+  }
+  view.querySelector('.image-name').textContent = image.name;
+  view.querySelector('.image-name').title = image.path;
+  const count = session.images.length;
+  view.querySelector('.image-count').textContent = count > 1 ? `${index + 1} / ${count}` : '';
+  view.querySelector('.image-stage').classList.remove('actual');
+  view.querySelector('img').src = imageSrc(image);
+  view.focus();
+}
+
+function closeImage(session) {
+  session.el.querySelector('.image-view')?.remove();
+  session.viewing = null;
+  session.term.focus();
+}
+
+function imageKey(session, event) {
+  const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+  if (event.key === 'Escape') closeImage(session);
+  else if (step) viewImage(session, (session.viewing + step + session.images.length) % session.images.length);
+  else return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function imageAction(session, button) {
+  const image = session.images?.[session.viewing];
+  switch (button.dataset.act) {
+    case 'image': return viewImage(session, Number(button.dataset.index));
+    case 'image-close': return closeImage(session);
+    case 'image-reveal': return image && send({ type: 'revealImage', url: image.url });
+    case 'image-paste':
+      if (!image) return;
+      if (!session.running) return toast('This session has ended. Restart it first.');
+      closeImage(session);
+      return pastePaths(session, [image.path]);
+  }
+}
 
 function paneMenu(session, anchor) {
   const items = [];
@@ -816,7 +1614,23 @@ function paneMenu(session, anchor) {
       '-');
   }
   items.push(
-    { label: 'Clear screen', icon: 'eraser', run: () => session.term.clear() },
+    {
+      label: 'Clear screen', icon: 'eraser',
+      run: () => {
+        session.term.clear();
+        screenChanged(session);
+      },
+    },
+    { label: 'Text size…', sub: `${fontSize} px · Ctrl+= / Ctrl+-`, icon: 'text', run: textSizeDialog },
+    {
+      label: notifyOn ? 'Turn off Windows notifications' : 'Turn on Windows notifications',
+      sub: 'When an agent is done or needs you, for every pane', icon: 'bell',
+      run: () => {
+        notifyOn = !notifyOn;
+        localStorage.setItem('notifications', notifyOn ? 'on' : 'off');
+        toast(notifyOn ? 'Windows tells you when an agent is done or needs you, unless you are looking at it.' : 'No more Windows notifications. Panes still turn red when an agent needs you.');
+      },
+    },
     { label: session.running ? 'Restart' : 'Start again', sub: session.mode === 'resume' ? 'Continues the same chat' : isChat(session) ? 'Starts a new chat' : null, icon: 'refresh', run: () => restart(session) });
   if (isChat(session)) {
     items.push({ label: 'Open in Windows Terminal', icon: 'external', run: () => send({ type: 'external', account: session.key }) });
@@ -1027,6 +1841,7 @@ function resumeChat(chat) {
 function selectWorkspace(path) {
   state.workspace = path;
   render();
+  panelWorkspaceChanged();
   send({ type: 'selectWorkspace', path });
 }
 
@@ -1064,6 +1879,8 @@ function chatMenu(chat, anchor) {
 function openHistory(scope = 'project', path = state.workspace) {
   closeMenu();
   closeHistory();
+  // One of the two big dialogs at a time, so Escape always knows which one to close.
+  closePhone();
   const root = document.createElement('div');
   root.className = 'modal-backdrop';
   root.innerHTML =
@@ -1159,6 +1976,585 @@ document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && historyView && !openMenu && !document.querySelector('.modal:not(.history)')) closeHistory();
 }, true);
 
+// ---------- phone remote: what the phone sees ----------
+
+// The phone app talks to Remote.cs, which asks this page for everything that comes from the panes
+// (docs/phone-remote/REMOTE_API.md). Requests carry a requestId and always get a remoteReply.
+const PALETTE = Remote.palette(THEME);
+const NOT_OPEN = "That agent isn't open on the PC any more.";
+const HAS_ENDED = 'That agent has ended. Resume it or start a new chat.';
+const BUSY = 'Agent Arcade is busy, try again.';
+// The C# side answers 503 after 10 s, counted from a little before the page gets the request; typing that
+// can't finish well before then could be typed twice when the phone tries again.
+const JOB_WAIT_MS = 8000;
+// A paste from the phone can't carry escape sequences; special keys go through remoteKeys.
+const CONTROL = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g;
+
+const remote = {
+  phones: 0,
+  sent: new Map(), // pane id -> the summary JSON the C# side last got
+  known: new Set(), // panes the C# side has a summary of, so it hears when they close
+  closed: new Set(),
+  soon: 0,
+  watches: new Map(), // pane id -> { lines, seq, at, timer, force }
+  jobs: new Set(), // typing waiting or running: { device, at, cancelled }
+  removed: new Set(), // phones removed on the PC: their requests that still arrive are refused
+};
+
+const panes = () => [...sessions.values()].sort((a, b) => a.order - b.order);
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// The last `count` lines of the pane down to its last drawn row, and the cursor's index in them.
+function screenLines(session, count) {
+  const buffer = session.term.buffer.active;
+  const cursor = buffer.baseY + buffer.cursorY;
+  const text = y => buffer.getLine(y)?.translateToString(true) || '';
+  let end = buffer.length;
+  while (end > Math.max(buffer.baseY, cursor + 1) && !text(end - 1).trim()) end--;
+  const start = Math.max(0, end - count);
+  const lines = [];
+  for (let y = start; y < end; y++) lines.push(text(y));
+  return { lines, cursor: cursor - start };
+}
+
+function screenParts(session) {
+  const { lines, cursor } = screenLines(session, 120);
+  // The approval check looks where attentionText looks: from 12 rows above the cursor.
+  return Remote.parts(lines, cursor - 12);
+}
+
+// The pane shows choices or a menu at its bottom.
+const picking = session => Remote.picking(screenLines(session, 20).lines);
+
+function paneStatus(session, screen) {
+  if (!session.running) return 'ended';
+  if (screen.asking) return 'needsYou';
+  if (session.attention) return session.attentionKind === 'needsYou' ? 'needsYou' : 'done';
+  const busy = session.progress?.state === 'busy' || session.progress?.state === 'percent';
+  const recent = session.workedAt && Date.now() - session.workedAt < QUIET_MS;
+  // The agent worked long enough for the done check, which fires after QUIET_MS: stay working until then.
+  // workedAt leaves out typing echo and resize repaints, so those can't make a quiet pane look busy.
+  const settling = session.armed && session.busyStart && session.workedAt - session.busyStart >= MIN_WORK_MS &&
+    Date.now() - session.workedAt < QUIET_MS + 1500;
+  return screen.activity || busy || recent || settling ? 'working' : 'idle';
+}
+
+function statusMessage(session, status) {
+  if (status === 'ended') return endMessage(session);
+  if (status === 'needsYou') return (session.attentionKind === 'needsYou' && session.attentionMessage) || `${agentName(session)} needs your OK to continue.`;
+  if (status === 'done') return session.attentionMessage || `${agentName(session)} is done and waiting for you.`;
+  return null;
+}
+
+// The Session object of REMOTE_API.md.
+function remoteSummary(session) {
+  const account = accountOf(session.key);
+  const [keyAgent, keyAccount] = session.key.split('|');
+  // An ended pane can outlive its account; the agent named in the key still knows the command.
+  const agent = agentOf(account) || state.agents.find(item => item.name === keyAgent);
+  const screen = screenParts(session);
+  const status = paneStatus(session, screen);
+  const asking = status === 'needsYou';
+  return {
+    id: session.id,
+    chat: session.chat || null,
+    mode: session.mode,
+    agent: agent?.name || keyAgent || null,
+    command: agent?.command || '',
+    account: session.key,
+    accountName: account?.name || keyAccount || null,
+    workspace: session.workspace,
+    title: titleOf(session),
+    status,
+    message: statusMessage(session, status),
+    question: asking ? screen.question : null,
+    choices: asking ? screen.choices : [],
+    activity: session.running ? screen.activity : null,
+    plan: screen.plan,
+    progress: session.running ? session.progress : null,
+    preview: asking ? [] : screen.preview,
+    startedAt: session.startedAt,
+    turnStartedAt: session.turnStartedAt,
+    lastOutputAt: session.lastOutputAt,
+    endedAt: session.endedAt,
+    exitCode: session.exitCode,
+    error: session.error,
+    seenOnPc: seenOnPc(session),
+    cols: session.term.cols,
+    rows: session.term.rows,
+  };
+}
+
+function safeSummary(session) {
+  try {
+    return remoteSummary(session);
+  } catch {
+    return null; // the pane is being closed
+  }
+}
+
+// While a phone is connected: the summaries that changed since the last send, and the panes that closed.
+function pushSessions() {
+  if (!remote.phones) return;
+  const changed = [];
+  for (const session of panes()) {
+    const summary = safeSummary(session);
+    if (!summary) continue;
+    const json = JSON.stringify(summary);
+    if (remote.sent.get(session.id) === json) continue;
+    remote.sent.set(session.id, json);
+    remote.known.add(session.id);
+    changed.push(summary);
+  }
+  const closed = [...remote.closed];
+  remote.closed.clear();
+  if (changed.length || closed.length) send({ type: 'remoteSessions', sessions: changed, closed });
+}
+setInterval(pushSessions, 500);
+
+// A pane started, ended, closed, got a title or turned amber: the phone hears it now, not at the next tick.
+function remoteSoon() {
+  if (!remote.phones || remote.soon) return;
+  remote.soon = setTimeout(() => {
+    remote.soon = 0;
+    pushSessions();
+  });
+}
+
+function paneClosed(id) {
+  clearTimeout(remote.watches.get(id)?.timer);
+  remote.watches.delete(id);
+  remote.sent.delete(id);
+  if (remote.known.delete(id)) remote.closed.add(id);
+  remoteSoon();
+}
+
+// Sent whether or not Windows notifications are on; the C# side drops it when no phone is connected.
+function remoteAttention(session, status, message, question = null) {
+  send({
+    type: 'remoteAttention',
+    attention: { id: session.id, status, title: titleOf(session), message, question, seenOnPc: seenOnPc(session), at: Date.now() },
+  });
+}
+
+function phonesChanged(message) {
+  const phones = Math.max(0, Math.floor(Number(message.phones)) || 0);
+  // The first phone after none: every summary goes again.
+  if (!remote.phones && phones) remote.sent.clear();
+  remote.phones = phones;
+  showPhones();
+  if (message.requestId) remoteRequest(message, () => remoteOk({ sessions: panes().map(safeSummary).filter(Boolean) }));
+  pushSessions();
+}
+
+// ---------- phone remote: screens ----------
+
+const clampLines = lines => Math.min(2000, Math.max(1, Math.floor(Number(lines)) || 200));
+
+function screenOf(session, lines) {
+  return { id: session.id, seq: session.seq, ...Remote.serializeScreen(session.term, lines, PALETTE) };
+}
+
+function screenChanged(session) {
+  session.seq++;
+  if (remote.watches.has(session.id)) queueScreen(session.id);
+}
+
+// watches: every pane a phone watches, with the most lines any phone wants; refresh: send these now.
+function watchChanged(message) {
+  const wanted = new Map();
+  for (const watch of Array.isArray(message.watches) ? message.watches : []) {
+    if (typeof watch?.id === 'string') wanted.set(watch.id, clampLines(watch.lines));
+  }
+  for (const [id, watch] of remote.watches) {
+    if (wanted.has(id)) continue;
+    clearTimeout(watch.timer);
+    remote.watches.delete(id);
+  }
+  const now = new Set((Array.isArray(message.refresh) ? message.refresh : []).filter(id => typeof id === 'string'));
+  for (const [id, lines] of wanted) {
+    const watch = remote.watches.get(id);
+    if (!watch || lines > watch.lines) now.add(id);
+    if (watch) watch.lines = lines;
+    else remote.watches.set(id, { lines, seq: -1, at: 0, timer: 0, force: false });
+  }
+  for (const id of now) queueScreen(id, true);
+}
+
+// At most 4 screens a second per pane, and only when it changed (or the C# side asked for it). A long
+// screen costs tens of milliseconds to build, so one of more than 400 lines goes at most once a second.
+function queueScreen(id, force = false) {
+  const watch = remote.watches.get(id);
+  if (!watch || !sessions.has(id)) return;
+  watch.force ||= force;
+  if (watch.timer) return;
+  const delay = watch.at + (watch.lines > 400 ? 1000 : 250) - Date.now();
+  if (delay <= 0) sendScreen(id);
+  else watch.timer = setTimeout(() => sendScreen(id), delay);
+}
+
+function sendScreen(id) {
+  const watch = remote.watches.get(id);
+  const session = sessions.get(id);
+  if (!watch || !session) return;
+  watch.timer = 0;
+  if (!watch.force && watch.seq === session.seq) return;
+  watch.force = false;
+  watch.seq = session.seq;
+  watch.at = Date.now();
+  try {
+    send({ type: 'remoteScreen', screen: screenOf(session, watch.lines) });
+  } catch { /* the pane is being closed */ }
+}
+
+// ---------- phone remote: requests ----------
+
+const remoteOk = (body = { ok: true }, status = 200) => ({ status, body });
+const remoteRefuse = (status, error, body) => ({ status, error, body });
+
+async function remoteRequest(message, handler) {
+  let result;
+  try {
+    result = typeof message.device === 'string' && remote.removed.has(message.device)
+      ? remoteRefuse(401, "This phone isn't paired any more. Pair it again on your PC.")
+      : await handler(message);
+  } catch {
+    result = remoteRefuse(500, 'Something went wrong on the PC.');
+  }
+  const reply = { type: 'remoteReply', requestId: message.requestId, status: result.status };
+  if (result.body) reply.body = result.body;
+  if (result.error) reply.error = result.error;
+  send(reply);
+}
+
+// For messages without a requestId: a failure must not reach the page's message handler.
+function quietly(run) {
+  try {
+    run();
+  } catch { /* the next message of the same kind sets it right */ }
+}
+
+// Text and keys for one pane go one request at a time, in the order they came, after the agent was started.
+// A job is never typed once its phone was removed or Phone remote went off (remoteCancel), or when it waited
+// so long that the C# side already answered 503: the phone may have sent it again.
+// duration: how long the job types (keys 40 ms apart, Enter 150 ms after a paste); it must end in time too.
+function inOrder(session, message, job, duration = 0) {
+  const ticket = { device: typeof message.device === 'string' ? message.device : null, at: Date.now(), cancelled: false };
+  remote.jobs.add(ticket);
+  const run = (session.remoteQueue || session.begun).then(() => {
+    if (ticket.cancelled || Date.now() - ticket.at + duration > JOB_WAIT_MS) return remoteRefuse(503, BUSY);
+    if (sessions.get(session.id) !== session) return remoteRefuse(404, NOT_OPEN);
+    if (!session.running) return remoteRefuse(409, HAS_ENDED);
+    return job(ticket);
+  }).finally(() => remote.jobs.delete(ticket));
+  session.remoteQueue = run.catch(() => {});
+  return run;
+}
+
+// device: the phone that was removed, or null when Phone remote stopped. No reply: the C# side answered already.
+function cancelJobs(message) {
+  const device = typeof message.device === 'string' ? message.device : null;
+  if (device) remote.removed.add(device);
+  for (const job of remote.jobs) {
+    if (device === null || job.device === device) job.cancelled = true;
+  }
+}
+
+// Why an agent can't start right now, or ''.
+function notReady(agent) {
+  if (!agent) return "That agent isn't in the agent list on the PC any more.";
+  if (agent.installed) return '';
+  return agent.checking ? `Agent Arcade is still checking ${agent.name}. Try again in a moment.` : `${agent.name} isn't installed on the PC.`;
+}
+
+function remoteGetScreen(message) {
+  const session = sessions.get(message.id);
+  if (!session) return remoteRefuse(404, NOT_OPEN);
+  return remoteOk(screenOf(session, clampLines(message.lines)));
+}
+
+// Typed like a paste at the PC, so titles, amber and "done" keep working through term.onData.
+function remoteInput(message) {
+  const session = sessions.get(message.id);
+  if (!session) return remoteRefuse(404, NOT_OPEN);
+  if (!session.running) return remoteRefuse(409, HAS_ENDED);
+  const text = typeof message.text === 'string' ? message.text.replace(CONTROL, '') : '';
+  return inOrder(session, message, async ticket => {
+    if (text) session.term.paste(text);
+    if (message.submit !== true) return remoteOk();
+    await wait(150);
+    if (ticket.cancelled) return remoteRefuse(503, BUSY);
+    if (!session.running) return remoteRefuse(409, HAS_ENDED);
+    session.term.input('\r');
+    return remoteOk();
+  }, message.submit === true ? 150 : 0);
+}
+
+function remoteKeys(message) {
+  const session = sessions.get(message.id);
+  if (!session) return remoteRefuse(404, NOT_OPEN);
+  if (!session.running) return remoteRefuse(409, HAS_ENDED);
+  const keys = Array.isArray(message.keys) ? message.keys : [];
+  if (!keys.length || keys.length > 32) return remoteRefuse(400, 'Send between 1 and 32 keys.');
+  const unknown = keys.findIndex(name => Remote.keySequence(name, false) === null);
+  if (unknown >= 0) return remoteRefuse(400, `Unknown key: ${Remote.cut(String(keys[unknown]).replace(CONTROL, ''), 40)}`);
+  return inOrder(session, message, async ticket => {
+    for (const [i, name] of keys.entries()) {
+      if (i) await wait(40);
+      if (ticket.cancelled) return remoteRefuse(503, BUSY);
+      if (!session.running) return remoteRefuse(409, HAS_ENDED);
+      session.term.input(Remote.keySequence(name, session.term.modes.applicationCursorKeysMode));
+    }
+    return remoteOk();
+  }, (keys.length - 1) * 40);
+}
+
+function remoteStart(message) {
+  const account = accountOf(message.account);
+  const agent = agentOf(account);
+  if (!account || !agent) return remoteRefuse(404, "That account isn't on the PC any more.");
+  const workspace = workspaceOf(message.workspace);
+  if (!workspace) return remoteRefuse(404, "That project isn't in the sidebar on the PC any more.");
+  if (!workspace.exists) return remoteRefuse(409, `The ${workspace.name} folder is missing on the PC.`);
+  const problem = notReady(agent);
+  if (problem) return remoteRefuse(409, problem);
+  const session = openSession(account.key, 'start', null, { workspace: workspace.path, remote: true });
+  return session ? remoteOk({ id: session.id }, 201) : remoteRefuse(409, `${agent.name} couldn't start on the PC.`);
+}
+
+function remoteResume(message) {
+  const chat = chatOf(message.chat);
+  if (!chat) return remoteRefuse(404, 'That chat is no longer in the history.');
+  const holders = [...sessions.values()].filter(session => session.chat === chat.id || (session.running && session.resumeOf === chat.id));
+  const running = holders.find(session => session.running);
+  if (running) return remoteRefuse(409, 'That chat is already open.', { id: running.id });
+  const open = holders[0];
+  const problem = resumeProblem(chat);
+  if (problem) return remoteRefuse(409, problem);
+  if (!workspaceOf(chat.workspace)) return remoteRefuse(409, `Add ${folderName(chat.workspace)} back to the sidebar on the PC first.`);
+  const agent = state.agents.find(item => item.name === chat.agent);
+  const waiting = notReady(agent);
+  if (waiting) return remoteRefuse(409, waiting);
+  // A pane where this chat ended makes way for it, like its Resume button on the PC. If the PC had that pane
+  // maximized, the new one is.
+  const order = open?.order;
+  const wasMaxed = !!open && maxed === open.id;
+  if (open) closeSession(open, true);
+  const session = openSession(chat.account, 'resume', chat, { remote: true });
+  if (!session) return remoteRefuse(409, `${agent.name} couldn't start on the PC.`);
+  if (order) session.order = order;
+  if (wasMaxed) maxed = session.id;
+  if (order || wasMaxed) renderPanes();
+  return remoteOk({ id: session.id }, 201);
+}
+
+function remoteStop(message) {
+  const session = sessions.get(message.id);
+  if (!session) return remoteRefuse(404, NOT_OPEN);
+  if (!session.running) return remoteRefuse(409, HAS_ENDED);
+  // The C# side stops the agent and sends no exit for it.
+  send({ type: 'close', session: session.id });
+  endSession(session, { phone: true });
+  return remoteOk();
+}
+
+async function remoteClose(message) {
+  const session = sessions.get(message.id);
+  if (!session) return remoteRefuse(404, NOT_OPEN);
+  if (session.running) return remoteRefuse(409, 'Stop the agent first.');
+  await closeSession(session, true);
+  return remoteOk();
+}
+
+function remoteRename(message) {
+  const session = sessions.get(message.id);
+  if (!session) return remoteRefuse(404, NOT_OPEN);
+  if (!isChat(session)) return remoteRefuse(400, 'Only chats can be renamed.');
+  setCustomTitle(session, typeof message.title === 'string' ? message.title.replace(CONTROL, ' ') : '');
+  return remoteOk();
+}
+
+// ---------- phone remote: the Phone dialog ----------
+
+let phoneView = null;
+
+function showPhones() {
+  const button = $('#phone');
+  button.innerHTML = (remote.phones ? '<span class="dot on"></span>' : '') + '<span>Phone</span>';
+  button.title = remote.phones ? `${remote.phones} phone${remote.phones === 1 ? '' : 's'} connected` : 'Use Agent Arcade from your phone';
+}
+
+function openPhone() {
+  closeMenu();
+  closePhone();
+  closeHistory();
+  const root = document.createElement('div');
+  root.className = 'modal-backdrop';
+  root.innerHTML =
+    '<div class="modal phone" role="dialog" aria-modal="true">' +
+    `<div class="hist-head"><h2>Phone remote</h2><button class="icon-btn" data-close title="Close">${icon('close', 15)}</button></div>` +
+    '<div class="phone-body"></div>' +
+    '<p class="phone-note">A paired phone can read your panes and type into your agents, like you can at this PC. ' +
+    'Only pair your own phone. If Windows asks, allow Agent Arcade on private networks, and make sure your Wi-Fi is set to Private.</p></div>';
+  phoneView = { root, info: null, timer: setInterval(showValidity, 10000) };
+  root.addEventListener('mousedown', event => {
+    if (event.target === root) closePhone();
+  });
+  root.addEventListener('change', event => {
+    if (event.target.name === 'remote') send({ type: 'remoteEnable', on: event.target.checked });
+    if (event.target.name === 'awake') send({ type: 'keepAwake', mode: event.target.value });
+  });
+  root.addEventListener('click', event => {
+    const target = event.target;
+    if (target.closest('[data-close]')) return closePhone();
+    if (target.closest('[data-new-code]')) return send({ type: 'remoteNewCode' });
+    const copy = target.closest('[data-link]');
+    if (copy && copy.dataset.link) {
+      send({ type: 'copy', text: copy.dataset.link });
+      return toast('Pairing link copied. It works once, for 10 minutes.');
+    }
+    const remove = target.closest('[data-remove-device]');
+    const device = remove && phoneView?.info?.devices?.find(item => item.id === remove.dataset.removeDevice);
+    if (device) removePhone(device);
+  });
+  document.body.append(root);
+  renderPhone();
+  root.querySelector('[data-close]').focus();
+  send({ type: 'remoteDialog' });
+}
+
+function closePhone() {
+  if (!phoneView) return;
+  clearInterval(phoneView.timer);
+  phoneView.root.remove();
+  phoneView = null;
+}
+
+function phoneInfo(message) {
+  if (!phoneView) return;
+  phoneView.info = message;
+  renderPhone();
+}
+
+function codeState(info) {
+  if (info.code === 'used') return `This code was used by ${info.pairedName || 'a phone'}.`;
+  if (info.code === 'expired') return 'This code has expired.';
+  if (info.code === 'cancelled') return 'Too many wrong codes. Make a new one.';
+  if (info.code !== 'valid') return 'Press New code to pair a phone.';
+  const minutes = Math.ceil((Number(info.expiresAt) - Date.now()) / 60000);
+  if (!(minutes > 0)) return 'This code has expired.';
+  return `Valid for ${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
+
+function showValidity() {
+  const line = phoneView?.root.querySelector('.phone-valid');
+  if (line) line.textContent = codeState(phoneView.info);
+}
+
+function seenText(device) {
+  if (device.connected) return 'connected';
+  const time = Number(device.lastSeen) || Number(device.paired);
+  return time ? 'last seen ' + when(time).replace(/^(Today|Yesterday)/, day => day.toLowerCase()) : 'not seen yet';
+}
+
+// Everything in info comes from the C# side, and device names from the phones themselves: all of it is escaped.
+function renderPhone() {
+  if (!phoneView) return;
+  const info = phoneView.info;
+  const body = phoneView.root.querySelector('.phone-body');
+  if (!info) {
+    body.innerHTML = '<p class="muted">Checking Phone remote…</p>';
+    return;
+  }
+  const focused = ['remote', 'awake'].includes(document.activeElement?.name) ? document.activeElement.name : null;
+  const valid = info.code === 'valid' && Number(info.expiresAt) > Date.now();
+  const qr = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(info.qr || '') ? info.qr : '';
+  const devices = Array.isArray(info.devices) ? info.devices : [];
+  const addresses = Array.isArray(info.addresses) ? info.addresses : [];
+  let html =
+    `<label class="switch"><input type="checkbox" name="remote"${info.enabled ? ' checked' : ''}>` +
+    '<span class="switch-track"></span><span>Let my phone watch and drive these agents</span></label>';
+  if (info.warning) html += `<p class="phone-warning">${esc(info.warning)}</p>`;
+  if (info.error) html += `<p class="phone-error">${esc(info.error)}</p>`;
+  if (info.enabled && info.running) {
+    html += '<div class="phone-pair">' +
+      (qr ? `<div class="qr-card${valid ? '' : ' stale'}"><img src="${esc(qr)}" alt="Pairing code" draggable="false"></div>` : '') +
+      '<div class="phone-facts"><span class="phone-label">PC fingerprint</span>' +
+      `<span class="fingerprint">${esc(info.fingerprint || '')}</span>` +
+      `<span class="phone-valid">${esc(codeState(info))}</span>` +
+      '<span class="muted">Scan the code with Agent Arcade Remote on your phone, and check that it shows the same fingerprint.</span>' +
+      '<div class="phone-actions"><button class="ghost-btn small" data-new-code>New code</button>' +
+      `<button class="ghost-btn small" data-link="${esc(info.link || '')}"${valid && info.link ? '' : ' disabled'}>Copy link</button></div></div></div>`;
+    if (addresses.length) {
+      const tailscale = addresses.some(isTailscale);
+      html += '<div class="phone-section"><span class="phone-label">Listening on</span>' +
+        `<span class="phone-addresses">${addresses.map(address =>
+          esc(address) + `<span class="muted"> · ${isTailscale(address) ? 'Tailscale, also away from home' : 'this network'}</span>`).join('<br>')}</span>` +
+        (tailscale ? '' : '<span class="muted">Away from home: install Tailscale on this PC and your phone (free for personal use), ' +
+          'sign in to both with the same account, then pair again.</span>') +
+        '<span class="muted">New address or just installed Tailscale? Pair the phone again.</span></div>';
+    }
+  } else if (info.enabled && !info.error) {
+    html += '<p class="muted">Starting…</p>';
+  }
+  html += awakeSection(info.awake);
+  if (devices.length) {
+    html += '<div class="phone-section"><span class="phone-label">Paired phones</span>' + devices.map(device =>
+      `<div class="device-row"><span class="dot ${device.connected ? 'on' : 'off'}"></span>` +
+      `<span class="hist-text"><span class="device-name ellipsis">${esc(device.name)}</span>` +
+      `<span class="hist-sub ellipsis">${esc(seenText(device))}</span></span>` +
+      `<button class="ghost-btn small" data-remove-device="${esc(device.id)}">Remove</button></div>`).join('') + '</div>';
+  }
+  body.innerHTML = html;
+  if (focused) body.querySelector(`[name="${focused}"]`)?.focus();
+}
+
+// Tailscale hands out 100.64.0.0/10 addresses.
+function isTailscale(host) {
+  const [a, b] = String(host).split(':')[0].split('.').map(Number);
+  return a === 100 && b >= 64 && b <= 127;
+}
+
+// Whether Windows may sleep while the agents work, or while the phone wants to reach the PC.
+function awakeSection(awake) {
+  if (!awake) return '';
+  const modes = [
+    ['agents', 'While agents run'],
+    ['remote', 'While agents run or Phone remote is on'],
+    ['off', 'Never, Windows decides'],
+  ];
+  let html = '<div class="phone-section"><span class="phone-label">Keep this PC awake</span>' +
+    `<select name="awake">${modes.map(([value, label]) =>
+      `<option value="${value}"${awake.mode === value ? ' selected' : ''}>${label}</option>`).join('')}</select>` +
+    `<span class="muted">${awake.on
+      ? 'Windows won\'t go to sleep on its own now. The screen still turns off.'
+      : awake.mode === 'off' ? 'Windows sleeps as its power settings say, also while agents work.'
+      : 'Windows may go to sleep now: no agent is running.'}</span>`;
+  if (awake.mode !== 'off' && awake.onBattery) {
+    html += '<span class="phone-warning">On battery, Windows still goes to sleep a few minutes after its sleep time. Plug the PC in.</span>';
+  }
+  if (awake.mode !== 'off' && awake.lidSleeps) {
+    html += '<span class="muted">Closing the lid still puts it to sleep. To keep it running with the lid closed, set ' +
+      '"When I close the lid" to "Do nothing" for Plugged in, under Settings > System > Power & battery > Lid & power button controls.</span>';
+  }
+  return html + '</div>';
+}
+
+async function removePhone(device) {
+  const ok = await modal({
+    title: `Remove ${device.name}?`,
+    body: '<p>It is disconnected at once and has to pair again.</p>',
+    confirm: 'Remove',
+    danger: true,
+  });
+  if (ok) send({ type: 'remoteRemove', device: device.id });
+}
+
+// Like the history: a menu or dialog on top closes first.
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && phoneView && !openMenu && !document.querySelector('.modal:not(.phone)')) closePhone();
+}, true);
+
 // ---------- wiring ----------
 
 $('#workspaces').addEventListener('click', event => {
@@ -1213,6 +2609,7 @@ $('#grid').addEventListener('click', event => {
     case 'restart': return restart(session);
     case 'resume': return resumeHere(session);
     case 'fresh': return restart(session, true);
+    default: return imageAction(session, button);
   }
 });
 
@@ -1230,6 +2627,8 @@ $('#open-folder').innerHTML = icon('folder', 15) + '<span>Folder</span>';
 $('#sync').innerHTML = icon('doc', 15) + '<span>Shared instructions</span>';
 $('#new-agent').innerHTML = icon('plus', 15) + '<span>New agent</span>' + icon('chevron', 14);
 $('#history').innerHTML = icon('history', 15) + '<span>History</span>';
+$('#images').innerHTML = icon('image', 15) + '<span>Images</span>';
+$('#images-refresh').innerHTML = icon('refresh', 14);
 renderAgents();
 
 $('#add-workspace').addEventListener('click', () => send({ type: 'addWorkspace' }));
@@ -1240,10 +2639,65 @@ $('#toggle-agents').addEventListener('click', () => {
   renderAgents();
 });
 $('#edit-agents').addEventListener('click', () => send({ type: 'editAgents' }));
+$('#text-size').addEventListener('click', textSizeDialog);
+$('#phone').addEventListener('click', openPhone);
+showPhones();
 $('#open-unity').addEventListener('click', () => send({ type: 'openUnity' }));
 $('#open-folder').addEventListener('click', () => send({ type: 'openFolder' }));
 $('#new-agent').addEventListener('click', event => newAgentMenu(event.currentTarget));
 $('#history').addEventListener('click', () => openHistory());
+$('#images').addEventListener('click', toggleImages);
+$('#images-refresh').addEventListener('click', () => {
+  imagesKey = '';
+  loadImages();
+});
+$('#toggle-sidebar').innerHTML = icon('sidebar', 16);
+$('#toggle-sidebar').addEventListener('click', () => {
+  setSidebar(!$('.app').classList.contains('side-hidden'));
+  setPanelWidth(localStorage.getItem('panelWidth'), false);
+});
+setSidebar(localStorage.getItem('sidebar') === 'hidden');
+
+$('#toggle-panel').innerHTML = icon('panel', 16);
+$('#panel-close').innerHTML = icon('close', 14);
+$('#preview-reload').innerHTML = icon('refresh', 14);
+$('#preview-external').innerHTML = icon('external', 14);
+$('#changes-refresh').innerHTML = icon('refresh', 14);
+$('#console-restart').innerHTML = icon('plus', 14);
+$('#toggle-panel').addEventListener('click', () => setPanel(panel.hidden));
+$('#panel-close').addEventListener('click', () => setPanel(false));
+panel.querySelector('.panel-tabs').addEventListener('click', event => {
+  const tab = event.target.closest('.panel-tab');
+  if (tab) showPanelTab(tab.dataset.tab);
+});
+$('#preview-form').addEventListener('submit', event => {
+  event.preventDefault();
+  openPreview($('#preview-address').value);
+});
+$('#preview-reload').addEventListener('click', () => {
+  if (previewUrl) showPreview(previewUrl, previewFile);
+  else openPreview($('#preview-address').value);
+});
+$('#preview-external').addEventListener('click', () => {
+  const url = previewUrl || localUrl($('#preview-address').value);
+  if (url) send({ type: 'openUrl', url });
+});
+$('#changes-refresh').addEventListener('click', () => {
+  changesKey = '';
+  diffShown = null;
+  loadChanges();
+});
+new ResizeObserver(fitTopbar).observe($('.topbar'));
+$('#preview-address').value = localStorage.getItem('previewAddress') || '';
+setPanelWidth(localStorage.getItem('panelWidth'), false);
+setPanel(localStorage.getItem('panel') === 'open');
+$('#images-grid').addEventListener('dragstart', event => {
+  const tile = event.target.closest('.image-tile');
+  if (!tile) return;
+  // Only the path travels; the pane's drop handler pastes it like a dropped file.
+  event.dataTransfer.setData(IMAGE_DRAG, tile.dataset.path);
+  event.dataTransfer.effectAllowed = 'copy';
+});
 $('#sync').addEventListener('click', async () => {
   const ok = await modal({
     title: 'Give every agent the same instructions?',
@@ -1259,9 +2713,11 @@ if (bridge) {
     const message = event.data;
     switch (message.type) {
       case 'state': {
+        const before = state.workspace;
         state = message;
         render();
         renderHistory();
+        if (!same(before, state.workspace)) panelWorkspaceChanged();
         const waiting = pendingResume && chatOf(pendingResume);
         if (waiting && workspaceOf(waiting.workspace)) {
           pendingResume = null;
@@ -1281,13 +2737,51 @@ if (bridge) {
         if (!session) break;
         session.chat = message.chat;
         if (session.customTitle || session.autoTitle) syncTitle(session);
+        remoteSoon();
         break;
       }
-      case 'output':
-        sessions.get(message.session)?.term.write(message.data);
+      case 'output': {
+        const session = sessions.get(message.session);
+        if (!session) break;
+        session.term.write(message.data);
+        outputArrived(session);
+        break;
+      }
+      case 'focusSession':
+        showSession(message.session);
         break;
       case 'dropped':
         filesDropped(message);
+        break;
+      case 'image':
+        imageArrived(message);
+        break;
+      case 'imageList':
+        imageListArrived(message);
+        break;
+      // The side panel.
+      case 'docList':
+        docListArrived(message);
+        break;
+      case 'previewUrl':
+        previewUrlArrived(message);
+        break;
+      case 'changes':
+        changesArrived(message);
+        break;
+      case 'diff':
+        diffArrived(message);
+        break;
+      case 'consoleStarted':
+        if (!consoleNow(message)) break;
+        $('#console-folder').textContent = message.workspace;
+        $('#console-folder').title = message.workspace;
+        break;
+      case 'consoleOutput':
+        if (consoleNow(message)) consoleTerm?.write(message.data);
+        break;
+      case 'consoleExit':
+        consoleExited(message);
         break;
       case 'exit':
         sessionEnded(message);
@@ -1304,6 +2798,43 @@ if (bridge) {
         openSession(account.key, 'login');
         break;
       }
+      // Phone remote (Remote.cs). Nothing here may throw: requests answer with a remoteReply instead.
+      case 'remoteStatus':
+        quietly(() => phonesChanged(message));
+        break;
+      case 'remoteWatch':
+        quietly(() => watchChanged(message));
+        break;
+      case 'remoteInfo':
+        quietly(() => phoneInfo(message));
+        break;
+      case 'remoteCancel':
+        quietly(() => cancelJobs(message));
+        break;
+      case 'remoteGetScreen':
+        remoteRequest(message, remoteGetScreen);
+        break;
+      case 'remoteInput':
+        remoteRequest(message, remoteInput);
+        break;
+      case 'remoteKeys':
+        remoteRequest(message, remoteKeys);
+        break;
+      case 'remoteStart':
+        remoteRequest(message, remoteStart);
+        break;
+      case 'remoteResume':
+        remoteRequest(message, remoteResume);
+        break;
+      case 'remoteStop':
+        remoteRequest(message, remoteStop);
+        break;
+      case 'remoteClose':
+        remoteRequest(message, remoteClose);
+        break;
+      case 'remoteRename':
+        remoteRequest(message, remoteRename);
+        break;
     }
   });
   send({ type: 'ready' });

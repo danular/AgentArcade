@@ -31,20 +31,27 @@
       </div>
       <div class="side-foot">
         <button class="text-btn" id="edit-agents">Edit agent list</button>
+        <button class="text-btn" id="text-size">Text size</button>
+        <button class="text-btn" id="phone">Phone</button>
       </div>
     </aside>
     <main class="main">
       <header class="topbar">
-        <div class="crumb">
-          <span class="crumb-name" id="ws-name"></span>
-          <span class="crumb-path" id="ws-path"></span>
+        <div class="topbar-left">
+          <button class="icon-btn" id="toggle-sidebar" title="Hide the sidebar"></button>
+          <div class="crumb">
+            <span class="crumb-name" id="ws-name"></span>
+            <span class="crumb-path" id="ws-path"></span>
+          </div>
         </div>
         <div class="top-actions">
-          <button class="ghost-btn" id="open-unity"></button>
-          <button class="ghost-btn" id="open-folder"></button>
-          <button class="ghost-btn" id="sync"></button>
+          <button class="ghost-btn" id="open-unity" title="Open the project in Unity" hidden></button>
+          <button class="ghost-btn" id="open-folder" title="Open the project folder"></button>
+          <button class="ghost-btn" id="images" title="The images in this project, to drag onto a pane (in the side panel)"></button>
+          <button class="ghost-btn" id="sync" title="Shared instructions for every agent"></button>
           <button class="ghost-btn" id="history" title="Earlier chats in your projects"></button>
-          <button class="primary-btn" id="new-agent"></button>
+          <button class="primary-btn" id="new-agent" title="New agent"></button>
+          <button class="icon-btn" id="toggle-panel" title="Show the side panel"></button>
         </div>
       </header>
       <section class="stage">
@@ -52,6 +59,61 @@
         <div class="grid" id="grid" hidden></div>
       </section>
     </main>
+    <aside class="side-panel" id="side-panel" hidden>
+      <div class="panel-resize" id="panel-resize" title="Drag to resize"></div>
+      <div class="panel-head">
+        <div class="panel-tabs" role="tablist">
+          <button class="panel-tab" role="tab" data-tab="preview">Preview</button>
+          <button class="panel-tab" role="tab" data-tab="images">Images</button>
+          <button class="panel-tab" role="tab" data-tab="changes">Changes</button>
+          <button class="panel-tab" role="tab" data-tab="console">Console</button>
+        </div>
+        <button class="icon-btn small" id="panel-close" title="Hide the side panel"></button>
+      </div>
+      <section class="panel-view" data-view="preview">
+        <form class="panel-bar" id="preview-form">
+          <input id="preview-address" list="preview-docs" spellcheck="false" autocomplete="off"
+            placeholder="localhost:5173, or a page in the project like index.html">
+          <datalist id="preview-docs"></datalist>
+          <button type="button" class="icon-btn small" id="preview-reload" title="Reload"></button>
+          <button type="button" class="icon-btn small" id="preview-external" title="Open in your browser"></button>
+        </form>
+        <div class="preview-stage">
+          <!-- No allow-top-navigation: a previewed page can never navigate the app, which would stop every agent. -->
+          <iframe id="preview-frame" title="Preview" hidden
+            sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"></iframe>
+          <div class="panel-empty" id="preview-empty">
+            <p>Preview a page you are working on.</p>
+            <p class="muted">Type a local address like <b>localhost:5173</b>, or a page in this project like <b>index.html</b>.
+              Clicking a localhost link in a pane opens it here too.</p>
+          </div>
+        </div>
+      </section>
+      <section class="panel-view" data-view="images" hidden>
+        <div class="panel-bar">
+          <span class="images-tip ellipsis">Drag an image onto a pane to paste its path into that agent's prompt.</span>
+          <span class="images-count" id="images-count"></span>
+          <button type="button" class="icon-btn small" id="images-refresh" title="Look again"></button>
+        </div>
+        <div class="images-grid" id="images-grid"></div>
+      </section>
+      <section class="panel-view" data-view="changes" hidden>
+        <div class="panel-bar">
+          <span class="changes-branch ellipsis" id="changes-branch"></span>
+          <span class="changes-count" id="changes-count"></span>
+          <button type="button" class="icon-btn small" id="changes-refresh" title="Look again"></button>
+        </div>
+        <div class="changes-list" id="changes-list"></div>
+        <div class="changes-diff" id="changes-diff"></div>
+      </section>
+      <section class="panel-view" data-view="console" hidden>
+        <div class="panel-bar">
+          <span class="console-folder ellipsis" id="console-folder"></span>
+          <button type="button" class="icon-btn small" id="console-restart" title="New console in this project"></button>
+        </div>
+        <div class="console-term" id="console-term"></div>
+      </section>
+    </aside>
   </div>
   <div id="toasts"></div>
   <script src="vendor/xterm.js"></script>
@@ -59,6 +121,7 @@
   <script src="vendor/addon-unicode11.js"></script>
   <script src="vendor/addon-web-links.js"></script>
   <script src="vendor/addon-webgl.js"></script>
+  <script src="remote.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

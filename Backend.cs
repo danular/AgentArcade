@@ -32,17 +32,31 @@ sealed class AppSettings
     // The active workspace. Projects lists every workspace shown in the sidebar.
     public string ProjectPath { get; set; } = @"C:\Users\daans\HimalayanExpedition";
     public List<string> Projects { get; set; } = new();
+    // Phone remote: off until the user switches it on in the Phone dialog.
+    public bool RemoteEnabled { get; set; }
+    public int RemotePort { get; set; } = 47821;
+    // When Windows may not sleep on its own: "agents" while agents run, "remote" also while Phone remote is on, "off".
+    public string KeepAwake { get; set; } = AgentArcade.KeepAwake.Agents;
 
     static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
-    public static string Folder => Path.Combine(LocalAppData, "AgentArcade");
+    // AGENT_ARCADE_HOME moves all data to another folder, so a test build can run next to the installed app.
+    static string? Home => Environment.GetEnvironmentVariable("AGENT_ARCADE_HOME") is { Length: > 0 } home ? Path.GetFullPath(home) : null;
+
+    public static string Folder => Home ?? Path.Combine(LocalAppData, "AgentArcade");
 
     public static string FilePath => Path.Combine(Folder, "settings.json");
+
+    // The single-instance mutex. A separate data folder gets its own, so both copies can run.
+    public static string InstanceName => Home == null
+        ? @"Local\AgentArcade"
+        : @"Local\AgentArcade-" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(Home.ToLowerInvariant())))[..16].ToLowerInvariant();
 
     public static AppSettings Load()
     {
         // The second path holds the settings from before the app was renamed.
-        foreach (var path in new[] { FilePath, Path.Combine(LocalAppData, "ClaudeUnitySwitch", "settings.json") })
+        var paths = Home == null ? new[] { FilePath, Path.Combine(LocalAppData, "ClaudeUnitySwitch", "settings.json") } : new[] { FilePath };
+        foreach (var path in paths)
         {
             try
             {
@@ -65,9 +79,24 @@ sealed class AppSettings
         return this;
     }
 
+    // RemotePort as settings.json has it now; null when the file is missing or broken.
+    public static int? StoredPort()
+    {
+        try
+        {
+            return File.Exists(FilePath) ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath))?.RemotePort : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public void Save()
     {
         Directory.CreateDirectory(Folder);
+        // The app never changes RemotePort itself, so a port typed into the file while the app runs is kept.
+        RemotePort = StoredPort() ?? RemotePort;
         File.WriteAllText(FilePath, JsonSerializer.Serialize(this, Json.Options));
     }
 }
@@ -94,6 +123,10 @@ sealed class AgentDef
     public string? NewChatArgs { get; set; }
     public string? ResumeChatArgs { get; set; }
     public string? ResumeArgs { get; set; }
+    // Where the tool saves images it generates, inside its home folder (HomeVar). DefaultHome is that
+    // folder for the main account. Missing (null) takes the built-in value; "" turns it off.
+    public string? ImagesFolder { get; set; }
+    public string? DefaultHome { get; set; }
 }
 
 static class AgentStore
@@ -126,6 +159,8 @@ static class AgentStore
             HomeVar = "CODEX_HOME",
             AccountCheck = "codex",
             ResumeArgs = "resume",
+            ImagesFolder = "generated_images",
+            DefaultHome = @"%USERPROFILE%\.codex",
         },
         new()
         {
@@ -203,6 +238,8 @@ static class AgentStore
             agent.NewChatArgs ??= builtIn.NewChatArgs;
             agent.ResumeChatArgs ??= builtIn.ResumeChatArgs;
             agent.ResumeArgs ??= builtIn.ResumeArgs;
+            agent.ImagesFolder ??= builtIn.ImagesFolder;
+            agent.DefaultHome ??= builtIn.DefaultHome;
         }
 
         List<string> offered;
@@ -335,6 +372,8 @@ sealed class AgentAccount
     public string Home { get; set; } = "";
 
     [JsonIgnore] public bool IsMain => Home.Length == 0;
+
+    [JsonIgnore] public string Key => Agent + "|" + Name;
 }
 
 // Extra accounts live in their own folder under AgentArcade\accounts. The tool keeps its login

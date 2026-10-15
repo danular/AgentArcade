@@ -1,0 +1,13 @@
+Add alerts, so my phone tells me when an agent needs me, also while the app is closed.
+
+1. Notification channels: "Needs you" (high importance) for approvals and finished turns, "Stopped" (default importance) for agents that ended, and "Connection" (minimum importance) for the background service. Ask for POST_NOTIFICATIONS (Android 13+) right after pairing, with a short explanation sheet first.
+
+2. Stay connected (Settings, on by default after pairing): a foreground service with foregroundServiceType="specialUse" (and the PROPERTY_SPECIAL_USE_FGS_SUBTYPE property "Keeps a direct connection to the user's own PC to show alerts from their AI agents") that keeps the WebSocket open while the app is in the background. Its ongoing notification says "Watching 5 agents on DESKTOP-ARCADE · 2 need you" and has a "Stop watching" action. Start it from the app when the app goes to the background, never from the background itself. Stop it when the setting is turned off, or when the PC is forgotten or the phone gets unpaired.
+
+3. On an attention event, show a notification unless seenOnPc is true, that chat is open on screen in the app, the chat is muted, or that kind of alert is off in Settings. Title = the chat title; text = the message, plus the question for approvals; small icon = ic_aa_terminal; color = the accent. One notification per session (a stable id from the session id); tapping it opens that chat (a PendingIntent with the session id). Update it when it changes, and cancel it when the session is no longer needsYou or done, or when I open the chat.
+
+4. Settings: when Stay connected is on, show a row "Battery: let the app run in the background" that opens the system's battery optimization settings (no special permission).
+
+5. While the app is in the foreground, attention events show an in-app banner at the top in the toast style (#1D1D23, strong border, 11dp corners) with an "Open" button, not a system notification.
+
+Check it in demo mode too: let DemoArcadeRepository send attention events (the foam agent asks again every 60 s).

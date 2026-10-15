@@ -1,0 +1,17 @@
+Last pass: polish, robustness and checks.
+
+1. Large screens: when the window is at least 840dp wide (tablets, unfolded foldables, landscape), show the agents list and the open chat side by side.
+
+2. States: an offline banner with Retry; "Agent Arcade isn't running, or Phone remote is off, on DESKTOP-ARCADE"; a workspace without agents; an agent that isn't installed; very long chat titles; no sessions at all (the "What are we building today?" empty state with account cards).
+
+3. Motion: the amber dot pulses (1.2 s); progress bars change smoothly; a card that moves into "Needs you" animates there; the approval card slides in. Respect the system's "remove animations" setting.
+
+4. Accessibility: content descriptions on every icon button; the status dot is read out as its state ("needs your OK", "working", "ended"); 48dp touch targets; everything readable at 200% font scale; TalkBack reads a card in the order title, status, activity.
+
+5. Release: R8 rules for kotlinx.serialization and OkHttp, versionName 1.0, launcher label "Arcade Remote", and an About screen with the version and open source licenses (Cascadia Mono: show assets/licenses/LICENSE-CascadiaMono.txt).
+
+6. Tests: unit tests for the color hash, time formatting ("now", "2m", "1h", "Yesterday 21:05"), key names and the demo repository; a Compose UI test that opens a chat, taps choice 1 and sees the approval card disappear.
+
+7. Review: the WebSocket is closed whenever it isn't needed, there are no polling loops, and the security rules in REMOTE_API.md hold (no trust-all code, no token or screen text in logs).
+
+Then run everything in demo mode, walk through all screens against the mockups, and give me a list of anything that still differs.

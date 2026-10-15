@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Agent Arcade Remote mockups</title>
+<!-- Design mockups for the Android app. Colors, icons and marks come from the desktop app (web/app.css, web/app.js).
+     Render with tools\render-mockups.ps1; ?s=<id> shows one screen at phone size. -->
+<script src="marks.js"></script>
+<style>
+:root {
+  --bg: #0c0c0e; --side: #111114; --panel: #141418; --panel-2: #1a1a1f; --hover: #1f1f25;
+  --border: #25252c; --border-2: #32323b; --text: #ececf1; --muted: #9a9aa6; --faint: #63636f;
+  --accent: #e07a5f; --accent-2: #f0a080; --green: #3ecf7f; --amber: #f2b84b; --red: #f26b6b;
+  --term: #0f0f12; --menu: #19191e; --sheet: #16161b;
+  --mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --serif: Georgia, "Times New Roman", serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: #060607; color: var(--text); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+.board { display: grid; grid-template-columns: repeat(4, 412px); gap: 40px 36px; padding: 40px 44px 44px; }
+figure { margin: 0; }
+figcaption { margin-top: 12px; color: var(--muted); font-size: 13px; font-weight: 600; text-align: center; }
+body.single { background: var(--bg); }
+body.single .board { display: block; padding: 0; }
+body.single figure:not(.show), body.single figcaption { display: none; }
+.phone { position: relative; display: flex; flex-direction: column; width: 412px; height: 915px; overflow: hidden; background: var(--bg); border-radius: 30px; box-shadow: 0 0 0 1px #2a2a31, 0 30px 80px rgba(0, 0, 0, .6); }
+body.single .phone { border-radius: 0; box-shadow: none; }
+.ellipsis { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ic { display: block; flex: none; }
+b { font-weight: 600; }
+
+/* system bars */
+.statusbar { display: flex; flex: none; align-items: center; justify-content: space-between; height: 32px; padding: 0 22px 0 26px; font-size: 13px; font-weight: 600; }
+.statusbar .sys { display: flex; gap: 6px; align-items: center; }
+.gesture { display: grid; flex: none; height: 22px; place-items: center; background: var(--side); }
+.gesture::after { content: ''; width: 108px; height: 4px; border-radius: 2px; background: #d9d9e0; opacity: .45; }
+
+/* shared pieces, same as the desktop */
+.logo { display: grid; flex: none; place-items: center; width: 30px; height: 30px; overflow: hidden; border-radius: 9px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+.logo img { display: block; width: 100%; height: 100%; }
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(62, 207, 127, .15); }
+.dot.wait { background: var(--amber); box-shadow: 0 0 0 3px rgba(242, 184, 75, .16); }
+.dot.off { background: #4a4a54; }
+.dot.idle { background: #6b6b78; }
+.avatar { --c: #888; display: inline-grid; flex: none; place-items: center; width: 22px; height: 22px; color: #fff; background: color-mix(in srgb, var(--c) 82%, #000); border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
+.avatar svg { width: 14px; height: 14px; }
+.avatar.lg { width: 36px; height: 36px; border-radius: 10px; }
+.avatar.lg svg { width: 22px; height: 22px; }
+.count { flex: none; padding: 0 7px; font-size: 11px; line-height: 18px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 999px; }
+.count.live { color: var(--green); background: rgba(62, 207, 127, .08); border-color: rgba(62, 207, 127, .35); }
+.plan-tag { flex: none; padding: 0 5px; font-size: 10px; line-height: 16px; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border-2); border-radius: 5px; }
+.tag-btn { flex: none; padding: 2px 10px; font-size: 11.5px; font-weight: 500; color: var(--accent-2); border: 1px solid rgba(224, 122, 95, .4); border-radius: 999px; }
+.primary-btn, .ghost-btn, .danger-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 46px; padding: 0 16px; font-weight: 600; white-space: nowrap; border-radius: 12px; }
+.primary-btn { color: #121214; background: var(--text); }
+.ghost-btn { color: var(--text); background: var(--panel); border: 1px solid var(--border-2); }
+.danger-btn { color: #1c0c0c; background: var(--red); }
+.primary-btn.sm, .ghost-btn.sm { height: 32px; padding: 0 12px; gap: 6px; font-size: 13px; font-weight: 500; border-radius: 9px; }
+.ghost-btn.xs { height: 28px; padding: 0 10px; gap: 5px; font-size: 12px; font-weight: 500; color: var(--muted); border-color: var(--border); border-radius: 8px; }
+.text-btn { color: var(--muted); font-weight: 500; }
+.icon-btn { display: inline-grid; flex: none; place-items: center; width: 40px; height: 40px; color: var(--muted); border-radius: 10px; }
+
+/* app bar + bottom navigation */
+.appbar { display: flex; flex: none; align-items: center; gap: 10px; height: 58px; padding: 0 14px 0 16px; }
+.appbar-title { font-size: 17px; font-weight: 600; }
+.appbar h1 { margin: 0; font-size: 20px; font-weight: 600; }
+.conn { display: inline-flex; align-items: center; gap: 7px; height: 28px; margin-left: auto; padding: 0 10px; font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--border); border-radius: 999px; }
+.bottomnav { display: flex; flex: none; height: 68px; padding: 8px 8px 4px; background: var(--side); border-top: 1px solid var(--border); }
+.tab { display: flex; flex: 1; flex-direction: column; align-items: center; gap: 4px; color: var(--faint); font-size: 11.5px; font-weight: 500; }
+.tab .pill { display: grid; place-items: center; width: 58px; height: 30px; border-radius: 999px; }
+.tab.on { color: var(--text); }
+.tab.on .pill { color: var(--accent-2); background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--border-2); }
+
+/* agents list */
+.content { flex: 1; min-height: 0; overflow: hidden; padding: 2px 12px 10px; }
+.chips { display: flex; gap: 8px; padding: 0 2px 4px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px; font-size: 12px; font-weight: 500; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 999px; }
+.chip.live { color: var(--green); background: rgba(62, 207, 127, .08); border-color: rgba(62, 207, 127, .35); }
+.chip.amber { color: var(--amber); background: rgba(242, 184, 75, .08); border-color: rgba(242, 184, 75, .35); }
+.section-head { display: flex; align-items: center; gap: 8px; padding: 14px 6px 7px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.section-head .count { margin-left: auto; }
+.card { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; padding: 12px 14px 12px 13px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.card.attention { border-color: rgba(242, 184, 75, .32); background: linear-gradient(180deg, rgba(242, 184, 75, .055), rgba(242, 184, 75, 0) 75%), var(--panel); }
+.card-top { display: flex; align-items: center; gap: 9px; }
+.card-title { flex: 1; font-size: 14.5px; font-weight: 600; }
+.ago { flex: none; color: var(--faint); font: 11.5px var(--mono); }
+.indent { padding-left: 48px; }
+.card-sub { color: var(--muted); font-size: 12.5px; }
+.ask { font-size: 13px; line-height: 1.4; }
+.ask b { color: var(--amber); }
+.said { color: var(--muted); font-size: 13px; line-height: 1.4; }
+.activity { overflow: hidden; color: var(--muted); font: 12px/1.45 var(--mono); white-space: nowrap; text-overflow: ellipsis; }
+.activity .sp { color: #d97757; }
+.progress { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.bar { flex: 1; height: 4px; overflow: hidden; background: var(--border); border-radius: 999px; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.progress span { color: var(--muted); font: 11.5px var(--mono); white-space: nowrap; }
+.card-end { display: flex; align-items: center; gap: 8px; }
+.card-end .card-sub { flex: 1; }
+
+/* chat */
+.chat-bar { display: flex; flex: none; align-items: center; gap: 9px; height: 60px; padding: 0 4px 0 2px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.chat-titles { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.chat-title { font-size: 15px; font-weight: 600; }
+.chat-sub { color: var(--muted); font-size: 12px; }
+.strip { display: flex; flex: none; align-items: center; gap: 8px; height: 38px; padding: 0 14px; font-size: 12.5px; background: var(--side); border-bottom: 1px solid var(--border); }
+.strip .state { font-weight: 600; }
+.amber-text { color: var(--amber); }
+.green-text { color: var(--green); }
+.strip .time { color: var(--faint); font: 11.5px var(--mono); }
+.strip .plan { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--muted); font: 11.5px var(--mono); }
+.strip .bar { flex: none; width: 54px; }
+.planbox { flex: none; padding: 8px 14px 10px; background: var(--side); border-bottom: 1px solid var(--border); }
+.plan-item { display: flex; align-items: center; gap: 9px; height: 23px; color: var(--muted); font-size: 12.5px; }
+.plan-item .ic { color: var(--faint); }
+.plan-item.done { color: var(--faint); }
+.plan-item.done .ic { color: var(--green); }
+.plan-item.now { color: var(--text); font-weight: 600; }
+.plan-item.now .ic { color: var(--accent); }
+.term { position: relative; display: flex; flex: 1; flex-direction: column; justify-content: flex-end; min-height: 0; overflow: hidden; padding: 10px 12px 8px; color: #e4e4e7; font: 12px/1.42 var(--mono); background: var(--term); }
+.tt { white-space: pre-wrap; word-break: break-word; }
+.term .k { color: #71717a; } .term .r { color: #f87171; } .term .g { color: #4ade80; } .term .y { color: #facc15; }
+.term .bl { color: #60a5fa; } .term .m { color: #c084fc; } .term .c { color: #22d3ee; } .term .w { color: #fafafa; }
+.term .o { color: #d97757; } .term .b { font-weight: 700; }
+.term .del { background: rgba(248, 113, 113, .16); } .term .add { background: rgba(74, 222, 128, .15); }
+.term .user { color: #a1a1aa; }
+.jump { position: absolute; right: 14px; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; color: var(--text); font-size: 12px; font-weight: 500; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 999px; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); }
+.dock { flex: none; background: var(--side); border-top: 1px solid var(--border); }
+.approve { margin: 10px 10px 2px; padding: 12px; background: var(--sheet); border: 1px solid rgba(242, 184, 75, .42); border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); }
+.approve-head { display: flex; align-items: center; gap: 9px; font-size: 13.5px; font-weight: 600; }
+.approve-q { margin: 5px 0 8px 17px; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.choice { display: flex; align-items: center; gap: 10px; width: 100%; height: 42px; margin-top: 6px; padding: 0 12px; font-size: 13.5px; font-weight: 500; border-radius: 10px; }
+.choice.primary { color: #121214; background: var(--text); font-weight: 600; }
+.choice.ghost { color: var(--text); background: var(--panel); border: 1px solid var(--border-2); }
+.key { display: inline-grid; flex: none; place-items: center; width: 22px; height: 22px; font: 600 11.5px var(--mono); border-radius: 6px; }
+.choice.primary .key { background: rgba(0, 0, 0, .1); }
+.choice.ghost .key { color: var(--muted); background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--border-2); }
+.keys { display: flex; gap: 6px; padding: 9px 10px 2px; overflow: hidden; }
+.kk { display: inline-grid; flex: none; place-items: center; min-width: 40px; height: 32px; padding: 0 10px; color: var(--muted); font: 12px var(--mono); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+.composer { display: flex; align-items: center; gap: 8px; padding: 8px 10px 10px; }
+.field { display: flex; flex: 1; align-items: center; height: 46px; padding: 0 14px; color: var(--faint); font-size: 14px; background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 14px; }
+.round { display: inline-grid; flex: none; place-items: center; width: 42px; height: 42px; border-radius: 50%; }
+.round.ghost { color: var(--muted); background: var(--panel); border: 1px solid var(--border); }
+.round.send { width: 46px; height: 46px; color: #121214; background: var(--text); }
+
+/* bottom sheet */
+.under { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .58); backdrop-filter: blur(3px); }
+.sheet { position: absolute; right: 0; bottom: 0; left: 0; padding: 8px 14px 6px; background: var(--sheet); border-top: 1px solid var(--border-2); border-radius: 20px 20px 0 0; box-shadow: 0 -20px 60px rgba(0, 0, 0, .5); }
+.handle { width: 36px; height: 4px; margin: 2px auto 14px; background: var(--border-2); border-radius: 2px; }
+.sheet h2 { margin: 0 4px 2px; font-size: 17px; font-weight: 600; }
+.sheet p { margin: 0 4px 2px; color: var(--muted); font-size: 13px; }
+.label { padding: 14px 6px 6px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.ws-row { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; }
+.ws-row .ic { color: var(--muted); }
+.ws-row.active { background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--border-2); }
+.ws-row.active .ic { color: var(--accent-2); }
+.ws-path { margin-left: auto; color: var(--faint); font: 11px var(--mono); }
+.acc-card { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.acc-card.disabled { opacity: .5; }
+.acc-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.acc-top { display: flex; align-items: center; gap: 7px; }
+.acc-name { font-weight: 600; }
+.acc-sub { color: var(--muted); font-size: 12.5px; }
+
+/* history */
+.seg { display: flex; margin: 2px 2px 4px; padding: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; }
+.seg span { display: grid; flex: 1; place-items: center; height: 30px; color: var(--muted); font-size: 12.5px; border-radius: 8px; }
+.seg .on { color: var(--text); background: var(--hover); box-shadow: inset 0 0 0 1px var(--border-2); }
+.hist-project { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 8px 7px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
+.hist-project .ic { color: var(--muted); }
+.hist-name { color: var(--text); font-size: 13px; font-weight: 600; }
+.hist-path { flex: 1; color: var(--faint); font: 11px var(--mono); }
+.hist-row { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 10px; }
+.hist-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.hist-title { font-weight: 500; }
+.hist-sub { color: var(--muted); font-size: 12px; }
+
+/* connect */
+.connect { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 20px 22px; background: radial-gradient(620px 380px at 50% -8%, rgba(224, 122, 95, .12), transparent 62%), var(--side); }
+.hero { text-align: center; }
+.hero .logo { width: 66px; height: 66px; margin: 0 auto; border-radius: 19px; }
+.hero h1 { margin: 18px 0 8px; font: 400 31px/1.2 var(--serif); letter-spacing: -.3px; }
+.hero p { margin: 0 auto; max-width: 320px; color: var(--muted); font-size: 14px; }
+.steps { width: 100%; padding: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 14px; }
+.step { display: flex; align-items: center; gap: 12px; padding: 10px; font-size: 13.5px; }
+.num { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; color: var(--accent-2); font: 600 11.5px var(--mono); background: rgba(224, 122, 95, .1); border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(224, 122, 95, .35); }
+.btns { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.btns .primary-btn, .btns .ghost-btn { width: 100%; height: 48px; }
+.tip { margin: 0; max-width: 330px; color: var(--faint); font-size: 12px; text-align: center; }
+.tip b { color: var(--muted); }
+
+/* settings */
+.group-head { padding: 14px 6px 7px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.group { overflow: hidden; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--border); }
+.row:first-child { border-top: 0; }
+.row > .ic { color: var(--muted); }
+.row-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.row-title { font-weight: 500; }
+.row-sub { color: var(--muted); font-size: 12px; }
+.mono { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+.switch { position: relative; flex: none; width: 42px; height: 24px; background: var(--panel-2); border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border-2); }
+.switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; background: var(--muted); border-radius: 50%; }
+.switch.on { background: var(--accent); box-shadow: none; }
+.switch.on::after { left: 21px; background: #fff; }
+.slider { position: relative; height: 18px; margin: 6px 0 2px; }
+.slider::before { content: ''; position: absolute; top: 7px; right: 0; left: 0; height: 4px; background: var(--border-2); border-radius: 999px; }
+.slider i { position: absolute; top: 7px; left: 0; width: 20%; height: 4px; background: var(--accent); border-radius: 999px; }
+.slider b { position: absolute; top: 0; left: calc(20% - 9px); width: 18px; height: 18px; background: #fff; border-radius: 50%; box-shadow: 0 0 0 4px rgba(224, 122, 95, .18); }
+.danger-text { color: var(--red); font-weight: 500; }
+
+/* style guide */
+.guide { flex: 1; padding: 22px 20px; overflow: hidden; background: var(--side); }
+.guide h2 { margin: 0 0 4px; font: 400 26px/1.2 var(--serif); letter-spacing: -.3px; }
+.guide h3 { margin: 18px 0 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.guide > p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sw { display: flex; flex-direction: column; gap: 3px; }
+.sw i { display: block; height: 30px; border: 1px solid var(--border-2); border-radius: 8px; }
+.sw span { font-size: 11.5px; font-weight: 600; }
+.sw code { color: var(--faint); font: 10.5px var(--mono); }
+.line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.dot-label { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; }
+.type-serif { font: 400 22px/1.2 var(--serif); }
+.type-title { font-size: 15px; font-weight: 600; }
+.type-body { color: var(--muted); font-size: 13px; }
+.type-mono { color: var(--muted); font: 12px var(--mono); }
+</style>
+</head>
+<body>
+<div class="board">
+
+<!-- 1 · Agents -->
+<figure><div class="phone" id="agents">
+  <div data-statusbar></div>
+  <header class="appbar">
+    <span class="logo"><img src="../android-res/drawable-nodpi/arcade_logo.png" alt=""></span>
+    <span class="appbar-title">Agent Arcade</span>
+    <span class="conn"><span class="dot on"></span>DESKTOP-ARCADE</span>
+    <span class="primary-btn sm"><i data-ic="plus" data-size="15"></i>New</span>
+  </header>
+  <div class="content">
+    <div class="chips">
+      <span class="chip amber"><span class="dot wait"></span>2 need you</span>
+      <span class="chip live"><span class="dot on"></span>2 working</span>
+      <span class="chip">1 ended</span>
+    </div>
+    <div class="section-head"><span>Needs you</span></div>
+    <article class="card attention">
+      <div class="card-top"><span class="dot wait"></span><span class="avatar" data-agent="claude"></span><span class="card-title ellipsis">Fix the foam near the bridge</span><span class="ago">2m</span></div>
+      <div class="card-sub indent ellipsis">Claude Code · second · HimalayanExpedition</div>
+      <div class="ask indent"><b>Needs your OK</b> · Do you want to make this edit to WaterSurface.shader?</div>
+    </article>
+    <article class="card attention">
+      <div class="card-top"><span class="dot wait"></span><span class="avatar" data-agent="gemini"></span><span class="card-title ellipsis">Pine tree LODs</span><span class="ago">6m</span></div>
+      <div class="card-sub indent ellipsis">Gemini CLI · main · HimalayanExpedition</div>
+      <div class="said indent"><b class="amber-text">Done · your turn</b> · Added LOD1 and LOD2 to the three pine prefabs. Bake impostors next?</div>
+    </article>
+    <div class="section-head"><i data-ic="cube" data-size="15"></i><span>HimalayanExpedition</span><span class="count">1</span></div>
+    <article class="card">
+      <div class="card-top"><span class="dot on"></span><span class="avatar" data-agent="codex"></span><span class="card-title ellipsis">Cat rig walk cycle</span><span class="ago">now</span></div>
+      <div class="card-sub indent ellipsis">Codex · main</div>
+      <div class="activity indent"><span class="g">•</span> Working (38s • esc to interrupt)</div>
+    </article>
+    <div class="section-head"><i data-ic="folder" data-size="15"></i><span>AgentArcade</span><span class="count">1</span></div>
+    <article class="card">
+      <div class="card-top"><span class="dot on"></span><span class="avatar" data-agent="claude"></span><span class="card-title ellipsis">Phone remote bridge</span><span class="ago">now</span></div>
+      <div class="card-sub indent ellipsis">Claude Code · main</div>
+      <div class="activity indent"><span class="sp">✻</span> Brewing… (1m 12s · ↑ 3.4k tokens · esc to interrupt)</div>
+      <div class="progress indent"><div class="bar"><i style="width: 43%"></i></div><span>3/7 · Wire the page</span></div>
+    </article>
+    <div class="section-head"><i data-ic="folder" data-size="15"></i><span>MotoSync</span><span class="count">1</span></div>
+    <article class="card">
+      <div class="card-top"><span class="dot off"></span><span class="avatar" data-agent="claude"></span><span class="card-title ellipsis">Lap timer drift</span><span class="ago">1h</span></div>
+      <div class="card-end indent"><span class="card-sub ellipsis">Claude Code · main · Ended</span><span class="tag-btn">Resume</span></div>
+    </article>
+  </div>
+  <nav data-nav="agents"></nav>
+  <div class="gesture"></div>
+</div><figcaption>1 · Agents (home)</figcaption></figure>
+
+<!-- 2 · Chat that needs an OK -->
+<figure><div class="phone" id="chat">
+  <div data-statusbar class="on-panel"></div>
+  <header class="chat-bar">
+    <span class="icon-btn"><i data-ic="back" data-size="20"></i></span>
+    <span class="dot wait"></span><span class="avatar" data-agent="claude"></span>
+    <span class="chat-titles"><span class="chat-title ellipsis">Fix the foam near the bridge</span><span class="chat-sub ellipsis">Claude Code · second · HimalayanExpedition</span></span>
+    <span class="icon-btn"><i data-ic="more" data-size="18"></i></span>
+  </header>
+  <div class="strip"><span class="dot wait"></span><span class="state amber-text">Needs your OK</span><span class="time">2m 10s</span><span class="plan">Plan 2/5<div class="bar"><i style="width: 40%"></i></div></span></div>
+  <div class="term"><div class="tt"><span class="user">&gt; The foam on the river is too wide near the
+  bridge. Make it hug the banks.</span>
+
+<span class="w">●</span> The foam mask runs to 0.6 of the water depth,
+  so it spreads far from the banks. Narrowing it
+  to 0.25 keeps it at the edges.
+
+<span class="w">●</span> <span class="b">Update</span>(Assets/Shaders/WaterSurface.shader)
+<span class="k">╭───────────────────────────────────────────╮</span>
+<span class="k">│</span> <span class="b">Edit file</span>                                 <span class="k">│</span>
+<span class="k">│</span> <span class="k">Shaders/WaterSurface.shader</span>               <span class="k">│</span>
+<span class="k">│</span> <span class="del"><span class="r">118 - float foam = smoothstep(0, .6, d); </span></span> <span class="k">│</span>
+<span class="k">│</span> <span class="add"><span class="g">118 + float foam = smoothstep(0, .25, d);</span></span> <span class="k">│</span>
+<span class="k">│</span> 119   foam *= _FoamStrength;              <span class="k">│</span>
+<span class="k">│</span>                                           <span class="k">│</span>
+<span class="k">│</span> Do you want to make this edit to          <span class="k">│</span>
+<span class="k">│</span> WaterSurface.shader?                      <span class="k">│</span>
+<span class="k">│</span> <span class="c">❯ 1. Yes</span>                                  <span class="k">│</span>
+<span class="k">│</span>   2. Yes, and don't ask again this session<span class="k">│</span>
+<span class="k">│</span>   3. No, and tell Claude what to do       <span class="k">│</span>
+<span class="k">│</span>      differently <span class="k">(esc)</span>                    <span class="k">│</span>
+<span class="k">╰───────────────────────────────────────────╯</span></div></div>
+  <div class="dock">
+    <div class="approve">
+      <div class="approve-head"><span class="dot wait"></span>Claude Code needs your OK</div>
+      <div class="approve-q">Do you want to make this edit to WaterSurface.shader?</div>
+      <div class="choice primary"><span class="key">1</span>Yes</div>
+      <div class="choice ghost"><span class="key">2</span><span class="ellipsis">Yes, and don't ask again this session</span></div>
+      <div class="choice ghost"><span class="key">3</span><span class="ellipsis">No, and tell Claude what to do differently</span></div>
+    </div>
+    <div class="keys"><span class="kk">Esc</span><span class="kk">Tab</span><span class="kk">⇧Tab</span><span class="kk">↑</span><span class="kk">↓</span><span class="kk">Enter</span><span class="kk">Ctrl+C</span><span class="kk">/</span></div>
+    <div class="composer"><span class="round ghost"><i data-ic="zap" data-size="17"></i></span><span class="field">Message Claude Code…</span><span class="round ghost"><i data-ic="mic" data-size="17"></i></span><span class="round send"><i data-ic="send" data-size="20"></i></span></div>
+  </div>
+  <div class="gesture"></div>
+</div><figcaption>2 · Chat: an agent asks for your OK</figcaption></figure>
+
+<!-- 3 · Chat while working, with the plan -->
+<figure><div class="phone" id="working">
+  <div data-statusbar></div>
+  <header class="chat-bar">
+    <span class="icon-btn"><i data-ic="back" data-size="20"></i></span>
+    <span class="dot on"></span><span class="avatar" data-agent="claude"></span>
+    <span class="chat-titles"><span class="chat-title ellipsis">Phone remote bridge</span><span class="chat-sub ellipsis">Claude Code · main · AgentArcade</span></span>
+    <span class="icon-btn"><i data-ic="more" data-size="18"></i></span>
+  </header>
+  <div class="strip"><span class="dot on"></span><span class="state green-text">Working</span><span class="time">1m 12s</span><span class="plan">Plan 3/7<div class="bar"><i style="width: 43%"></i></div><i data-ic="chevron" data-size="14"></i></span></div>
+  <div class="planbox">
+    <div class="plan-item done"><i data-ic="check" data-size="15"></i>Read MainForm.cs and app.js</div>
+    <div class="plan-item done"><i data-ic="check" data-size="15"></i>Add Remote.cs with the HTTPS server</div>
+    <div class="plan-item done"><i data-ic="check" data-size="15"></i>Pairing and device tokens</div>
+    <div class="plan-item now"><i data-ic="play" data-size="13"></i>Wire the page to the server</div>
+    <div class="plan-item"><i data-ic="plus" data-size="15"></i>Phone dialog with the QR code</div>
+    <div class="plan-item"><i data-ic="plus" data-size="15"></i>Extend --self-check</div>
+    <div class="plan-item"><i data-ic="plus" data-size="15"></i>Update README and CLAUDE.md</div>
+  </div>
+  <div class="term"><div class="tt"><span class="user">&gt; Build the phone remote server from
+  docs/phone-remote/REMOTE_API.md</span>
+
+<span class="w">●</span> <span class="b">Read</span>(docs/phone-remote/REMOTE_API.md)
+<span class="k">  ⎿  Read 412 lines</span>
+
+<span class="w">●</span> <span class="b">Write</span>(Remote.cs)
+<span class="k">  ⎿  Wrote 386 lines to Remote.cs</span>
+
+<span class="w">●</span> <span class="b">Update</span>(web/app.js)
+<span class="k">  ⎿  Updated web/app.js with 142 additions</span>
+<span class="add"><span class="g">     1611 + function remoteSummary(session) {  </span></span>
+<span class="add"><span class="g">     1612 +   const buffer = session.term.buffer</span></span>
+<span class="add"><span class="g">     1613 +   const bottom = bottomLines(buffer, 15</span></span>
+
+<span class="w">●</span> Now the page sends each pane's state to
+  Remote.cs whenever it changes. Next: the
+  screen serializer for watched panes.
+
+<span class="o">✻</span> <span class="o">Brewing…</span> <span class="k">(1m 12s · ↑ 3.4k tokens · esc to interrupt)</span>
+
+<span class="k">╭───────────────────────────────────────────╮</span>
+<span class="k">│</span> &gt;                                         <span class="k">│</span>
+<span class="k">╰───────────────────────────────────────────╯</span>
+<span class="k">  ? for shortcuts</span></div></div>
+  <div class="dock">
+    <div class="keys"><span class="kk">Esc</span><span class="kk">Tab</span><span class="kk">⇧Tab</span><span class="kk">↑</span><span class="kk">↓</span><span class="kk">Enter</span><span class="kk">Ctrl+C</span><span class="kk">/</span></div>
+    <div class="composer"><span class="round ghost"><i data-ic="zap" data-size="17"></i></span><span class="field">Message Claude Code…</span><span class="round ghost"><i data-ic="mic" data-size="17"></i></span><span class="round send"><i data-ic="send" data-size="20"></i></span></div>
+  </div>
+  <div class="gesture"></div>
+</div><figcaption>3 · Chat: working, with its plan</figcaption></figure>
+
+<!-- 4 · Start an agent -->
+<figure><div class="phone" id="start">
+  <div class="under" data-clone="agents"></div>
+  <div class="scrim"></div>
+  <div class="sheet">
+    <div class="handle"></div>
+    <h2>Start an agent</h2>
+    <p>It opens a new pane on your PC and its chat here.</p>
+    <div class="label">Workspace</div>
+    <div class="ws-row active"><i data-ic="cube" data-size="16"></i><span>HimalayanExpedition</span><span class="ws-path">C:\Projects</span></div>
+    <div class="ws-row"><i data-ic="folder" data-size="16"></i><span>AgentArcade</span><span class="ws-path">C:\Projects</span></div>
+    <div class="ws-row"><i data-ic="folder" data-size="16"></i><span>MotoSync</span><span class="ws-path">C:\Projects</span></div>
+    <div class="label">Agent</div>
+    <div class="acc-card"><span class="avatar lg" data-agent="claude"></span><span class="acc-text"><span class="acc-top"><span class="acc-name">Claude Code</span><span class="plan-tag">Max</span></span><span class="acc-sub ellipsis">main · you@example.com</span></span><i data-ic="play" data-size="14" style="color: var(--muted)"></i></div>
+    <div class="acc-card"><span class="avatar lg" data-agent="claude"></span><span class="acc-text"><span class="acc-top"><span class="acc-name">Claude Code</span><span class="plan-tag">Pro</span><span class="count live">1</span></span><span class="acc-sub ellipsis">second · second@example.com</span></span><i data-ic="play" data-size="14" style="color: var(--muted)"></i></div>
+    <div class="acc-card"><span class="avatar lg" data-agent="codex"></span><span class="acc-text"><span class="acc-top"><span class="acc-name">Codex</span><span class="plan-tag">Plus</span><span class="count live">1</span></span><span class="acc-sub ellipsis">main · you@example.com</span></span><i data-ic="play" data-size="14" style="color: var(--muted)"></i></div>
+    <div class="acc-card"><span class="avatar lg" data-agent="gemini"></span><span class="acc-text"><span class="acc-top"><span class="acc-name">Gemini CLI</span><span class="count live">1</span></span><span class="acc-sub ellipsis">main · you@example.com</span></span><i data-ic="play" data-size="14" style="color: var(--muted)"></i></div>
+    <div class="acc-card disabled"><span class="avatar lg" data-agent="copilot"></span><span class="acc-text"><span class="acc-top"><span class="acc-name">GitHub Copilot CLI</span></span><span class="acc-sub ellipsis">Not installed on your PC</span></span></div>
+    <div class="gesture" style="background: transparent; margin: 4px -14px 0"></div>
+  </div>
+</div><figcaption>4 · Start an agent (bottom sheet)</figcaption></figure>
+
+<!-- 5 · History -->
+<figure><div class="phone" id="history">
+  <div data-statusbar></div>
+  <header class="appbar"><h1>History</h1><span class="icon-btn" style="margin-left: auto"><i data-ic="refresh" data-size="18"></i></span></header>
+  <div class="content">
+    <div class="seg"><span class="on">All projects</span><span>HimalayanExpedition</span><span>AgentArcade</span></div>
+    <div class="hist-project"><i data-ic="cube" data-size="14"></i><span class="hist-name">HimalayanExpedition</span><span class="hist-path ellipsis">C:\Projects\HimalayanExpedition</span><span class="count">5</span></div>
+    <div class="hist-row"><span class="avatar" data-agent="claude"></span><span class="hist-text"><span class="hist-title ellipsis">Fix the foam near the bridge</span><span class="hist-sub ellipsis">Today 14:22 · running · second</span></span><span class="ghost-btn xs"><span class="dot wait"></span>Open</span></div>
+    <div class="hist-row"><span class="avatar" data-agent="gemini"></span><span class="hist-text"><span class="hist-title ellipsis">Pine tree LODs</span><span class="hist-sub ellipsis">Today 13:58 · running · main</span></span><span class="ghost-btn xs"><span class="dot wait"></span>Open</span></div>
+    <div class="hist-row"><span class="avatar" data-agent="codex"></span><span class="hist-text"><span class="hist-title ellipsis">Cat rig walk cycle</span><span class="hist-sub ellipsis">Today 13:40 · running · main</span></span><span class="ghost-btn xs"><span class="dot on"></span>Open</span></div>
+    <div class="hist-row"><span class="avatar" data-agent="claude"></span><span class="hist-text"><span class="hist-title ellipsis">Road mesh cleanup</span><span class="hist-sub ellipsis">Yesterday 21:05 · 46 min · main</span></span><span class="ghost-btn xs"><i data-ic="play" data-size="11"></i>Resume</span></div>
+    <div class="hist-row"><span class="avatar" data-agent="codex"></span><span class="hist-text"><span class="hist-title ellipsis">Water network review</span><span class="hist-sub ellipsis">12 Oct 16:04 · 2 h 10 min · main</span></span><span class="ghost-btn xs"><i data-ic="play" data-size="11"></i>Resume</span></div>
+    <div class="hist-project"><i data-ic="folder" data-size="14"></i><span class="hist-name">AgentArcade</span><span class="hist-path ellipsis">C:\Projects\AgentArcade</span><span class="count">2</span></div>
+    <div class="hist-row"><span class="avatar" data-agent="claude"></span><span class="hist-text"><span class="hist-title ellipsis">Phone remote bridge</span><span class="hist-sub ellipsis">Today 14:05 · running · main</span></span><span class="ghost-btn xs"><span class="dot on"></span>Open</span></div>
+    <div class="hist-row"><span class="avatar" data-agent="codex"></span><span class="hist-text"><span class="hist-title ellipsis">App icon concept</span><span class="hist-sub ellipsis">12 Oct 14:08 · 35 min · main</span></span><span class="ghost-btn xs"><i data-ic="play" data-size="11"></i>Resume</span></div>
+    <div class="hist-project"><i data-ic="folder" data-size="14"></i><span class="hist-name">MotoSync</span><span class="hist-path ellipsis">C:\Projects\MotoSync</span><span class="count">1</span></div>
+    <div class="hist-row"><span class="avatar" data-agent="claude"></span><span class="hist-text"><span class="hist-title ellipsis">Lap timer drift</span><span class="hist-sub ellipsis">Today 12:31 · 52 min · main</span></span><span class="ghost-btn xs"><i data-ic="play" data-size="11"></i>Resume</span></div>
+  </div>
+  <nav data-nav="history"></nav>
+  <div class="gesture"></div>
+</div><figcaption>5 · History</figcaption></figure>
+
+<!-- 6 · Connect -->
+<figure><div class="phone" id="connect">
+  <div data-statusbar style="background: var(--side)"></div>
+  <div class="connect">
+    <div class="hero">
+      <div class="logo"><img src="../android-res/drawable-nodpi/arcade_logo.png" alt=""></div>
+      <h1>Connect to your PC</h1>
+      <p>Watch your agents, see how far they are, and help them when they ask.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><span class="num">1</span><span>Open Agent Arcade on your PC</span></div>
+      <div class="step"><span class="num">2</span><span>Click <b>Phone</b> at the bottom of the sidebar</span></div>
+      <div class="step"><span class="num">3</span><span>Turn on Phone remote and scan the code</span></div>
+    </div>
+    <div class="btns">
+      <span class="primary-btn"><i data-ic="scan" data-size="18"></i>Scan QR code</span>
+      <span class="ghost-btn"><i data-ic="link" data-size="17"></i>Paste pairing link</span>
+      <span class="text-btn" style="text-align: center; padding: 6px">Try the demo</span>
+    </div>
+    <p class="tip">Your phone talks to your PC directly over <b>Wi-Fi</b> or <b>Tailscale</b>. Nothing goes through the cloud.</p>
+  </div>
+  <div class="gesture"></div>
+</div><figcaption>6 · Connect (first run)</figcaption></figure>
+
+<!-- 7 · Settings -->
+<figure><div class="phone" id="settings">
+  <div data-statusbar></div>
+  <header class="appbar"><h1>Settings</h1></header>
+  <div class="content">
+    <div class="group-head" style="padding-top: 4px">Your PC</div>
+    <div class="group">
+      <div class="row"><i data-ic="monitor" data-size="18"></i><span class="row-text"><span class="row-title">DESKTOP-ARCADE</span><span class="row-sub">192.168.1.20 · paired 13 Oct</span><span class="mono">SHA-256 3F:A2:91:0C:7B:44…</span></span><span class="dot-label" style="color: var(--green)"><span class="dot on"></span>Live</span></div>
+      <div class="row"><span class="row-text"><span class="danger-text">Forget this PC</span></span></div>
+    </div>
+    <div class="group-head">Alerts</div>
+    <div class="group">
+      <div class="row"><span class="row-text"><span class="row-title">Stay connected in the background</span><span class="row-sub">Needed for alerts while the app is closed</span></span><span class="switch on"></span></div>
+      <div class="row"><span class="row-text"><span class="row-title">An agent needs my OK</span></span><span class="switch on"></span></div>
+      <div class="row"><span class="row-text"><span class="row-title">An agent is done</span></span><span class="switch on"></span></div>
+      <div class="row"><span class="row-text"><span class="row-title">An agent stops</span></span><span class="switch"></span></div>
+    </div>
+    <div class="group-head">Terminal</div>
+    <div class="group">
+      <div class="row"><span class="row-text"><span class="row-title">Text size <span class="mono">12 px</span></span><div class="slider"><i></i><b></b></div></span></div>
+      <div class="row"><span class="row-text"><span class="row-title">Wrap long lines</span><span class="row-sub">Off shows lines exactly as wide as on the PC</span></span><span class="switch on"></span></div>
+    </div>
+    <div class="group-head">App</div>
+    <div class="group">
+      <div class="row"><span class="row-text"><span class="row-title">Demo mode</span><span class="row-sub">Sample agents, no PC needed</span></span><span class="switch"></span></div>
+      <div class="row"><span class="row-text"><span class="row-title">About</span><span class="row-sub">Agent Arcade Remote 1.0</span></span></div>
+    </div>
+  </div>
+  <nav data-nav="settings"></nav>
+  <div class="gesture"></div>
+</div><figcaption>7 · Settings</figcaption></figure>
+
+<!-- 8 · Style -->
+<figure><div class="phone" id="style">
+  <div data-statusbar style="background: var(--side)"></div>
+  <div class="guide">
+    <h2>Agent Arcade style</h2>
+    <p>Dark only. Flat surfaces with 1 dp borders, no shadows on cards. Corners 12 dp on cards, 16–20 dp on sheets.</p>
+    <h3>Colors</h3>
+    <div class="swatches">
+      <div class="sw"><i style="background: #0c0c0e"></i><span>Background</span><code>#0C0C0E</code></div>
+      <div class="sw"><i style="background: #111114"></i><span>Surface</span><code>#111114</code></div>
+      <div class="sw"><i style="background: #141418"></i><span>Card</span><code>#141418</code></div>
+      <div class="sw"><i style="background: #1a1a1f"></i><span>Raised</span><code>#1A1A1F</code></div>
+      <div class="sw"><i style="background: #25252c"></i><span>Border</span><code>#25252C</code></div>
+      <div class="sw"><i style="background: #32323b"></i><span>Strong border</span><code>#32323B</code></div>
+      <div class="sw"><i style="background: #ececf1"></i><span>Text</span><code>#ECECF1</code></div>
+      <div class="sw"><i style="background: #9a9aa6"></i><span>Muted</span><code>#9A9AA6</code></div>
+      <div class="sw"><i style="background: #63636f"></i><span>Faint</span><code>#63636F</code></div>
+      <div class="sw"><i style="background: #e07a5f"></i><span>Accent</span><code>#E07A5F</code></div>
+      <div class="sw"><i style="background: #3ecf7f"></i><span>Green</span><code>#3ECF7F</code></div>
+      <div class="sw"><i style="background: #f2b84b"></i><span>Amber</span><code>#F2B84B</code></div>
+    </div>
+    <h3>Status</h3>
+    <div class="line">
+      <span class="dot-label"><span class="dot on"></span>Running</span>
+      <span class="dot-label"><span class="dot wait"></span>Needs you (pulses)</span>
+      <span class="dot-label"><span class="dot off"></span>Ended</span>
+      <span class="count">3</span><span class="count live">2</span><span class="plan-tag">Max</span>
+    </div>
+    <h3>Buttons</h3>
+    <div class="line">
+      <span class="primary-btn sm"><i data-ic="plus" data-size="15"></i>New</span>
+      <span class="ghost-btn sm">Resume</span>
+      <span class="danger-btn" style="height: 32px; font-size: 13px; font-weight: 500; border-radius: 9px; padding: 0 12px">Stop agent</span>
+      <span class="tag-btn">Install</span>
+    </div>
+    <h3>Agents</h3>
+    <div class="line">
+      <span class="dot-label"><span class="avatar" data-agent="claude"></span>Claude Code</span>
+      <span class="dot-label"><span class="avatar" data-agent="codex"></span>Codex</span>
+      <span class="dot-label"><span class="avatar" data-agent="gemini"></span>Gemini CLI</span>
+      <span class="dot-label"><span class="avatar" data-agent="copilot"></span>Copilot CLI</span>
+      <span class="dot-label"><span class="avatar" data-agent="cursor-agent"></span>Cursor</span>
+    </div>
+    <h3>Type and icons</h3>
+    <div class="type-serif">What are we building today?</div>
+    <div class="type-title" style="margin-top: 6px">Card title · 15 semibold</div>
+    <div class="type-body">Secondary line · 13 muted</div>
+    <div class="type-mono">● Terminal · Cascadia Mono 12</div>
+    <div class="line" style="margin-top: 10px; color: var(--muted)">
+      <i data-ic="folder" data-size="18"></i><i data-ic="cube" data-size="18"></i><i data-ic="terminal" data-size="18"></i><i data-ic="history" data-size="18"></i><i data-ic="sliders" data-size="18"></i><i data-ic="bell" data-size="18"></i><i data-ic="scan" data-size="18"></i><i data-ic="zap" data-size="18"></i><i data-ic="send" data-size="18"></i><i data-ic="more" data-size="18"></i>
+    </div>
+  </div>
+  <div class="gesture"></div>
+</div><figcaption>8 · Style guide</figcaption></figure>
+
+</div>
+<script>
+'use strict';
+const ICONS = window.ICONS, FILLED = window.FILLED_ICONS, LOGOS = window.BRAND_LOGOS, COLORS = window.BRAND_COLORS;
+
+function icon(name, size) {
+  const filled = FILLED.includes(name);
+  return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${filled ? 'currentColor' : 'none'}" ` +
+    `stroke="${filled ? 'none' : 'currentColor'}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
+}
+
+const statusbar = '<div class="statusbar"><span>14:32</span><span class="sys">' +
+  '<svg width="16" height="12" viewBox="0 0 16 12" fill="#ececf1"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="4.3" y="5.5" width="3" height="6.5" rx="1"/><rect x="8.6" y="3" width="3" height="9" rx="1"/><rect x="12.9" y="0" width="3" height="12" rx="1"/></svg>' +
+  '<svg width="16" height="12" viewBox="0 0 24 18" fill="#ececf1"><path d="M12 18 0 4.5C3.2 1.7 7.4 0 12 0s8.8 1.7 12 4.5z"/></svg>' +
+  '<svg width="24" height="12" viewBox="0 0 24 12"><rect x=".5" y=".5" width="20" height="11" rx="3" fill="none" stroke="#ececf1" opacity=".6"/><rect x="2" y="2" width="14" height="8" rx="1.6" fill="#ececf1"/><rect x="21.5" y="4" width="2" height="4" rx="1" fill="#ececf1" opacity=".6"/></svg>' +
+  '</span></div>';
+
+function nav(active) {
+  const tabs = [['agents', 'terminal', 'Agents'], ['history', 'history', 'History'], ['settings', 'sliders', 'Settings']];
+  return '<nav class="bottomnav">' + tabs.map(([id, ic, label]) =>
+    `<span class="tab ${id === active ? 'on' : ''}"><span class="pill">${icon(ic, 20)}</span>${label}</span>`).join('') + '</nav>';
+}
+
+for (const el of document.querySelectorAll('[data-clone]')) {
+  const source = document.getElementById(el.dataset.clone);
+  el.innerHTML = source.innerHTML;
+}
+for (const el of document.querySelectorAll('[data-statusbar]')) {
+  const style = el.getAttribute('style');
+  el.outerHTML = style ? statusbar.replace('class="statusbar"', `class="statusbar" style="${style}"`) : statusbar;
+}
+for (const el of document.querySelectorAll('[data-nav]')) el.outerHTML = nav(el.dataset.nav);
+for (const el of document.querySelectorAll('[data-ic]')) {
+  const svg = icon(el.dataset.ic, Number(el.dataset.size) || 16);
+  el.outerHTML = el.getAttribute('style') ? svg.replace('class="ic"', `class="ic" style="${el.getAttribute('style')}"`) : svg;
+}
+for (const el of document.querySelectorAll('[data-agent]')) {
+  const cmd = el.dataset.agent;
+  el.style.setProperty('--c', COLORS[cmd] || '#888');
+  el.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${LOGOS[cmd]}"/></svg>`;
+}
+
+const screen = new URLSearchParams(location.search).get('s');
+if (screen) {
+  document.body.classList.add('single');
+  document.getElementById(screen).closest('figure').classList.add('show');
+}
+</script>
+</body>
+</html>

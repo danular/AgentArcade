@@ -1,0 +1,26 @@
+Make the agents list and the chat fully live with the PC, and keep demo mode working the same way. REMOTE_API.md has the details.
+
+1. Chat screen: when it opens, send {"type":"watch","id":…,"lines":200} on the WebSocket (and again after every reconnect). Send unwatch when the chat closes or the app goes to the background. Draw Screen.lines with one Text per line built from an AnnotatedString of its spans: fg and bg are hex colors; the style bits are 1 bold, 2 italic, 4 underline, 8 dim (50% alpha), 16 strikethrough; the default colors are #E4E4E7 on #0F0F12. Use a LazyColumn keyed by line index and replace the content on every screen event (seq goes up).
+
+2. Wrap long lines (setting): on = soft wrap; off = every line exactly cols characters wide, with the whole block scrolling sideways. Pinch to zoom changes the terminal text size (9-24sp, saved). Long-press starts text selection (SelectionContainer) for copying.
+
+3. Stick to the bottom while new output arrives. When I scroll up, stop following and show the "Jump to latest" pill, with a dot when new output arrived. At the top, "Load earlier" sends watch again with 2000 lines.
+
+4. Sending: the composer sends POST /sessions/{id}/input with {text, submit: true}. Show the text as "sending…" until the next screen update, and keep it in the field if sending fails. Long-press on send types it without Enter (submit: false). The mic button fills the field with Android speech recognition (RecognizerIntent, which needs no audio permission). The quick-prompts button offers these three texts and pastes them exactly:
+   - Save progress: We're about to stop. Overwrite HANDOFF.md in the project root with a short handoff (max 40 lines): what you changed this session, what works, what is broken or unfinished, and the exact next steps. Don't change any other files.
+   - Continue: Read HANDOFF.md, then continue with the next steps listed there. Ask me before large changes.
+   - Status update: Give me a short status update: what you finished, what you are doing now, what's next, and anything you need from me. Max 8 lines.
+
+5. Key chips: each one sends POST /sessions/{id}/keys with one key name (esc, tab, shiftTab, up, down, left, right, enter, ctrlC, "/", "y", "n"), with a haptic tick.
+
+6. Approval card: shown when session.status is needsYou, built from session.question and session.choices. Each button sends its key ("1", "2", … or "y"/"n") with a haptic confirm. The card goes away as soon as the status changes.
+
+7. Status strip and plan: from session.status, turnStartedAt (count up every second while working), plan and progress (busy or percent from the agent).
+
+8. Ended: the pill offers Resume (POST /chats/{chat}/resume, then open the new session id), New chat (POST /sessions with the same account and workspace) and Close (POST /sessions/{id}/close, then back to Agents).
+
+9. The ⋯ menu: Rename (a dialog, then POST rename; empty = the automatic title), the three prompts, Alerts for this chat (a local mute list), and Stop agent (confirm "Stop <title>? The agent on your PC will be closed. Work it has already saved to your project stays.", then POST stop).
+
+10. Agents list, History and Start an agent use the live data: starting = POST /sessions, then open its chat; History's Resume and Open; pull to refresh = GET /state and /history; "time since last output" refreshes every 30 s.
+
+Then test the whole flow in demo mode, and tell me what to check once it's connected to my real PC.

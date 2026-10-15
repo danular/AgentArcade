@@ -1,0 +1,8 @@
+Mode: built-in image_gen
+transparent_background: false
+
+Use case: logo-brand.
+Asset type: a single polished app logo icon, square 1:1 image.
+Primary request: create a distinctive, beautifully simple icon concept for an app called AgentArcade. Let the idea of an intelligent agent and an arcade inform one unified geometric symbol, with an understated A-shaped silhouette and a friendly sense of play.
+Style: crisp graphic logo design, strong intentional geometry, bold silhouette, very few elements, premium finish. Center the symbol at a generous scale with balanced breathing room on a clean solid app-icon background. Choose a harmonious, restrained high-contrast palette. The mark must remain immediately legible at small app-icon sizes.
+Constraints: one icon only, straight-on, flat presentation; no words or lettering, no mockup device, no surrounding layout, no watermark, no tiny decorative details. Full-bleed square canvas.

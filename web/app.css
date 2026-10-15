@@ -13,6 +13,7 @@
   --accent-2: #f0a080;
   --green: #3ecf7f;
   --amber: #f2b84b;
+  --orange: #f08a3c;
   --red: #f26b6b;
   --term: #0f0f12;
   --mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
@@ -65,6 +66,25 @@ b { font-weight: 600; }
   padding: 10px;
 }
 
+/* Sidebar hidden: the panes take the whole width. No transition, so the agents get one resize, not dozens. */
+.app.side-hidden { grid-template-columns: minmax(0, 1fr); }
+.app.side-hidden .sidebar { display: none; }
+/* Side panel open: a third column on the right, as wide as it was dragged. */
+.app.panel-open { grid-template-columns: 272px minmax(0, 1fr) var(--panel-width, 480px); }
+.app.panel-open.side-hidden { grid-template-columns: minmax(0, 1fr) var(--panel-width, 480px); }
+/* A window too narrow for a third column: the panel floats over the panes, which keep their width. */
+.app.panel-open.panel-overlay { grid-template-columns: 272px minmax(0, 1fr); }
+.app.panel-open.panel-overlay.side-hidden { grid-template-columns: minmax(0, 1fr); }
+.app.panel-overlay .side-panel {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 40;
+  width: var(--panel-width, 480px);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, .55);
+}
+
 /* ---------- sidebar ---------- */
 
 .sidebar {
@@ -108,7 +128,9 @@ b { font-weight: 600; }
 .fold.shut, .shut > .fold { transform: rotate(-90deg); }
 .fold-space { flex: none; width: 16px; }
 .ws-row .fold, .ws-row .fold-space { margin-right: -5px; }
-.side-foot { padding: 10px 16px; border-top: 1px solid var(--border); }
+.side-foot { display: flex; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--border); }
+.size-value { color: var(--muted); font-weight: 400; }
+input[type="range"] { padding: 0; accent-color: var(--accent); border: 0; box-shadow: none; }
 .text-btn { color: var(--muted); font-size: 12px; }
 .text-btn:hover { color: var(--text); }
 
@@ -220,16 +242,26 @@ b { font-weight: 600; }
 .dot.off { background: #4a4a54; }
 .dot.idle { background: #6b6b78; }
 .dot.wait { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+/* Pane status: orange while working (pulses), red when it needs you (solid, so pulsing means working), green when idle. */
+.dot.working { background: var(--orange); box-shadow: 0 0 0 3px rgba(240, 138, 60, .18); animation: pulse 1.2s ease-in-out infinite; }
+.dot.needs { background: var(--red); box-shadow: 0 0 0 3px rgba(242, 107, 107, .25); }
 @keyframes pulse { 50% { opacity: .35; } }
 
 /* ---------- main area ---------- */
 
 .main { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; padding: 4px 2px 0 6px; }
+/* min-width keeps the sidebar button in view when the top bar runs out of room. */
+.topbar-left { display: flex; align-items: center; gap: 6px; min-width: 26px; }
+.topbar-left .icon-btn { flex: none; }
 .crumb { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .crumb-name { font-size: 15px; font-weight: 600; white-space: nowrap; }
 .crumb-path { overflow: hidden; color: var(--faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .top-actions { display: flex; flex: none; gap: 6px; }
+/* Too little room (side panel open, narrow window): the top bar's buttons show only their icons. */
+.topbar.compact .top-actions .ghost-btn > span,
+.topbar.compact .top-actions .primary-btn > span { display: none; }
+.topbar.compact .top-actions .ghost-btn { padding: 0 9px; }
 
 .ghost-btn, .primary-btn, .danger-btn {
   display: inline-flex;
@@ -328,6 +360,135 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .pane-ended button { padding: 3px 10px; color: var(--text); background: var(--hover); border-radius: 999px; }
 .pane-ended button:hover { background: var(--border-2); }
 
+/* Images an agent printed a path to: a viewer over the pane. */
+.image-view {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  background: var(--term);
+  outline: none;
+}
+.image-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.image-bar > .ic { flex: none; }
+.image-name { flex: 0 1 auto; min-width: 30px; color: var(--text); font-weight: 600; }
+.image-count { flex: 1 0 auto; color: var(--faint); font: 11px var(--mono); white-space: nowrap; }
+.image-bar .icon-btn { flex: none; }
+.image-stage { display: grid; flex: 1; min-height: 0; padding: 12px; overflow: hidden; place-items: center; }
+.image-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  background: repeating-conic-gradient(#1c1c22 0 25%, #24242b 0 50%) 0 0 / 16px 16px;
+  border-radius: 4px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .5);
+  cursor: zoom-in;
+}
+.image-stage.actual { display: block; overflow: auto; }
+.image-stage.actual img { display: block; max-width: none; max-height: none; margin: 0 auto; cursor: zoom-out; }
+
+/* The side panel's Images tab. Rows are as tall as their tiles: the tab has a fixed height, and auto rows would
+   shrink tiles that clip their content to nothing (they showed as thin stripes). */
+.images-grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+  overflow-y: auto;
+}
+.images-grid .panel-empty { grid-column: 1 / -1; padding: 16px 6px; color: var(--muted); }
+.images-tip { flex: 1; color: var(--faint); font-size: 12px; }
+.images-count { flex: none; color: var(--faint); font: 11px var(--mono); }
+.image-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  background: #1c1c22;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  cursor: grab;
+}
+.image-tile:hover { border-color: var(--accent); }
+.image-tile:active { cursor: grabbing; }
+.image-tile img { display: block; flex: none; width: 100%; height: 72px; object-fit: cover; pointer-events: none; }
+.image-tile figcaption { padding: 4px 6px; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- side panel: Preview, Images, Changes, Console ---------- */
+
+.side-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--side);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+.panel-resize { position: absolute; top: 0; bottom: 0; left: 0; z-index: 5; width: 8px; cursor: col-resize; }
+.panel-resize:hover { background: linear-gradient(90deg, transparent 2px, var(--border-2) 2px 4px, transparent 4px); }
+/* While the panel is dragged, the preview frame would swallow the mouse. */
+body.resizing-panel { cursor: col-resize; user-select: none; }
+body.resizing-panel iframe { pointer-events: none; }
+.panel-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px 0 12px; border-bottom: 1px solid var(--border); }
+.panel-tabs { display: flex; flex: 1; gap: 2px; min-width: 0; }
+.panel-tab { margin-bottom: -1px; padding: 8px 10px; color: var(--muted); font-size: 13px; font-weight: 600; border-bottom: 2px solid transparent; }
+.panel-tab:hover { color: var(--text); }
+.panel-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.panel-view { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.panel-bar { display: flex; flex: none; align-items: center; gap: 6px; min-height: 44px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+.panel-bar input { flex: 1; min-width: 0; height: 28px; padding: 0 10px; font: 12px var(--mono); }
+.panel-bar .icon-btn { flex: none; }
+.preview-stage { position: relative; flex: 1; min-height: 0; background: var(--term); }
+/* Pages without their own background expect white, as in a browser. */
+.preview-stage iframe { display: block; width: 100%; height: 100%; background: #fff; border: 0; }
+.panel-empty { padding: 28px 22px; color: var(--text); font-size: 13px; line-height: 1.6; }
+.panel-empty p { margin: 0 0 10px; }
+.changes-branch { flex: 1; color: var(--muted); font: 12px var(--mono); }
+.changes-count { flex: none; color: var(--faint); font: 11px var(--mono); }
+.changes-list { flex: none; max-height: 40%; padding: 4px 0; overflow-y: auto; border-bottom: 1px solid var(--border); }
+.changes-list .panel-empty { padding: 16px 14px; }
+.change-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 12px; font-size: 12px; text-align: left; }
+.change-row:hover { background: var(--hover); }
+.change-row.active { background: var(--panel-2); }
+.change-status { flex: none; width: 14px; font: 600 11px var(--mono); text-align: center; }
+.change-status.modified { color: var(--amber); }
+.change-status.new, .change-status.added { color: var(--green); }
+.change-status.deleted, .change-status.conflict { color: var(--red); }
+.change-status.renamed, .change-status.copied { color: #8fb4ff; }
+.change-name { flex: none; max-width: 60%; }
+.change-dir { flex: 1; color: var(--faint); }
+.changes-diff { flex: 1; min-height: 0; overflow: auto; background: var(--term); }
+.changes-diff .panel-empty { color: var(--muted); }
+.diff-lines { display: inline-block; min-width: 100%; padding: 8px 0; font: 12px/1.5 var(--mono); white-space: pre; }
+.diff-line { padding: 0 12px; }
+.diff-line.add { color: #a6e3b8; background: rgba(62, 207, 127, .12); }
+.diff-line.del { color: #f2a7a7; background: rgba(242, 107, 107, .12); }
+.diff-line.hunk { color: #8fb4ff; }
+.diff-line.meta { color: var(--faint); }
+.console-folder { flex: 1; color: var(--muted); font: 12px var(--mono); }
+/* The padding sits on .xterm, as in the panes: the fit addon measures .console-term and leaves .xterm's padding out. */
+.console-term { flex: 1; min-height: 0; background: var(--term); }
+.console-term .xterm { height: 100%; padding: 6px 2px 4px 10px; }
+.console-term .xterm-viewport { background: transparent !important; }
+
 /* ---------- empty state ---------- */
 
 .empty {
@@ -392,6 +553,49 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
 .hist-title.placeholder { color: var(--muted); font-style: italic; }
 .hist-sub { color: var(--muted); font-size: 12px; }
 .ghost-btn.small { height: 26px; padding: 0 10px; gap: 5px; font-size: 12px; border-radius: 7px; }
+
+/* ---------- phone remote ---------- */
+
+.side-foot .text-btn { display: inline-flex; align-items: center; gap: 6px; }
+.side-foot .dot { width: 6px; height: 6px; }
+.side-foot .dot.on { box-shadow: 0 0 0 2px rgba(62, 207, 127, .18); }
+.modal.phone { display: flex; flex-direction: column; gap: 16px; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow-y: auto; }
+.modal.phone .hist-head h2 { margin: 0; }
+.phone-body { display: flex; flex-direction: column; gap: 16px; color: var(--muted); }
+.phone-body p { margin: 0; }
+.switch { display: flex; align-items: center; gap: 10px; color: var(--text); font-weight: 500; cursor: pointer; user-select: none; }
+.switch input { position: absolute; width: 1px; height: 1px; padding: 0; opacity: 0; pointer-events: none; }
+.switch-track { position: relative; flex: none; width: 34px; height: 20px; background: var(--border-2); border-radius: 999px; transition: background .15s; }
+.switch-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: var(--text);
+  border-radius: 50%;
+  transition: transform .15s;
+}
+.switch input:checked + .switch-track { background: var(--green); }
+.switch input:checked + .switch-track::after { background: #fff; transform: translateX(14px); }
+.switch input:focus-visible + .switch-track { box-shadow: 0 0 0 3px rgba(224, 122, 95, .35); }
+.phone-error { color: var(--red); }
+.phone-warning { color: var(--amber); }
+.phone-pair { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 18px; }
+.qr-card { flex: none; padding: 12px; background: #fff; border-radius: 14px; }
+.qr-card img { display: block; width: 220px; height: 220px; image-rendering: pixelated; }
+.qr-card.stale img { opacity: .15; }
+.phone-facts { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 200px; }
+.phone-label { color: var(--muted); font-size: 12px; font-weight: 600; }
+.fingerprint { margin-bottom: 8px; color: var(--text); font: 14px var(--mono); letter-spacing: .3px; user-select: text; }
+.phone-valid { color: var(--text); }
+.phone-actions { display: flex; gap: 8px; margin-top: 6px; }
+.phone-section { display: flex; flex-direction: column; gap: 6px; }
+.phone-addresses { color: var(--text); font: 12.5px/1.6 var(--mono); user-select: text; }
+.device-row { display: flex; align-items: center; gap: 9px; padding: 6px 6px 6px 10px; background: var(--panel); border: 1px solid var(--border); border-radius: 9px; }
+.device-name { color: var(--text); font-weight: 500; }
+.phone-note { margin: 0; padding-top: 12px; color: var(--faint); font-size: 12px; border-top: 1px solid var(--border); }
 
 /* ---------- menus, dialogs, toasts ---------- */
 
