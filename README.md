@@ -4,7 +4,7 @@
 
 A Windows app that runs your AI coding agents side by side on one project: Claude Code, Codex (ChatGPT), Gemini CLI, GitHub Copilot CLI and Cursor, each in its own pane inside the app.
 
-Free for personal use. Professional use needs Agent Arcade Pro (EUR 25 per month, includes the voice dictation app); see [LICENSING.md](LICENSING.md).
+Free for personal use. Professional use needs Agent Arcade Pro (EUR 25 per user per month excl. VAT, includes the voice dictation app); see [LICENSING.md](LICENSING.md).
 
 ## Download
 
