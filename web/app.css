@@ -465,6 +465,7 @@ body.resizing-panel iframe { pointer-events: none; }
 .changes-count { flex: none; color: var(--faint); font: 11px var(--mono); }
 .changes-list { flex: none; max-height: 40%; padding: 4px 0; overflow-y: auto; border-bottom: 1px solid var(--border); }
 .changes-list .panel-empty { padding: 16px 14px; }
+.git-uses { color: var(--muted); font: 11px/1.6 var(--mono); overflow-wrap: anywhere; }
 .change-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 12px; font-size: 12px; text-align: left; }
 .change-row:hover { background: var(--hover); }
 .change-row.active { background: var(--panel-2); }

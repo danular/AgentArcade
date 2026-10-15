@@ -302,6 +302,9 @@ sealed class MainForm : Form, IRemoteHost
                     GitDiff(Json.Str(m, "workspace"), Json.Str(m, "path"), Json.Str(m, "from"),
                         m.TryGetProperty("untracked", out var untracked) && untracked.ValueKind == JsonValueKind.True);
                     break;
+                case "gitTrust":
+                    TrustGit(Json.Str(m, "workspace"), Json.Str(m, "config"));
+                    break;
                 case "consoleStart":
                     // Like a pane: nothing new starts once the window began closing.
                     if (!_remoteClosed) StartConsole(Json.Str(m, "workspace"), Int(m, "cols"), Int(m, "rows"), Int(m, "id"));
@@ -760,10 +763,16 @@ sealed class MainForm : Form, IRemoteHost
                 Post(new { type = "changes", workspace, seq, error = "Pick a project in the sidebar first." });
                 return;
             }
+            var trusted = TrustedGitConfig(folder);
             try
             {
-                var (branch, files, total) = await Task.Run(() => GitChanges.Status(folder));
+                var (branch, files, total) = await Task.Run(() => GitChanges.Status(folder, trusted));
                 Post(new { type = "changes", workspace, seq, branch, total, files = files.Select(file => new { path = file.Path, from = file.From, status = file.Status }).ToList() });
+            }
+            catch (GitTrustNeeded ex)
+            {
+                // The tab shows what the config reads and a "Run git here anyway" button, which answers with gitTrust.
+                Post(new { type = "changes", workspace, seq, error = ex.Message, trust = new { config = ex.Check.Config, uses = ex.Check.Uses.Take(8).ToList(), more = Math.Max(0, ex.Check.Uses.Count - 8) } });
             }
             catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
             {
@@ -779,9 +788,10 @@ sealed class MainForm : Form, IRemoteHost
         {
             var folder = ListedProject(workspace) ?? throw new InvalidOperationException("Pick a project in the sidebar first.");
             if (!InProject(folder, path) || (from.Length > 0 && !InProject(folder, from))) throw new InvalidOperationException("That file isn't in this project.");
+            var trusted = TrustedGitConfig(folder);
             try
             {
-                var (text, cut) = await Task.Run(() => GitChanges.Diff(folder, path, from.Length > 0 ? from : null, untracked));
+                var (text, cut) = await Task.Run(() => GitChanges.Diff(folder, path, from.Length > 0 ? from : null, untracked, trusted));
                 Post(new { type = "diff", workspace, path, text, cut });
             }
             catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
@@ -793,6 +803,22 @@ sealed class MainForm : Form, IRemoteHost
 
     static bool InProject(string folder, string relative)
         => relative.Length > 0 && !Path.IsPathRooted(relative) && ProjectFiles.IsInside(folder, Path.Combine(folder, relative));
+
+    // "Run git here anyway" in the Changes tab, for a repository whose config makes git read other files (include.path,
+    // includeIf) or another folder (core.worktree). Kept per project with the hash of the config the tab showed, so a
+    // changed config asks again. The page asks for the changes again right after this message.
+    void TrustGit(string workspace, string config)
+    {
+        var folder = ListedProject(workspace);
+        if (folder == null || !GitConfigCheck.IsHash(config)) return;
+        var trusted = _settings.GitTrusted ??= new();
+        trusted.RemoveAll(item => item.Folder.Equals(folder, StringComparison.OrdinalIgnoreCase));
+        trusted.Add(new GitTrust { Folder = folder, ConfigSha256 = config });
+        _settings.Save();
+    }
+
+    string? TrustedGitConfig(string folder)
+        => _settings.GitTrusted?.FirstOrDefault(item => item.Folder.Equals(folder, StringComparison.OrdinalIgnoreCase))?.ConfigSha256;
 
     void StartConsole(string workspace, int cols, int rows, int id)
     {

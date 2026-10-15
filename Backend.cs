@@ -53,6 +53,9 @@ sealed class AppSettings
     public int RemotePort { get; set; } = 47821;
     // When Windows may not sleep on its own: "agents" while agents run, "remote" also while Phone remote is on, "off".
     public string KeepAwake { get; set; } = AgentArcade.KeepAwake.Agents;
+    // Projects whose git config includes other files or names another work tree, where the Changes tab runs git
+    // because the user chose "Run git here anyway", each with the SHA-256 of the config it was for. Null in older files.
+    public List<GitTrust>? GitTrusted { get; set; }
 
     static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
@@ -115,6 +118,13 @@ sealed class AppSettings
         RemotePort = StoredPort() ?? RemotePort;
         File.WriteAllText(FilePath, JsonSerializer.Serialize(this, Json.Options));
     }
+}
+
+// One "Run git here anyway" in the Changes tab: the project folder and GitCheck.Config of the config it was for.
+sealed class GitTrust
+{
+    public string Folder { get; set; } = "";
+    public string ConfigSha256 { get; set; } = "";
 }
 
 // One AI coding agent. Every agent is the vendor's own command-line tool, so signing in

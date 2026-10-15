@@ -1395,6 +1395,8 @@ let changesFiles = [];
 let changesSelected = null;
 let changesKey = '';
 let diffShown = null;
+// The config hash the Changes tab asks "Run git here anyway" for; gitTrust sends it back.
+let changesTrust = '';
 // One git status and one git diff at a time: on a big repository they take seconds, and the 5 s refresh must not
 // pile them up. Status requests are numbered and only the newest answer counts. A request without an answer
 // after 30 s counts as lost.
@@ -1418,14 +1420,25 @@ function changesArrived(message) {
   }
   if (!panelShows('changes') || !same(message.workspace, state.workspace)) return;
   const files = message.files || [];
-  const key = JSON.stringify([message.error, message.branch, message.total, files]);
+  const key = JSON.stringify([message.error, message.branch, message.total, files, message.trust]);
   if (key !== changesKey) {
     changesKey = key;
     changesFiles = files;
+    changesTrust = message.trust?.config || '';
     $('#changes-branch').textContent = message.error ? '' : message.branch || '';
     $('#changes-count').textContent = message.error || !files.length ? ''
       : message.total > files.length ? `${files.length} of ${message.total} files` : `${files.length} file${files.length === 1 ? '' : 's'}`;
     const list = $('#changes-list');
+    if (message.trust) {
+      // The repository's config makes git read other files or another folder (MainForm.TrustGit stores the answer).
+      const uses = (message.trust.uses || []).map(esc).join('<br>') + (message.trust.more ? `<br>… and ${message.trust.more} more` : '');
+      list.innerHTML = `<div class="panel-empty"><p>${esc(message.error)}</p><p class="git-uses">${uses}</p>` +
+        '<button class="ghost-btn" data-act="git-trust">Run git here anyway</button></div>';
+      changesSelected = null;
+      diffShown = null;
+      $('#changes-diff').innerHTML = '';
+      return;
+    }
     if (message.error || !files.length) {
       list.innerHTML = `<p class="panel-empty">${esc(message.error || 'No changes: the project matches its last commit.')}</p>`;
       changesSelected = null;
@@ -1490,6 +1503,13 @@ function diffArrived(message) {
 }
 
 $('#changes-list').addEventListener('click', event => {
+  if (event.target.closest('[data-act="git-trust"]')) {
+    if (!changesTrust) return;
+    send({ type: 'gitTrust', workspace: state.workspace, config: changesTrust });
+    $('#changes-list').innerHTML = '<p class="panel-empty">Looking…</p>';
+    changesKey = '';
+    return loadChanges();
+  }
   const row = event.target.closest('.change-row');
   if (!row) return;
   changesSelected = changesFiles[Number(row.dataset.index)] || null;
