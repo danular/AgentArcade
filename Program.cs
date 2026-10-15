@@ -1027,7 +1027,72 @@ static class RemoteSelfCheck
                 && RemoteModel.IsCode(403, "notApproved") && RemoteModel.IsCode(503, "busy") && !RemoteModel.IsCode(404, "busy") && !RemoteModel.IsCode(400, "nope")
                 && RemoteReply.Busy.Code == "busy" && RemoteReply.Internal is { Status: 500, Code: "internal" },
             "every error body carries a code from REMOTE_API.md's table, next to error and the body's own fields; a page reply with a code that doesn't fit its status becomes 500 internal");
+
+        // Copy link: read back through the COM interface Windows' clipboard history reads, without touching the clipboard.
+        const string secretLink = "agentarcade://pair?v=1&code=self-check";
+        var secret = (System.Runtime.InteropServices.ComTypes.IDataObject)MainForm.SecretData(secretLink);
+        var text = ClipboardBytes(secret, DataFormats.UnicodeText);
+        var flags = new[] { "ExcludeClipboardContentFromMonitorProcessing", "CanIncludeInClipboardHistory", "CanUploadToCloudClipboard" }
+            .Select(format => ClipboardBytes(secret, format)).ToList();
+        check(
+            "pair-link-clipboard",
+            text != null && Encoding.Unicode.GetString(text).TrimEnd('\0') == secretLink
+                && flags.All(bytes => bytes is { Length: >= 4 } && BitConverter.ToUInt32(bytes, 0) == 0),
+            "Copy link puts the link as text with ExcludeClipboardContentFromMonitorProcessing, and CanIncludeInClipboardHistory and CanUploadToCloudClipboard "
+                + "set to 0, so Windows keeps it out of clipboard history and the cloud clipboard");
     }
+
+    // A format's bytes as a clipboard reader gets them (TYMED_HGLOBAL), or null when the data has no such format.
+    static byte[]? ClipboardBytes(System.Runtime.InteropServices.ComTypes.IDataObject data, string format)
+    {
+        var request = new System.Runtime.InteropServices.ComTypes.FORMATETC
+        {
+            cfFormat = unchecked((short)DataFormats.GetFormat(format).Id),
+            dwAspect = System.Runtime.InteropServices.ComTypes.DVASPECT.DVASPECT_CONTENT,
+            lindex = -1,
+            tymed = System.Runtime.InteropServices.ComTypes.TYMED.TYMED_HGLOBAL,
+        };
+        try
+        {
+            data.GetData(ref request, out var medium);
+            try
+            {
+                if (medium.tymed != System.Runtime.InteropServices.ComTypes.TYMED.TYMED_HGLOBAL || medium.unionmember == IntPtr.Zero) return null;
+                var size = checked((int)GlobalSize(medium.unionmember));
+                var pointer = GlobalLock(medium.unionmember);
+                try
+                {
+                    var bytes = new byte[size];
+                    System.Runtime.InteropServices.Marshal.Copy(pointer, bytes, 0, size);
+                    return bytes;
+                }
+                finally
+                {
+                    GlobalUnlock(medium.unionmember);
+                }
+            }
+            finally
+            {
+                ReleaseStgMedium(ref medium);
+            }
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            return null;
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    static extern IntPtr GlobalLock(IntPtr handle);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    static extern bool GlobalUnlock(IntPtr handle);
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    static extern UIntPtr GlobalSize(IntPtr handle);
+
+    [System.Runtime.InteropServices.DllImport("ole32.dll")]
+    static extern void ReleaseStgMedium(ref System.Runtime.InteropServices.ComTypes.STGMEDIUM medium);
 
     static List<string> PublicNetworkNames()
     {
@@ -1123,8 +1188,9 @@ static class RemoteSelfCheck
                     && state.StatusCode == HttpStatusCode.OK && stateBody.TryGetProperty("sessions", out _) && stateBody.TryGetProperty("hosts", out _)
                     && wrongToken.StatusCode == HttpStatusCode.Unauthorized && Json.Str(wrongBody, "error") == NotPaired && Json.Str(wrongBody, "code") == "notPaired"
                     && noToken.StatusCode == HttpStatusCode.Unauthorized
+                    && host.PairAsked.TryPeek(out var allowed) && allowed.Name == "Self check phone" && host.Logged.Contains("Phone pairing allowed: Self check phone")
                     && !host.Logged.Any(line => line.Contains(token, StringComparison.Ordinal) || line.Contains(code, StringComparison.Ordinal)),
-                "pairing with the code gives a token that works; the code works once; a wrong token gets 401; no token or code in the log");
+                "pairing with the code and Allow on the PC gives a token that works; the code works once; a wrong token gets 401; no token or code in the log");
 
             // X-Arcade-Client: kept with the phone from pairing on; a newer valid value replaces it, a bad or doubled one changes nothing.
             var pairedWith = server.Devices.All().Single().Client;
@@ -1290,6 +1356,7 @@ static class RemoteSelfCheck
         {
             await server.ApplyAsync(false, port, true);
         }
+        await PairApprovalAsync(check, folder);
         await DevicesFileAsync(check, folder, host);
         RemoteCertificate.Delete(CertName);
         check(
@@ -1455,6 +1522,107 @@ static class RemoteSelfCheck
         {
             host.Hold = null;
             hold.TrySetResult(RemoteReply.Ok(new { ok = true }));
+        }
+    }
+
+    // REMOTE_API.md, pair: the right code alone adds no phone; the PC must click Allow. Deny, silence, New code, the
+    // phone leaving and Phone remote going off all add nothing. Its own server, so these attempts don't count against
+    // the other checks' 10 a minute.
+    static async Task PairApprovalAsync(Action<string, bool, string> check, string folder)
+    {
+        var host = new StubHost { PairMode = 0 };
+        var server = new RemoteServer(host, Path.Combine(folder, "approval.json"), CertName);
+        var port = FreePort();
+        await server.ApplyAsync(true, port, true);
+        if (!server.Running)
+        {
+            check("pair-needs-approval", false, server.Error ?? "didn't start");
+            return;
+        }
+        try
+        {
+            var root = "https://127.0.0.1:" + port + "/api/v1/";
+            var fingerprint = server.Fingerprint!;
+            using var http = Pinned(fingerprint, 4);
+            var codes = new List<string>();
+            async Task<(HttpStatusCode Status, string Code, string Error, double Seconds)> Pair(string pairCode, string device, HttpClient? via = null)
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                using var response = await Send(via ?? http, HttpMethod.Post, root + "pair", null, new { code = pairCode, device }, client: ["AgentArcadeRemote/1.1.0 (1010099)"]);
+                var body = await Body(response);
+                return (response.StatusCode, Json.Str(body, "code"), Json.Str(body, "error"), watch.Elapsed.TotalSeconds);
+            }
+            async Task<bool> Until(Func<bool> done)
+            {
+                for (var i = 0; i < 250 && !done(); i++) await Task.Delay(20);
+                return done();
+            }
+            string NewCode()
+            {
+                var code = server.NewCode();
+                codes.Add(code);
+                return code;
+            }
+
+            // Deny: 403 denied, nothing added, and the code is used up.
+            var code = NewCode();
+            var denied = await Pair(code, "Denied‮ phone");
+            var again = await Pair(code, "Denied phone");
+            host.PairAsked.TryPeek(out var asked);
+
+            // Nobody answers within PairWait: 403 notApproved, and the question goes away.
+            host.PairMode = -1;
+            server.PairWait = TimeSpan.FromSeconds(1.5);
+            var silent = await Pair(NewCode(), "Silent phone");
+            var silentGone = host.PairAsked.Last().Cancel.IsCancellationRequested;
+
+            // New code while a phone waits: it gets 403 notApproved at once.
+            server.PairWait = TimeSpan.FromSeconds(30);
+            var waiting = Pair(NewCode(), "Waiting phone");
+            await Until(() => host.PairAsked.Count == 3);
+            server.NewCode();
+            var replaced = await waiting;
+
+            // The phone gives up: the question goes at once and no phone is added.
+            code = NewCode();
+            using (var impatient = Pinned(fingerprint, 1))
+            {
+                impatient.Timeout = TimeSpan.FromSeconds(1);
+                try
+                {
+                    await Pair(code, "Impatient phone", impatient);
+                }
+                catch (TaskCanceledException)
+                {
+                    // It gave up.
+                }
+            }
+            var left = await Until(() => host.PairAsked.Count == 4 && host.PairAsked.Last().Cancel.IsCancellationRequested);
+
+            // Phone remote off while a phone waits: 403 notApproved before the server goes.
+            var stopping = Pair(NewCode(), "Stopping phone");
+            await Until(() => host.PairAsked.Count == 5);
+            await server.ApplyAsync(false, port, true);
+            var stopped = await stopping;
+
+            var notApproved = new[] { silent, replaced, stopped }.All(answer => answer.Status == HttpStatusCode.Forbidden && answer.Code == "notApproved"
+                && answer.Error == RemoteServer.NotApproved);
+            check(
+                "pair-needs-approval",
+                denied.Status == HttpStatusCode.Forbidden && denied.Code == "denied" && denied.Error == RemoteServer.Denied
+                    && again.Status == HttpStatusCode.Forbidden && again.Code == "codeUsed"
+                    && asked.Name == "Denied phone" && asked.Client == "AgentArcadeRemote/1.1.0 (1010099)"
+                    && notApproved && silent.Seconds >= 1.3 && silentGone && replaced.Seconds < 10 && left
+                    && host.PairAsked.Count == 5 && host.PairAsked.All(question => question.Cancel.IsCancellationRequested)
+                    && server.Devices.All().Count == 0
+                    && host.Logged.Contains("Phone pairing denied: Denied phone")
+                    && !host.Logged.Any(line => codes.Any(used => line.Contains(used, StringComparison.Ordinal)) || line.Contains("AgentArcadeRemote", StringComparison.Ordinal)),
+                "the right code only asks the PC: Deny gets 403 denied and uses the code up; no answer in time, New code and Phone remote off get 403 notApproved; "
+                    + "a phone that gives up takes its question away; none of them is added, and no code or app version is logged");
+        }
+        finally
+        {
+            await server.ApplyAsync(false, port, true);
         }
     }
 
@@ -1748,6 +1916,21 @@ static class RemoteSelfCheck
         }
 
         public void Log(string message) => Logged.Enqueue(message);
+
+        // How the Phone dialog answers a pairing: 1 Allow, 0 Deny, -1 never. Each question, as the server asked it.
+        public volatile int PairMode = 1;
+        public ConcurrentQueue<(string Name, string? Client, CancellationToken Cancel)> PairAsked { get; } = new();
+
+        public Task<bool> AskPairAsync(string name, string? client, CancellationToken cancel)
+        {
+            PairAsked.Enqueue((name, client, cancel));
+            return PairMode switch
+            {
+                1 => Task.FromResult(true),
+                0 => Task.FromResult(false),
+                _ => new TaskCompletionSource<bool>().Task,
+            };
+        }
     }
 }
 

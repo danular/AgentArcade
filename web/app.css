@@ -605,6 +605,12 @@ body.resizing-panel iframe { pointer-events: none; }
 .qr-card { flex: none; padding: 12px; background: #fff; border-radius: 14px; }
 .qr-card img { display: block; width: 220px; height: 220px; image-rendering: pixelated; }
 .qr-card.stale img { opacity: .15; }
+.qr-card.app-qr { padding: 8px; border-radius: 10px; }
+.qr-card.app-qr img { width: 116px; height: 116px; }
+.app-link { align-self: flex-start; text-align: left; overflow-wrap: anywhere; }
+.pair-ask { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--amber); border-radius: 10px; }
+.pair-ask .primary-btn { height: 26px; padding: 0 12px; font-size: 12px; border-radius: 7px; }
+.pair-ask .primary-btn:disabled:hover { background: var(--text); }
 .phone-facts { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 200px; }
 .phone-label { color: var(--muted); font-size: 12px; font-weight: 600; }
 .fingerprint { margin-bottom: 8px; color: var(--text); font: 14px var(--mono); letter-spacing: .3px; user-select: text; }

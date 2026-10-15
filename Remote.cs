@@ -76,6 +76,10 @@ interface IRemoteHost
     void Cancel(string? device);
     // The current run (REMOTE_API.md, run): new each time the page starts.
     string Run { get; }
+    // Asks in the Phone dialog whether this phone may pair: true for Allow, false for Deny. It never opens the dialog.
+    // The question goes away when cancel fires (no answer in time, the phone left, New code, Phone remote off); the
+    // server then answers alone.
+    Task<bool> AskPairAsync(string name, string? client, CancellationToken cancel);
     // The panes the phones watch changed; the page sends a screen for each pane in refresh at once.
     void WatchesChanged(IReadOnlyList<string> refresh);
     // A phone connected, left, paired or was removed, or the pairing code changed.
@@ -565,8 +569,9 @@ static class RemoteLink
                 if (!Guid.TryParse(adapter.Id, out var id) || !networks.TryGetValue(id, out var name)) continue;
                 if (!adapter.GetIPProperties().UnicastAddresses.Any(unicast => lan.Contains(unicast.Address))) continue;
                 var page = adapter.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 ? "Wi-Fi > " + name : "Ethernet";
-                return "Windows treats \"" + name + "\" as a public network, so it blocks your phone there. Set it to Private in Settings > Network & internet > "
-                    + page + ", or use Tailscale.";
+                // Private lets every device on that network reach this PC, so it is only for the user's own network.
+                return "Windows treats \"" + name + "\" as a public network, so it blocks your phone there. Set it to Private only if this is your own home network "
+                    + "(Settings > Network & internet > " + page + "); on shared or public Wi-Fi keep Public and use Tailscale.";
             }
         }
         catch (Exception)
@@ -584,6 +589,13 @@ static class RemoteLink
 
     public static string Qr(string link)
         => "data:image/png;base64," + Convert.ToBase64String(PngByteQRCodeHelper.GetQRCode(link, QRCodeGenerator.ECCLevel.M, 8, true));
+
+    // Where to get Agent Arcade Remote (step 1 of the Phone dialog), and its QR code.
+    public const string AppDownload = "https://danular.github.io/AgentArcade/download.html#phone";
+
+    static readonly Lazy<string> AppQrCode = new(() => Qr(AppDownload));
+
+    public static string AppQr => AppQrCode.Value;
 }
 
 // The networks Windows treats as public, from the Network List Manager.
@@ -721,7 +733,7 @@ static class RemoteModel
     public const int MinClientApi = 1;
 
     // What this PC does beyond contract 1.0 (hello.features). A name is listed only once it works end to end.
-    public static readonly string[] Features = ["errorCodes", "clientHeader", "run", "expect"];
+    public static readonly string[] Features = ["pairApproval", "expect", "run", "errorCodes", "clientHeader"];
 
     // REMOTE_API.md's error table: each code and the one status it comes with. Codes are never renamed or reused.
     static readonly Dictionary<string, int> Codes = new()
@@ -1320,6 +1332,8 @@ sealed class RemoteServer
     X509Certificate2? _certificate;
     (bool On, int Port, bool Loopback) _wanted;
     int _codeNumber;
+    // The pairing that waits for Allow or Deny; set to end it without an answer (EndPairing). Guarded by _lock.
+    TaskCompletionSource? _pairing;
     volatile bool _running;
 
     public RemoteServer(IRemoteHost host, string devicesPath, string certificateName = RemoteCertificate.Name)
@@ -1337,6 +1351,8 @@ sealed class RemoteServer
     // Why the server couldn't start, as a sentence for the Phone dialog.
     public string? Error { get; private set; }
     public string? Fingerprint { get; private set; }
+    // How long POST /pair waits for Allow or Deny, from the moment the right code arrived. The self-check shortens it.
+    public TimeSpan PairWait { get; set; } = TimeSpan.FromSeconds(60);
 
     // The addresses the server listens on; the self-check makes sure there is only the one it was given.
     public List<string> Urls() => _app?.Urls.ToList() ?? [];
@@ -1365,11 +1381,19 @@ sealed class RemoteServer
         return Task.Run(ApplyWantedAsync);
     }
 
+    // A new pairing code. A pairing that still waits for Allow ends without one (403 notApproved).
     public string NewCode()
     {
+        EndPairing();
         var code = Pairing.New();
         _ = TellWhenExpiredAsync(Interlocked.Increment(ref _codeNumber));
         return code;
+    }
+
+    // Ends the pairing that waits for Allow or Deny, if there is one: the phone gets 403 notApproved.
+    public void EndPairing()
+    {
+        lock (_lock) _pairing?.TrySetResult();
     }
 
     // Removes a paired phone: its token stops working, its connections close with 4401, its requests that wait for
@@ -1607,6 +1631,8 @@ sealed class RemoteServer
         var app = _app!;
         _app = null;
         _running = false;
+        // A phone that waits for Allow hears 403 notApproved while its connection is still open.
+        EndPairing();
         EndPageRequests(null);
         List<PhoneSocket> sockets;
         lock (_lock) sockets = _sockets.ToList();
@@ -1738,7 +1764,7 @@ sealed class RemoteServer
         }
         if (post && path == "/api/v1/pair")
         {
-            await WriteAsync(context, await PairAsync(context));
+            await PairRouteAsync(context);
             return;
         }
 
@@ -1822,15 +1848,48 @@ sealed class RemoteServer
         }
     }
 
-    async Task<RemoteReply> PairAsync(HttpContext context)
+    // POST /pair. A phone added on Allow stays only if the answer with its token was written; a phone that left just as
+    // Allow was clicked never got it, so it is removed again.
+    async Task PairRouteAsync(HttpContext context)
     {
-        if (!Pairing.Attempt()) return RemoteReply.Fail(429, "tooManyPairAttempts", "Too many pairing attempts. Wait a minute and try again.");
+        var (reply, added) = await PairAsync(context);
+        var delivered = false;
+        try
+        {
+            await WriteAsync(context, reply);
+            if (added != null)
+            {
+                await context.Response.CompleteAsync();
+                delivered = !context.RequestAborted.IsCancellationRequested;
+            }
+        }
+        finally
+        {
+            if (added != null && delivered)
+            {
+                _host.Paired(added.Name);
+            }
+            else if (added != null)
+            {
+                RemoveDevice(added.Id);
+                _host.Log("Phone pairing undone, the phone left before it got its token: " + added.Name);
+                _host.RemoteChanged();
+            }
+        }
+    }
+
+    // REMOTE_API.md, pair: a wrong, used, expired or cancelled code is answered at once. The right one is used up as it
+    // arrives, then the PC asks in its Phone dialog and holds the request at most PairWait: Allow adds the phone (200),
+    // Deny is 403 denied, anything else 403 notApproved. Only the phone's cleaned name is logged.
+    async Task<(RemoteReply Reply, RemoteDevice? Added)> PairAsync(HttpContext context)
+    {
+        if (!Pairing.Attempt()) return (RemoteReply.Fail(429, "tooManyPairAttempts", "Too many pairing attempts. Wait a minute and try again."), null);
         var (body, problem) = await ReadBodyAsync(context);
-        if (body == null) return problem!;
+        if (body == null) return (problem!, null);
         string code, device;
         using (body)
         {
-            if (!TryString(body.RootElement, "code", out code) || !TryString(body.RootElement, "device", out device)) return Invalid;
+            if (!TryString(body.RootElement, "code", out code) || !TryString(body.RootElement, "device", out device)) return (Invalid, null);
         }
         var name = RemoteModel.DeviceName(device);
         var result = Pairing.Check(code, name);
@@ -1838,20 +1897,65 @@ sealed class RemoteServer
         switch (result)
         {
             case PairResult.None:
-                return RemoteReply.Fail(403, "noCode", "Phone remote has no pairing code right now. Open the Phone dialog on your PC.");
+                return (RemoteReply.Fail(403, "noCode", "Phone remote has no pairing code right now. Open the Phone dialog on your PC."), null);
             case PairResult.Wrong:
-                return RemoteReply.Fail(403, "wrongCode", "That pairing code is wrong. Scan the QR code on your PC again.");
+                return (RemoteReply.Fail(403, "wrongCode", "That pairing code is wrong. Scan the QR code on your PC again."), null);
             case PairResult.Expired:
-                return RemoteReply.Fail(403, "codeExpired", "That pairing code has expired. Press New code on your PC and scan again.");
+                return (RemoteReply.Fail(403, "codeExpired", "That pairing code has expired. Press New code on your PC and scan again."), null);
             case PairResult.Used:
-                return RemoteReply.Fail(403, "codeUsed", "That pairing code was already used. Press New code on your PC and scan again.");
+                return (RemoteReply.Fail(403, "codeUsed", "That pairing code was already used. Press New code on your PC and scan again."), null);
             case PairResult.Cancelled:
-                return RemoteReply.Fail(403, "codeCancelled", "Too many wrong codes. Press New code on your PC and scan again.");
+                return (RemoteReply.Fail(403, "codeCancelled", "Too many wrong codes. Press New code on your PC and scan again."), null);
         }
-        var (added, token) = Devices.Add(name, RemoteModel.Client(context.Request.Headers["X-Arcade-Client"]));
-        _host.Log("Phone paired: " + name);
-        _host.Paired(name);
-        return RemoteReply.Ok(RemoteModel.PairAnswer(token, added.Id));
+        var client = RemoteModel.Client(context.Request.Headers["X-Arcade-Client"]);
+        var allowed = await AskPairAsync(name, client, context.RequestAborted);
+        if (context.RequestAborted.IsCancellationRequested)
+        {
+            _host.Log("Phone pairing ended, the phone left: " + name);
+            return (RemoteReply.Fail(403, "notApproved", NotApproved), null);
+        }
+        if (allowed == true)
+        {
+            var (added, token) = Devices.Add(name, client);
+            _host.Log("Phone pairing allowed: " + name);
+            return (RemoteReply.Ok(RemoteModel.PairAnswer(token, added.Id)), added);
+        }
+        if (allowed == false)
+        {
+            _host.Log("Phone pairing denied: " + name);
+            return (RemoteReply.Fail(403, "denied", Denied), null);
+        }
+        _host.Log("Phone pairing not allowed: " + name);
+        return (RemoteReply.Fail(403, "notApproved", NotApproved), null);
+    }
+
+    // Asks in the Phone dialog and waits for Allow (true) or Deny (false). Null when the wait ended without either:
+    // PairWait passed, the phone left (gone), or EndPairing (New code, Phone remote off, Agent Arcade closing).
+    async Task<bool?> AskPairAsync(string name, string? client, CancellationToken gone)
+    {
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_lock)
+        {
+            // The code is used up, so only one pairing waits; an older one would end here.
+            _pairing?.TrySetResult();
+            _pairing = ended;
+        }
+        using var asking = CancellationTokenSource.CreateLinkedTokenSource(gone);
+        try
+        {
+            var answer = _host.AskPairAsync(name, client, asking.Token);
+            var first = await Task.WhenAny(answer, ended.Task, Task.Delay(PairWait, asking.Token));
+            return first == answer && answer.IsCompletedSuccessfully ? answer.Result : null;
+        }
+        finally
+        {
+            // Whatever ended the wait, the question leaves the Phone dialog.
+            asking.Cancel();
+            lock (_lock)
+            {
+                if (_pairing == ended) _pairing = null;
+            }
+        }
     }
 
     async Task<RemoteReply> StartAsync(HttpContext context, string device)

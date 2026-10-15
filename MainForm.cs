@@ -33,6 +33,9 @@ sealed class MainForm : Form, IRemoteHost
     // A phone's request that waits for the page's remoteReply. Received runs on the UI thread with the reply's body.
     sealed record PageRequest(TaskCompletionSource<RemoteReply> Done, Action<JsonElement>? Received);
 
+    // A phone that waits for Allow or Deny in the Phone dialog. Id names the question the dialog showed.
+    sealed record PairQuestion(long Id, string Name, string? Client, TaskCompletionSource<bool> Answer);
+
     readonly AppSettings _settings = AppSettings.Load();
     readonly WebView2 _web = new() { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.FromArgb(12, 12, 14) };
     readonly Dictionary<string, Session> _sessions = new();
@@ -67,6 +70,9 @@ sealed class MainForm : Form, IRemoteHost
     volatile string _run = RemoteModel.NewRun();
     bool _remoteOn;
     bool _remoteClosed;
+    // The pairing question the Phone dialog shows; UI thread only.
+    PairQuestion? _pairQuestion;
+    long _pairQuestions;
     (string Link, string Qr)? _qr;
     (long At, string? Hosts, string? Warning) _networkWarning;
     readonly KeepAwake _awake = new();
@@ -390,6 +396,11 @@ sealed class MainForm : Form, IRemoteHost
                     var text = Json.Str(m, "text");
                     if (text.Length > 0) Clipboard.SetText(text);
                     break;
+                case "copySecret":
+                    // The pairing link: kept out of Windows clipboard history and the cloud clipboard.
+                    var secret = Json.Str(m, "text");
+                    if (secret.Length > 0) Clipboard.SetDataObject(SecretData(secret), true);
+                    break;
                 case "openUrl":
                     OpenUrl(Json.Str(m, "url"));
                     break;
@@ -407,19 +418,28 @@ sealed class MainForm : Form, IRemoteHost
                     RemoteReplied(m);
                     break;
                 case "remoteDialog":
-                    if (_settings.RemoteEnabled && _remote.Pairing.Info().Status != "valid") _remote.NewCode();
-                    // Opening the dialog tries again after a start that failed, for example on a port in use, and
-                    // after a removal that couldn't be saved.
+                    // Opening the dialog makes no pairing code: Pair a phone does. It tries again after a start that
+                    // failed, for example on a port in use, and after a removal that couldn't be saved.
                     if (_settings.RemoteEnabled && !_remote.Running) ApplyRemote();
                     _remote.Devices.Flush();
+                    PostRemoteInfo();
+                    break;
+                case "remoteDialogClosed":
+                    // The code lives only while the dialog shows it. A phone that waits for Allow keeps waiting: the
+                    // question is there when the dialog opens again.
+                    _remote.Pairing.Clear();
                     PostRemoteInfo();
                     break;
                 case "remoteEnable":
                     EnableRemote(m.TryGetProperty("on", out var on) && on.ValueKind == JsonValueKind.True);
                     break;
+                case "remotePair":
                 case "remoteNewCode":
                     if (_settings.RemoteEnabled) _remote.NewCode();
                     PostRemoteInfo();
+                    break;
+                case "remotePairAnswer":
+                    AnswerPair(Int(m, "id"), m.TryGetProperty("allow", out var allow) && allow.ValueKind == JsonValueKind.True);
                     break;
                 case "remoteRemove":
                     RemovePhone(Json.Str(m, "device"));
@@ -1330,9 +1350,9 @@ sealed class MainForm : Form, IRemoteHost
     {
         _settings.RemoteEnabled = on;
         _settings.Save();
-        // Turning it on makes a fresh code; turning it off ends the old one at once.
-        if (on) _remote.NewCode();
-        else _remote.Pairing.Clear();
+        // Turning it on makes no code (Pair a phone does); turning it off ends the old one at once, and a phone that
+        // waits for Allow gets 403 when the server stops.
+        if (!on) _remote.Pairing.Clear();
         ApplyRemote();
         PostRemoteInfo();
         PostRemoteStatus();
@@ -1356,6 +1376,8 @@ sealed class MainForm : Form, IRemoteHost
         _summaries.Clear();
         _questions.Clear();
         _remote.ForgetScreens();
+        // The Phone dialog went with the old page, and its pairing code with it.
+        _remote.Pairing.Clear();
         _run = RemoteModel.NewRun();
         if (_remote.Phones > 0) _remote.Send(new { type = "state", state = RemoteState() });
         if (_settings.RemoteEnabled && !_remote.Running) ApplyRemote();
@@ -1573,6 +1595,10 @@ sealed class MainForm : Form, IRemoteHost
             expiresAt,
             code = status,
             pairedName,
+            // A phone that waits for Allow or Deny; the page answers with its id.
+            pairing = _pairQuestion is { } question ? new { id = question.Id, name = question.Name, client = question.Client } : null,
+            // Step 1: where to get Agent Arcade Remote.
+            app = new { url = RemoteLink.AppDownload, qr = RemoteLink.AppQr },
             addresses,
             devices = _remote.Devices.All().Select(device => new
             {
@@ -1642,6 +1668,55 @@ sealed class MainForm : Form, IRemoteHost
     void IRemoteHost.Cancel(string? device) => OnUi(() => Post(new { type = "remoteCancel", device }));
 
     string IRemoteHost.Run => _run;
+
+    // REMOTE_API.md, pair: the question goes inside the Phone dialog. The PC never opens the dialog for a phone (that
+    // would move the view); when it is closed the page shows a notice, and the question waits in it until cancel.
+    Task<bool> IRemoteHost.AskPairAsync(string name, string? client, CancellationToken cancel)
+    {
+        var answer = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        OnUi(() =>
+        {
+            if (cancel.IsCancellationRequested) return;
+            var question = new PairQuestion(++_pairQuestions, name, client, answer);
+            _pairQuestion = question;
+            cancel.Register(() => OnUi(() => PairQuestionEnded(question)));
+            Post(new { type = "remotePairAsk", name, client });
+            PostRemoteInfo();
+        });
+        return answer.Task;
+    }
+
+    // Allow or Deny for the question the dialog showed (id), never for a newer one.
+    void AnswerPair(long id, bool allow)
+    {
+        if (_pairQuestion is not { } question || question.Id != id) return;
+        _pairQuestion = null;
+        question.Answer.TrySetResult(allow);
+        if (!allow) Toast(question.Name + " wasn't paired.");
+        PostRemoteInfo();
+    }
+
+    // The wait ended (Allow, Deny, no answer in time, the phone left, New code, Phone remote off): the question goes.
+    void PairQuestionEnded(PairQuestion question)
+    {
+        if (_pairQuestion != question) return;
+        _pairQuestion = null;
+        Toast(question.Name + " wasn't paired: the request ended before anyone clicked Allow.");
+        PostRemoteInfo();
+    }
+
+    // The pairing link on the clipboard as plain text, with the formats that keep it out of Windows clipboard history
+    // (Win+V) and the cloud clipboard: ExcludeClipboardContentFromMonitorProcessing, and CanIncludeInClipboardHistory and
+    // CanUploadToCloudClipboard set to 0 (a DWORD).
+    internal static DataObject SecretData(string text)
+    {
+        var data = new DataObject();
+        data.SetText(text, TextDataFormat.UnicodeText);
+        data.SetData("ExcludeClipboardContentFromMonitorProcessing", new MemoryStream(BitConverter.GetBytes(0)));
+        data.SetData("CanIncludeInClipboardHistory", new MemoryStream(BitConverter.GetBytes(0)));
+        data.SetData("CanUploadToCloudClipboard", new MemoryStream(BitConverter.GetBytes(0)));
+        return data;
+    }
 
     void IRemoteHost.WatchesChanged(IReadOnlyList<string> refresh) => OnUi(() => PostRemoteWatch(refresh));
 

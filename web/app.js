@@ -2187,6 +2187,7 @@ const remote = {
   watches: new Map(), // pane id -> { lines, seq, at, timer, force }
   jobs: new Set(), // typing waiting or running: { device, at, cancelled }
   removed: new Set(), // phones removed on the PC: their requests that still arrive are refused
+  pairWaiting: false, // a phone waits for Allow or Deny in the Phone dialog
 };
 
 const panes = () => [...sessions.values()].sort((a, b) => a.order - b.order);
@@ -2614,8 +2615,9 @@ let phoneView = null;
 
 function showPhones() {
   const button = $('#phone');
-  button.innerHTML = (remote.phones ? '<span class="dot on"></span>' : '') + '<span>Phone</span>';
-  button.title = remote.phones ? `${remote.phones} phone${remote.phones === 1 ? '' : 's'} connected` : 'Use Agent Arcade from your phone';
+  button.innerHTML = (remote.pairWaiting ? '<span class="dot needs"></span>' : remote.phones ? '<span class="dot on"></span>' : '') + '<span>Phone</span>';
+  button.title = remote.pairWaiting ? 'A phone wants to pair with this PC'
+    : remote.phones ? `${remote.phones} phone${remote.phones === 1 ? '' : 's'} connected` : 'Use Agent Arcade from your phone';
 }
 
 function openPhone() {
@@ -2629,8 +2631,9 @@ function openPhone() {
     `<div class="hist-head"><h2>Phone remote</h2><button class="icon-btn" data-close title="Close">${icon('close', 15)}</button></div>` +
     '<div class="phone-body"></div>' +
     '<p class="phone-note">A paired phone can read your panes and type into your agents, like you can at this PC. ' +
-    'Only pair your own phone. If Windows asks, allow Agent Arcade on private networks, and make sure your Wi-Fi is set to Private.</p></div>';
-  phoneView = { root, info: null, timer: setInterval(showValidity, 10000) };
+    'Only pair your own phone, and allow it only right after you scanned the code yourself. If Windows asks, allow Agent Arcade on private networks. ' +
+    'Set your Wi-Fi to Private only if it is your own home network; on shared or public Wi-Fi keep it Public and use Tailscale.</p></div>';
+  phoneView = { root, info: null, asked: null, timer: setInterval(showValidity, 10000) };
   root.addEventListener('mousedown', event => {
     if (event.target === root) closePhone();
   });
@@ -2641,11 +2644,18 @@ function openPhone() {
   root.addEventListener('click', event => {
     const target = event.target;
     if (target.closest('[data-close]')) return closePhone();
+    if (target.closest('[data-pair]')) return send({ type: 'remotePair' });
     if (target.closest('[data-new-code]')) return send({ type: 'remoteNewCode' });
+    if (target.closest('[data-app-link]') && phoneView?.info?.app?.url) return send({ type: 'openUrl', url: phoneView.info.app.url });
+    // Answers the question the dialog shows; the C# side ignores an answer for any other.
+    const answer = target.closest('[data-pair-answer]');
+    const pairing = phoneView?.info?.pairing;
+    if (answer && !answer.disabled && pairing) return send({ type: 'remotePairAnswer', id: pairing.id, allow: answer.dataset.pairAnswer === 'allow' });
     const copy = target.closest('[data-link]');
     if (copy && copy.dataset.link) {
-      send({ type: 'copy', text: copy.dataset.link });
-      return toast('Pairing link copied. It works once, for 10 minutes.');
+      // Kept out of Windows clipboard history and the cloud clipboard (MainForm.SecretData).
+      send({ type: 'copySecret', text: copy.dataset.link });
+      return toast('Pairing link copied. It works once, for 10 minutes, and stays out of clipboard history.');
     }
     const remove = target.closest('[data-remove-device]');
     const device = remove && phoneView?.info?.devices?.find(item => item.id === remove.dataset.removeDevice);
@@ -2657,24 +2667,40 @@ function openPhone() {
   send({ type: 'remoteDialog' });
 }
 
+// Closing ends the pairing code it showed. A phone that waits for Allow keeps waiting; its question is there when the
+// dialog opens again.
 function closePhone() {
   if (!phoneView) return;
   clearInterval(phoneView.timer);
   phoneView.root.remove();
   phoneView = null;
+  send({ type: 'remoteDialogClosed' });
 }
 
 function phoneInfo(message) {
+  // The Phone button shows a waiting pairing also while the dialog is closed.
+  const waiting = !!message.pairing;
+  if (waiting !== remote.pairWaiting) {
+    remote.pairWaiting = waiting;
+    showPhones();
+  }
   if (!phoneView) return;
   phoneView.info = message;
   renderPhone();
 }
 
+// A phone waits for Allow. The PC never opens the Phone dialog for it (a phone doesn't move the PC's view): a notice,
+// and the question is in the dialog.
+function pairAsked(message) {
+  if (phoneView) return;
+  toast(`${String(message.name || 'A phone')} wants to pair with this PC. Open Phone in the sidebar to allow or deny it.`);
+}
+
 function codeState(info) {
-  if (info.code === 'used') return `This code was used by ${info.pairedName || 'a phone'}.`;
-  if (info.code === 'expired') return 'This code has expired.';
-  if (info.code === 'cancelled') return 'Too many wrong codes. Make a new one.';
-  if (info.code !== 'valid') return 'Press New code to pair a phone.';
+  if (info.code === 'used') return `The last code was used by ${info.pairedName || 'a phone'}.`;
+  if (info.code === 'expired') return 'The last code has expired.';
+  if (info.code === 'cancelled') return 'Too many wrong codes cancelled the last code.';
+  if (info.code !== 'valid') return '';
   const minutes = Math.ceil((Number(info.expiresAt) - Date.now()) / 60000);
   if (!(minutes > 0)) return 'This code has expired.';
   return `Valid for ${minutes} minute${minutes === 1 ? '' : 's'}`;
@@ -2701,8 +2727,6 @@ function renderPhone() {
     return;
   }
   const focused = ['remote', 'awake'].includes(document.activeElement?.name) ? document.activeElement.name : null;
-  const valid = info.code === 'valid' && Number(info.expiresAt) > Date.now();
-  const qr = /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(info.qr || '') ? info.qr : '';
   const devices = Array.isArray(info.devices) ? info.devices : [];
   const addresses = Array.isArray(info.addresses) ? info.addresses : [];
   let html =
@@ -2710,15 +2734,9 @@ function renderPhone() {
     '<span class="switch-track"></span><span>Let my phone watch and drive these agents</span></label>';
   if (info.warning) html += `<p class="phone-warning">${esc(info.warning)}</p>`;
   if (info.error) html += `<p class="phone-error">${esc(info.error)}</p>`;
+  html += appSection(info.app);
   if (info.enabled && info.running) {
-    html += '<div class="phone-pair">' +
-      (qr ? `<div class="qr-card${valid ? '' : ' stale'}"><img src="${esc(qr)}" alt="Pairing code" draggable="false"></div>` : '') +
-      '<div class="phone-facts"><span class="phone-label">PC fingerprint</span>' +
-      `<span class="fingerprint">${esc(info.fingerprint || '')}</span>` +
-      `<span class="phone-valid">${esc(codeState(info))}</span>` +
-      '<span class="muted">Scan the code with Agent Arcade Remote on your phone, and check that it shows the same fingerprint.</span>' +
-      '<div class="phone-actions"><button class="ghost-btn small" data-new-code>New code</button>' +
-      `<button class="ghost-btn small" data-link="${esc(info.link || '')}"${valid && info.link ? '' : ' disabled'}>Copy link</button></div></div></div>`;
+    html += `<div class="phone-section"><span class="phone-label">2. Pair your phone</span>${pairSection(info)}</div>`;
     if (addresses.length) {
       const tailscale = addresses.some(isTailscale);
       html += '<div class="phone-section"><span class="phone-label">Listening on</span>' +
@@ -2741,6 +2759,59 @@ function renderPhone() {
   }
   body.innerHTML = html;
   if (focused) body.querySelector(`[name="${focused}"]`)?.focus();
+}
+
+function pngQr(value) {
+  return /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value || '') ? value : '';
+}
+
+// Step 1: Agent Arcade Remote from the website's download page, by QR code or link.
+function appSection(app) {
+  const qr = pngQr(app?.qr);
+  if (!qr || typeof app.url !== 'string') return '';
+  return '<div class="phone-section"><span class="phone-label">1. Get Agent Arcade Remote (Android 8+)</span><div class="phone-pair">' +
+    `<div class="qr-card app-qr"><img src="${esc(qr)}" alt="Download page of Agent Arcade Remote" draggable="false"></div>` +
+    '<div class="phone-facts"><span class="muted">Scan this with your phone\'s camera to open the download page, and install the app from there.</span>' +
+    `<button class="text-btn link app-link" data-app-link>${esc(app.url.replace(/^https:\/\//, '').replace(/#.*$/, ''))}</button></div></div></div>`;
+}
+
+// Step 2: Pair a phone makes a code and shows its QR code; a phone that used it waits for Allow or Deny.
+function pairSection(info) {
+  if (info.pairing && Number.isSafeInteger(info.pairing.id)) return pairQuestion(info.pairing);
+  const qr = pngQr(info.qr);
+  if (info.code === 'valid' && Number(info.expiresAt) > Date.now() && qr && info.link) {
+    return '<div class="phone-pair">' +
+      `<div class="qr-card"><img src="${esc(qr)}" alt="Pairing code" draggable="false"></div>` +
+      '<div class="phone-facts"><span class="phone-label">PC fingerprint</span>' +
+      `<span class="fingerprint">${esc(info.fingerprint || '')}</span>` +
+      `<span class="phone-valid">${esc(codeState(info))}</span>` +
+      '<span class="muted">Scan the code with Agent Arcade Remote on your phone, and check that it shows the same fingerprint. ' +
+      'This PC then asks you to allow the phone.</span>' +
+      '<div class="phone-actions"><button class="ghost-btn small" data-new-code>New code</button>' +
+      `<button class="ghost-btn small" data-link="${esc(info.link)}">Copy link</button></div></div></div>`;
+  }
+  const last = codeState(info);
+  return '<div class="phone-facts">' + (last ? `<span class="muted">${esc(last)}</span>` : '') +
+    '<span class="muted">Shows a QR code to scan with Agent Arcade Remote. It works once, for 10 minutes, and this PC asks you before it pairs the phone.</span>' +
+    '<div class="phone-actions"><button class="ghost-btn small" data-pair>Pair a phone</button></div></div>';
+}
+
+// Allow works only a moment after the question shows, so a click meant for the button that was there can't pair a
+// phone. Nothing is focused or preselected: Enter alone never pairs one.
+const PAIR_ARM_MS = 800;
+
+function pairQuestion(pairing) {
+  if (phoneView.asked?.id !== pairing.id) {
+    phoneView.asked = { id: pairing.id, at: Date.now() };
+    setTimeout(renderPhone, PAIR_ARM_MS + 50);
+  }
+  const armed = Date.now() - phoneView.asked.at >= PAIR_ARM_MS;
+  return '<div class="pair-ask"><span class="phone-label">A phone wants to pair with this PC</span>' +
+    `<span class="device-name">${esc(pairing.name)}</span>` +
+    (pairing.client ? `<span class="muted">${esc(pairing.client)}</span>` : '') +
+    '<span class="muted">Allow it only if it is your own phone and you just scanned the code. It waits up to a minute.</span>' +
+    '<div class="phone-actions"><button class="ghost-btn small" data-pair-answer="deny">Deny</button>' +
+    `<button class="primary-btn small" data-pair-answer="allow"${armed ? '' : ' disabled'}>Allow</button></div></div>`;
 }
 
 // Tailscale hands out 100.64.0.0/10 addresses.
@@ -3066,6 +3137,9 @@ if (bridge) {
         break;
       case 'remoteInfo':
         quietly(() => phoneInfo(message));
+        break;
+      case 'remotePairAsk':
+        quietly(() => pairAsked(message));
         break;
       case 'remoteCancel':
         quietly(() => cancelJobs(message));
