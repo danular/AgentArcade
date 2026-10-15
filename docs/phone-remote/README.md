@@ -44,7 +44,7 @@ Then paste these into the Gemini chat in **Agent Mode**, one at a time. After ea
 
 | Prompt | What it adds |
 | --- | --- |
-| [step3a-Agent-Mode-exact-look.txt](step3a-Agent-Mode-exact-look.txt) | The desktop app's icons, agent logos, logo and terminal font, then a check of every screen against the mockups (attach them again) |
+| [step3a-Agent-Mode-exact-look.txt](step3a-Agent-Mode-exact-look.txt) | The desktop app's icons, agent monograms, logo and terminal font, then a check of every screen against the mockups (attach them again) |
 | [step3b-Agent-Mode-connect-to-PC.txt](step3b-Agent-Mode-connect-to-PC.txt) | Pairing by QR code or link, pinned HTTPS, the WebSocket, reconnecting, Android 17's local network permission |
 | [step3c-Agent-Mode-live-chat.txt](step3c-Agent-Mode-live-chat.txt) | The live terminal, typing, keys, approvals, quick prompts, start / stop / resume |
 | [step3d-Agent-Mode-alerts.txt](step3d-Agent-Mode-alerts.txt) | Notifications, staying connected in the background |
@@ -97,7 +97,7 @@ Progress comes from what the agents already show: their live status line (`✻ B
 | `step3a` … `step3e` | Follow-up prompts for Gemini's Agent Mode |
 | `REMOTE_API.md` | The contract between the PC and the phone |
 | `mockups/` | The design: `00-overview.png` and one PNG per screen (made from `mockups.html`) |
-| `android-res/` | Android resources made from the desktop app: 39 line icons, 5 agent logo marks, the logo, Cascadia Mono |
+| `android-res/` | Android resources made from the desktop app: 39 line icons, the logo, Cascadia Mono (agents show monograms, not vendor logos) |
 | `android-extras/` | The launcher icon source and the Cascadia Mono licence |
 | `tools/make-assets.ps1` | Rebuilds `android-res/` and `mockups/marks.js` from `web/app.js` |
 | `tools/render-mockups.ps1` | Renders the mockups to PNG with Microsoft Edge |

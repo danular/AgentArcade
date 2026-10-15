@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Agent Arcade Remote mockups</title>
-<!-- Design mockups for the Android app. Colors, icons and marks come from the desktop app (web/app.css, web/app.js).
+<!-- Design mockups for the Android app. Colors, icons and agent monograms come from the desktop app (web/app.css, web/app.js).
      Render with tools\render-mockups.ps1; ?s=<id> shows one screen at phone size. -->
 <script src="marks.js"></script>
 <style>
@@ -45,10 +45,8 @@ b { font-weight: 600; }
 .dot.wait { background: var(--amber); box-shadow: 0 0 0 3px rgba(242, 184, 75, .16); }
 .dot.off { background: #4a4a54; }
 .dot.idle { background: #6b6b78; }
-.avatar { --c: #888; display: inline-grid; flex: none; place-items: center; width: 22px; height: 22px; color: #fff; background: color-mix(in srgb, var(--c) 82%, #000); border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
-.avatar svg { width: 14px; height: 14px; }
-.avatar.lg { width: 36px; height: 36px; border-radius: 10px; }
-.avatar.lg svg { width: 22px; height: 22px; }
+.avatar { --c: #888; display: inline-grid; flex: none; place-items: center; width: 22px; height: 22px; font-size: 10.5px; font-weight: 700; color: #fff; background: color-mix(in srgb, var(--c) 82%, #000); border-radius: 7px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12); }
+.avatar.lg { width: 36px; height: 36px; font-size: 13.5px; border-radius: 10px; }
 .count { flex: none; padding: 0 7px; font-size: 11px; line-height: 18px; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border-2); border-radius: 999px; }
 .count.live { color: var(--green); background: rgba(62, 207, 127, .08); border-color: rgba(62, 207, 127, .35); }
 .plan-tag { flex: none; padding: 0 5px; font-size: 10px; line-height: 16px; letter-spacing: .5px; text-transform: uppercase; color: var(--muted); border: 1px solid var(--border-2); border-radius: 5px; }
@@ -537,7 +535,7 @@ b { font-weight: 600; }
 </div>
 <script>
 'use strict';
-const ICONS = window.ICONS, FILLED = window.FILLED_ICONS, LOGOS = window.BRAND_LOGOS, COLORS = window.BRAND_COLORS;
+const ICONS = window.ICONS, FILLED = window.FILLED_ICONS, MONOGRAMS = window.MONOGRAMS, COLORS = window.BRAND_COLORS;
 
 function icon(name, size) {
   const filled = FILLED.includes(name);
@@ -573,7 +571,7 @@ for (const el of document.querySelectorAll('[data-ic]')) {
 for (const el of document.querySelectorAll('[data-agent]')) {
   const cmd = el.dataset.agent;
   el.style.setProperty('--c', COLORS[cmd] || '#888');
-  el.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="${LOGOS[cmd]}"/></svg>`;
+  el.textContent = MONOGRAMS[cmd] || '?';
 }
 
 const screen = new URLSearchParams(location.search).get('s');
