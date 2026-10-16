@@ -2,7 +2,7 @@
    the whole window (the site uses ~11px, the 1080p film ~17px). Colours are the app's own (web/app.css). */
 .ck, .ckp {
   --ck-bg: #0c0c0e; --ck-side: #111114; --ck-panel: #141418; --ck-raised: #1a1a1f; --ck-border: #25252c; --ck-border-2: #32323b;
-  --ck-text: #ececf1; --ck-muted: #9a9aa6; --ck-faint: #63636f; --ck-term: #0f0f12;
+  --ck-text: #ececf1; --ck-muted: #9a9aa6; --ck-faint: #82828e; --ck-term: #0f0f12;
   --ck-orange: #f08a3c; --ck-red: #f26b6b; --ck-green: #3ecf7f; --ck-amber: #f2b84b; --ck-grey: #6b6b78; --ck-blue: #8fb4ff;
   --ck-mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
   --ck-sans: Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;

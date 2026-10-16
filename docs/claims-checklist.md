@@ -80,6 +80,38 @@ The website build can't drift from the release: `website/build.py` reads the ver
 | EUR 30.25 per month / EUR 302.50 per year incl. 21% Dutch VAT; EUR 250 per year excl. VAT | pricing.html:76–77 | 25 × 1.21 = 30.25; 250 × 1.21 = 302.50; the Dutch standard rate is 21%: https://www.government.nl/topics/vat/vat-rates-and-exemptions |
 | Source-available under the PolyForm Noncommercial License 1.0.0 | legal.html:19; README.md:111 | LICENSE.md:5–7 |
 
+## Known gaps
+
+The README's Known gaps section says plainly what Agent Arcade doesn't do. Change a row when a gap closes.
+
+| Claim | Where | Proof |
+| --- | --- | --- |
+| Windows 11 on x64 only; Windows 10 and Windows on ARM untested; no Mac or Linux version | README.md (Known gaps); download.html:80; index.html:249 | AgentArcade.csproj (`net10.0-windows`); release.ps1 builds only `AgentArcade-win-x64.zip` |
+| The phone app is Android only (8.0 or newer) | README.md (Known gaps); index.html:249 | docs/phone-remote/README.md (minimum SDK 26); there is no iOS project |
+| No worktree isolation: agents in one project share its folder | README.md (Known gaps); index.html:248 | No `git worktree` call anywhere: `grep -rni worktree *.cs web/*.js` finds only the git-config checks in Panel.cs (`core.worktree`) |
+| Agents don't survive an app restart; History can resume their chats | README.md (Known gaps) | Pty.cs `PtySession.Dispose` (kills the agent's process tree when its pane closes); History: Backend.cs `ChatRecord` |
+| Status dots, alerts and phone approvals come from reading the screen and the agents' notifications | README.md (Known gaps); index.html:81 | web/remote.js (`APPROVAL`, `INTERRUPT`); web/app.js (`APPROVAL`, kept identical to remote.js) |
+| Not code-signed yet | README.md (Known gaps) | See "Not code-signed" under Download and install |
+
+## How it differs
+
+The README's "How it differs" section and the "Why not X?" block on index.html (`#why-not`) make one claim per product about someone else's product. Every source below is that product's own site, docs or repository, and was read on 16 Oct 2026; read them again on the day the site block is published and change the dates in README.md and index.html. Each line concedes where the other product is ahead. Don't call Agent Arcade "the only" or "the first", and don't write that it has no relay: Tailscale can relay (see Phone remote).
+
+| Claim | Where | Source (read 16 Oct 2026) |
+| --- | --- | --- |
+| Agent Arcade runs each vendor's own CLI, unmodified, in a Windows terminal pane (ConPTY) | README.md (How it differs); index.html (`#why-not`) | Pty.cs (`CreatePseudoConsole`, then `CreateProcessW` with the agent's own command line); Backend.cs `AgentStore.Defaults()` (the commands `claude`, `codex`, `gemini`, `copilot`, `cursor-agent`) |
+| It never signs in itself, so it works with a subscription, an API key, Amazon Bedrock or Google Cloud | README.md (How it differs); index.html (`#why-not`) | Agents inherit your environment: MainForm.cs `SessionEnv` adds only `COLORTERM` and `NoDefaultCurrentDirectoryInExePath`, and `AccountStore.EnvFor` only the account's config folder; status comes from the terminal (web/remote.js) |
+| Happy: iOS, Android and web apps; a desktop app for macOS, Windows and Linux; sync through its end-to-end encrypted relay server | README.md; index.html (`#why-not`) | https://github.com/slopus/happy ("The mobile app (iOS, Android, web), the original CLI, and the relay server"; "The desktop app for macOS, Windows, and Linux"; happy-server is "the relay server for encrypted sync"; "End-to-end encrypted mobile app") |
+| Happy's original CLI wraps Claude Code and Codex; its desktop app runs Happy's own agent runtime on Claude, Codex and Grok subscriptions | README.md; index.html (`#why-not`) | https://github.com/slopus/happy ("The original CLI wraps the Claude Code and Codex harnesses"; happy-agent is "the open-source agent runtime the desktop app runs on"; "Sign in with the Claude, Codex, and Grok subscriptions") |
+| Paseo: native iOS and Android apps, desktop for macOS, Windows and Linux, a web app, a worktree per agent, voice, and an optional end-to-end encrypted relay, a direct connection on your network or your own tunnel such as Tailscale | README.md; index.html (`#why-not`) | https://paseo.sh/ (App Store, Google Play, Desktop, Web App; "the optional end-to-end encrypted relay, connect directly over your local network, or use your own tunnel"; "Voice runs locally on your device by default"); https://paseo.sh/docs/why ("The desktop app is available on macOS, Windows, and Linux"); https://github.com/getpaseo/paseo ("each in its own worktree") |
+| Paseo shows agents in its own interface, through its own integrations or ACP | README.md; index.html (`#why-not`) | https://paseo.sh/ ("custom implementations for Claude, Codex, OpenCode, Pi, OMP, Antigravity, and Muse Code", "supports many more via ACP"); https://github.com/getpaseo/paseo ("One interface for Claude Code, Codex, Copilot, ...") |
+| Coucou: Mac notch, or the top of the screen on Windows and Linux; watches agents through their hooks; iPhone app in TestFlight beta with Lock Screen and Dynamic Island; an Android app by a contributor talks to Coucou on Windows or Linux over Wi-Fi; it answers approvals and questions | README.md; index.html (`#why-not`) | https://github.com/Louis-CFM/coucou (README: "lives in your Mac's notch — or at the top of your screen on Windows and Linux"; hook payloads; "Join the TestFlight beta"; "Live Activity and Dynamic Island"; Coucou for Android "built by Rhytam Biswas", "linked to Coucou on Windows or Linux over your Wi-Fi") |
+| Warp: a terminal for macOS, Windows and Linux (x64 and ARM64) that recognises Claude Code, Codex, GitHub Copilot CLI, Cursor CLI, Gemini CLI and more, with a rich input editor and code review comments | README.md; index.html (`#why-not`) | https://docs.warp.dev/agents/cli-agents/overview; https://docs.warp.dev/getting-started/quickstart/installation-and-setup/ |
+| Warp's Remote Control uploads the session to Warp's cloud and opens in any browser, phones included | README.md; index.html (`#why-not`) | https://docs.warp.dev/agents/cli-agents/remote-control/ ("uploads the session state to the cloud and generates a shareable link"; "Open the shared link in any browser"; "on your phone or tablet browser") |
+| Claude Code Remote Control: the Claude app for iOS and Android and claude.ai/code; a git worktree per session in server mode (`--spawn worktree`) | README.md; index.html (`#why-not`) | https://code.claude.com/docs/en/remote-control |
+| Claude Code Remote Control needs a Pro, Max, Team or Enterprise plan; not API keys, Amazon Bedrock, Google Cloud or Microsoft Foundry | README.md; index.html (`#why-not`) | https://code.claude.com/docs/en/remote-control, Requirements ("API keys are not supported"; "Amazon Bedrock, Google Cloud's Agent Platform, or Microsoft Foundry") |
+| Claude Code Remote Control goes through Anthropic's servers, which store the session transcript | README.md; index.html (`#why-not`) | https://code.claude.com/docs/en/remote-control ("registers with the Anthropic API and polls for work"; "the session transcript ... is stored on Anthropic servers") |
+
 ## Retired claims
 
 `.github/workflows/pages.yml` fails when one of the phrases in brackets appears in `website/site` or the README.

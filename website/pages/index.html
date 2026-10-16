@@ -11,7 +11,7 @@ cockpit: yes
       <h1>Run every AI coding agent side by side on Windows<span class="h-dot" aria-hidden="true"></span></h1>
       <p class="lead">Claude Code, Codex, GitHub Copilot CLI, Cursor and Gemini CLI (API key or Code Assist), each in its own live terminal pane, with a status dot that shows which one is working, which is done and which needs you. Watch and approve them from your Android phone over Wi-Fi or Tailscale, with no Agent Arcade server in between.</p>
       <div class="ctas" style="justify-content:center">
-        <a class="btn btn-accent" href="{{download}}">{{download_icon}}Download for Windows, free</a>
+        <a class="btn btn-accent" href="download.html">{{download_icon}}Download for Windows, free</a>
         <a class="btn btn-ghost" href="#film" data-film="assets/video/agent-arcade-promo.mp4" data-poster="assets/video/poster.jpg" data-captions="assets/video/agent-arcade-promo.vtt">▶ Watch the 30-second film</a>
       </div>
       <p class="meta">v{{version}} · Windows 11 x64 · Free for personal use · Pro EUR 25/user/mo excl. VAT</p>
@@ -217,14 +217,14 @@ cockpit: yes
       <p class="lead">One rule: if you're paid for the work, choose Pro.</p></div>
     <div class="plans">
       <div class="card plan">
-        <p class="eyebrow">Personal</p>
+        <h3 class="eyebrow">Personal</h3>
         <p class="price">EUR 0 <small>no time limit</small></p>
         <p class="muted">Learning, hobby projects, unpaid open-source work and your own content.</p>
         <ul><li>Every agent, every pane, every status dot</li><li>Side panel, history, multiple accounts</li><li>The Android remote</li></ul>
-        <div class="ctas"><a class="btn btn-primary" href="{{download}}">Download free</a></div>
+        <div class="ctas"><a class="btn btn-primary" href="download.html">Download free</a></div>
       </div>
       <div class="card plan pro-edge">
-        <p class="eyebrow">Pro <span class="pro-pill">For work</span></p>
+        <h3 class="eyebrow">Pro <span class="pro-pill">For work</span></h3>
         <p class="price">EUR 25 <small>per user / month, excl. VAT</small></p>
         <p class="muted">Freelancers, employees, agencies and companies.</p>
         <ul><li>Everything in Personal, with a commercial licence</li><li>{{voice}}, when it's ready</li><li>VAT invoices</li></ul>
@@ -252,11 +252,30 @@ cockpit: yes
   </div>
 </section>
 
+<section class="section" id="why-not" aria-labelledby="why-not-h">
+  <div class="wrap">
+    <div class="sec-head"><p class="eyebrow">Why not X?</p><h2 id="why-not-h">How it differs from what you may already use</h2>
+      <p class="lead">Agent Arcade runs each vendor's own CLI, unmodified, in a Windows terminal pane, and its Android app connects only to your PC. It reads the terminal and never signs in to anything itself, so it works the same with a subscription, an API key, Amazon Bedrock or Google Cloud, and with Codex, GitHub Copilot CLI, Cursor and Gemini CLI as well as Claude Code.</p>
+      <p class="muted small">Checked on 16 Oct 2026 against each product's own site, docs or repository, linked below. Where they're ahead, we say so.</p></div>
+    <div class="tbl">
+      <table class="ledger">
+        <caption class="sr-only" style="position:absolute;left:-9999px">How Agent Arcade differs from Happy, Paseo, Coucou, Warp and Claude Code Remote Control</caption>
+        <tr><th scope="row"><a href="https://github.com/slopus/happy">Happy</a></th><td>Phone apps for iOS and Android, a web client and a desktop app for macOS, Windows and Linux, synced through its end-to-end encrypted relay server: ahead on iPhone, the browser and reaching you away from home without a VPN. Its original CLI wraps Claude Code and Codex, and its desktop app runs Happy's own agent runtime on your Claude, Codex and Grok subscriptions; Agent Arcade runs each vendor's CLI as it is, Copilot, Cursor and Gemini CLI included, with no Agent Arcade server in between.</td></tr>
+        <tr><th scope="row"><a href="https://paseo.sh/">Paseo</a></th><td>Native iOS and Android apps, a desktop app for macOS, Windows and Linux, a web app, a git worktree per agent, voice, and an optional end-to-end encrypted relay, a direct connection on your network or your own tunnel such as Tailscale: ahead on iPhone, Mac and Linux, worktree isolation and setup away from home. It shows agents in its own interface, through its own integrations or ACP; Agent Arcade shows each CLI's own terminal screen, on the PC and on the phone.</td></tr>
+        <tr><th scope="row"><a href="https://github.com/Louis-CFM/coucou">Coucou</a></th><td>Lives in the Mac's notch (or the top of the screen on Windows and Linux) and watches agents that run in your own terminals, through their hooks, with an iPhone app in TestFlight beta on the Lock Screen and Dynamic Island, and an Android app by a contributor that talks to Coucou on Windows or Linux over your Wi-Fi: ahead on the Mac, the iPhone and fitting the terminal you already use. It watches agents and answers their approvals and questions; Agent Arcade runs the agents in its own panes, so the phone also reads the whole terminal, types to an agent, and starts, stops and resumes agents.</td></tr>
+        <tr><th scope="row"><a href="https://docs.warp.dev/agents/cli-agents/overview">Warp</a></th><td>A full terminal for macOS, Windows and Linux (x64 and ARM64) that recognises Claude Code, Codex, GitHub Copilot CLI, Cursor CLI, Gemini CLI and more, with a rich input editor and code review comments, and its <a href="https://docs.warp.dev/agents/cli-agents/remote-control/">Remote Control</a> opens a session in any browser, an iPhone's included: ahead as a terminal and on platforms. That Remote Control uploads the session to Warp's cloud; Agent Arcade's phone app gets agent screens straight from your PC.</td></tr>
+        <tr><th scope="row"><a href="https://code.claude.com/docs/en/remote-control">Claude Code Remote Control</a></th><td>Anthropic's own, built into Claude Code, with the Claude app for iOS and Android, claude.ai/code in any browser, and a git worktree per session in server mode: ahead for Claude subscribers, with nothing extra to install. It needs a Pro, Max, Team or Enterprise plan (not an API key, Amazon Bedrock, Google Cloud or Microsoft Foundry), goes through Anthropic's servers, which store the session transcript, and covers Claude Code only; Agent Arcade also works for API-key, Bedrock and Google Cloud users, and with Codex, Copilot, Cursor and Gemini CLI.</td></tr>
+      </table>
+    </div>
+    <p class="muted small" style="margin-top:16px">Agent Arcade's own gaps: Windows 11 on x64 PCs only, an Android phone app only, no worktree isolation, agents stop when the app closes, status read from the screen, and not code-signed yet. The <a href="{{github}}#known-gaps">README</a> lists them.</p>
+  </div>
+</section>
+
 <section class="final">
   <div class="wrap">
     <h2 style="font-size:clamp(2rem,1.3rem+2.6vw,3.2rem)">What are we building today<span class="h-dot" aria-hidden="true"></span></h2>
     <p class="lead">Free for personal use. Pro for work; voice dictation is coming.</p>
-    <div class="ctas" style="justify-content:center"><a class="btn btn-accent" href="{{download}}">{{download_icon}}Download for Windows, free</a><a class="btn btn-ghost" href="{{github}}">View the source</a></div>
+    <div class="ctas" style="justify-content:center"><a class="btn btn-accent" href="download.html">{{download_icon}}Download for Windows, free</a><a class="btn btn-ghost" href="{{github}}">View the source</a></div>
   </div>
 </section>
 <script>
