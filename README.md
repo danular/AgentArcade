@@ -2,7 +2,7 @@
 
 # Agent Arcade
 
-A Windows app that runs your AI coding agents side by side on one project: Claude Code, Codex (ChatGPT), GitHub Copilot CLI, Cursor and Gemini CLI (API key or Code Assist), each in its own pane inside the app.
+A Windows app that runs your AI coding agents side by side on one project: Claude Code, Codex (ChatGPT), GitHub Copilot CLI, Cursor, Antigravity CLI and Gemini CLI (API key or Code Assist), each in its own pane inside the app.
 
 Free for personal use. Professional use needs Agent Arcade Pro (EUR 25 per user per month excl. VAT); see [LICENSING.md](LICENSING.md). Pro checkout isn't open yet, and the voice dictation app planned for Pro is still coming.
 
@@ -21,7 +21,7 @@ To update, close Agent Arcade (its agents stop), extract the new zip over the ol
 Then click **Install** in the sidebar for any agent you don't have yet. Building it yourself is described under [Build and install](#build-and-install).
 
 - Each agent signs in with its own official login. Agent Arcade never reads or stores passwords or login tokens.
-- Gemini CLI needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence: Google stopped serving it for personal Google sign-ins (free, Google AI Pro and Ultra) on 18 Jun 2026.
+- Gemini CLI needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence: Google stopped serving it for personal Google sign-ins (free, Google AI Pro and Ultra) on 18 Jun 2026. With a personal Google account, use Antigravity CLI (`agy`), Google's replacement: it signs in with Google when it starts.
 - Extra accounts (for example a second Claude subscription) get their own folder, and the sidebar shows which email each account uses.
 - Workspaces are your project folders. Agents always start in the selected one. **+** adds a folder you already have; **New project** (the folder icon next to it) makes an empty folder next to your current project and opens it.
 - Each pane shows the chat's title: the one the agent gives it, or else your first typed message (pasted text and anything that looks like a key don't count). Double-click the title to rename it.
@@ -66,7 +66,7 @@ How it stays safe:
 
 - Windows 11 (it includes the WebView2 runtime the window needs)
 - [.NET 10 SDK](https://dotnet.microsoft.com/download) to build. It includes the .NET and ASP.NET Core runtimes the app needs; on a PC without the SDK, install the .NET 10 Desktop Runtime and the ASP.NET Core 10 Runtime.
-- The agents themselves; the app can install them for you (Install in the sidebar). Codex, Gemini and Copilot need [Node.js](https://nodejs.org); Cursor installs with its own PowerShell installer.
+- The agents themselves; the app can install them for you (Install in the sidebar). Claude Code, Codex, Cursor and Antigravity CLI install with their vendor's PowerShell installer, GitHub Copilot CLI with WinGet (it brings PowerShell 7 along), and Gemini CLI with npm, which needs [Node.js](https://nodejs.org) 20 or newer. Install checks first and, when something is missing, says what and links to it instead of running.
 
 ## Build and install
 
