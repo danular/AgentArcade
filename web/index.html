@@ -9,58 +9,53 @@
 </head>
 <body>
   <div class="app">
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="Sidebar">
       <div class="brand">
-        <span class="logo" id="logo"></span>
-        <span>Agent Arcade</span>
+        <span class="mascot-slot" id="mascot-slot"></span>
+        <span class="brand-name">Agent Arcade</span>
       </div>
+      <button class="new-btn" id="side-new-agent" type="button" title="New agent (Ctrl+N)" aria-haspopup="menu"></button>
+      <nav class="side-nav" aria-label="Main">
+        <button class="nav-item" id="nav-home" type="button"></button>
+      </nav>
       <div class="side-scroll">
-        <div class="side-head">
-          <span>Workspaces</span>
-          <span class="side-head-actions">
-            <button class="icon-btn" id="new-project" title="New project"></button>
-            <button class="icon-btn" id="add-workspace" title="Add a project folder"></button>
-          </span>
+        <div class="side-sec">
+          <span id="projects-label">Projects</span>
+          <button class="sec-btn" id="add-project" type="button" title="Add a folder or make a new project" aria-label="Add a folder or make a new project" aria-haspopup="menu"></button>
         </div>
-        <nav id="workspaces"></nav>
-        <div class="side-head">
-          <button class="section-toggle" id="toggle-agents" title="Hide agents"></button>
-          <span class="side-head-actions">
-            <button class="icon-btn" id="refresh" title="Check accounts again"></button>
-            <button class="icon-btn" id="add-account" title="Add account"></button>
-          </span>
+        <nav id="workspaces" aria-labelledby="projects-label"></nav>
+        <div class="side-sec">
+          <span id="recent-label">Recent</span>
+          <button class="sec-btn" id="search-recent" type="button" title="Search chats" aria-label="Search chats" aria-expanded="false" aria-controls="recent-search"></button>
         </div>
-        <nav id="agents"></nav>
+        <div class="recent-search" hidden>
+          <input id="recent-search" type="search" placeholder="Search titles, agents and projects" spellcheck="false" autocomplete="off" aria-label="Search chats">
+        </div>
+        <div id="recent" role="list" aria-labelledby="recent-label"></div>
       </div>
       <div class="update-note" id="update-note" hidden></div>
       <div class="side-foot">
-        <button class="text-btn" id="edit-agents">Edit agent list</button>
-        <button class="text-btn" id="text-size">Text size</button>
-        <button class="text-btn" id="phone">Phone</button>
-        <button class="text-btn app-version" id="app-version" title="Version and update notice"></button>
+        <div class="foot-state" id="foot-state" role="status"></div>
+        <button class="icon-btn foot-btn" id="phone" type="button"></button>
+        <button class="icon-btn foot-btn" id="settings" type="button" title="Settings (Ctrl+,)" aria-label="Settings" aria-haspopup="dialog"></button>
       </div>
     </aside>
     <main class="main">
       <header class="topbar">
         <div class="topbar-left">
-          <button class="icon-btn" id="toggle-sidebar" title="Hide the sidebar"></button>
-          <div class="crumb">
-            <span class="crumb-name" id="ws-name"></span>
-            <span class="crumb-path" id="ws-path"></span>
-          </div>
+          <button class="icon-btn" id="toggle-sidebar" type="button" title="Hide the sidebar" aria-label="Hide the sidebar"></button>
+          <h1 class="crumb-name ellipsis" id="ws-name"></h1>
+          <span class="git-chip" id="git-chip" hidden></span>
         </div>
         <div class="top-actions">
-          <button class="ghost-btn" id="open-unity" title="Open the project in Unity" hidden></button>
-          <button class="ghost-btn" id="open-folder" title="Open the project folder"></button>
-          <button class="ghost-btn" id="images" title="The images in this project, to drag onto a pane (in the side panel)"></button>
-          <button class="ghost-btn" id="sync" title="Shared instructions for every agent"></button>
-          <button class="ghost-btn" id="history" title="Earlier chats in your projects"></button>
-          <button class="primary-btn" id="new-agent" title="New agent"></button>
-          <button class="icon-btn" id="toggle-panel" title="Show the side panel"></button>
+          <button class="primary-btn" id="new-agent" type="button" title="New agent (Ctrl+N)" aria-label="New agent" aria-haspopup="menu"></button>
+          <button class="icon-btn top-icon" id="project-menu" type="button" title="Project: folder, images, shared instructions, Windows Terminal, chat history" aria-label="Project menu" aria-haspopup="menu"></button>
+          <button class="icon-btn top-icon" id="toggle-panel" type="button" title="Show the side panel" aria-label="Show the side panel"></button>
         </div>
       </header>
       <section class="stage">
-        <div class="empty" id="empty"></div>
+        <div class="home" id="home" hidden></div>
+        <div class="empty" id="empty" hidden></div>
         <div class="grid" id="grid" hidden></div>
       </section>
     </main>
@@ -73,15 +68,15 @@
           <button class="panel-tab" role="tab" data-tab="changes">Changes</button>
           <button class="panel-tab" role="tab" data-tab="console">Console</button>
         </div>
-        <button class="icon-btn small" id="panel-close" title="Hide the side panel"></button>
+        <button class="icon-btn small" id="panel-close" title="Hide the side panel" aria-label="Hide the side panel"></button>
       </div>
       <section class="panel-view" data-view="preview">
         <form class="panel-bar" id="preview-form">
           <input id="preview-address" list="preview-docs" spellcheck="false" autocomplete="off"
             placeholder="localhost:5173, or a page in the project like index.html">
           <datalist id="preview-docs"></datalist>
-          <button type="button" class="icon-btn small" id="preview-reload" title="Reload"></button>
-          <button type="button" class="icon-btn small" id="preview-external" title="Open in your browser"></button>
+          <button type="button" class="icon-btn small" id="preview-reload" title="Reload" aria-label="Reload"></button>
+          <button type="button" class="icon-btn small" id="preview-external" title="Open in your browser" aria-label="Open in your browser"></button>
         </form>
         <div class="preview-stage">
           <!-- No allow-top-navigation: a previewed page can never navigate the app, which would stop every agent. -->
@@ -98,7 +93,7 @@
         <div class="panel-bar">
           <span class="images-tip ellipsis">Drag an image onto a pane to paste its path into that agent's prompt.</span>
           <span class="images-count" id="images-count"></span>
-          <button type="button" class="icon-btn small" id="images-refresh" title="Look again"></button>
+          <button type="button" class="icon-btn small" id="images-refresh" title="Look again" aria-label="Look again"></button>
         </div>
         <div class="images-grid" id="images-grid"></div>
       </section>
@@ -106,7 +101,7 @@
         <div class="panel-bar">
           <span class="changes-branch ellipsis" id="changes-branch"></span>
           <span class="changes-count" id="changes-count"></span>
-          <button type="button" class="icon-btn small" id="changes-refresh" title="Look again"></button>
+          <button type="button" class="icon-btn small" id="changes-refresh" title="Look again" aria-label="Look again"></button>
         </div>
         <div class="changes-list" id="changes-list"></div>
         <div class="changes-diff" id="changes-diff"></div>
@@ -114,7 +109,7 @@
       <section class="panel-view" data-view="console" hidden>
         <div class="panel-bar">
           <span class="console-folder ellipsis" id="console-folder"></span>
-          <button type="button" class="icon-btn small" id="console-restart" title="New console in this project"></button>
+          <button type="button" class="icon-btn small" id="console-restart" title="New console in this project" aria-label="New console in this project"></button>
         </div>
         <div class="console-term" id="console-term"></div>
       </section>
@@ -127,6 +122,10 @@
   <script src="vendor/addon-web-links.js"></script>
   <script src="vendor/addon-webgl.js"></script>
   <script src="remote.js"></script>
+  <!-- The mascot and the MCP servers view come in their own files; the page works without them. -->
+  <script src="mascot.js"></script>
+  <script src="mcp.js"></script>
+  <script src="home.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

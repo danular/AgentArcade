@@ -55,20 +55,26 @@ const ICONS = {
   image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
   sidebar: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
   panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
+  home: '<rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
+  phone: '<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18h3"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  branch: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="7" r="2"/><path d="M6 7v10M18 9c0 5-6 4-11.2 8.6"/>',
 };
 
 const LOGO = '<img src="icon.png" alt="" draggable="false">';
 
-// Folded sidebar parts survive restarts: 'agents' for the agent list, 'ws:<path>' for a workspace's panes.
-const folded = new Set(JSON.parse(localStorage.getItem('folded') || '[]'));
-const isFolded = key => folded.has(key.toLowerCase());
-function toggleFold(key) {
-  key = key.toLowerCase();
-  if (!folded.delete(key)) folded.add(key);
-  localStorage.setItem('folded', JSON.stringify([...folded]));
-}
+// The website, the code and the changelog, for Settings → About.
+const LINKS = {
+  website: 'https://danular.github.io/AgentArcade/',
+  github: 'https://github.com/danular/AgentArcade',
+  changelog: 'https://danular.github.io/AgentArcade/changelog.html',
+};
 
 let state = { workspace: '', workspaces: [], agents: [], accounts: [] };
+// What the main area shows: 'home' (every project, also the start screen) or 'project' (the panes of state.workspace).
+// Only the PC changes it: a phone's actions never move the view.
+let view = 'home';
 let history = [];
 const sessions = new Map();
 // Pane ids start at a random number each run, so a phone screen or alert from before a restart can't reach another
@@ -277,79 +283,67 @@ function modal({ title, body, confirm = 'OK', cancel = 'Cancel', danger = false,
 
 function render() {
   renderWorkspaces();
-  renderAgents();
   renderTopbar();
   renderPanes();
+  renderRecent();
+  renderHome();
+  renderAgentsTab();
+  shellStatus(true);
 }
 
+// ---------- sidebar: projects ----------
+
+// Each project with a status dot per running agent (the shapes of DOTS); a dot shows its pane when clicked.
 function renderWorkspaces() {
   $('#workspaces').innerHTML = state.workspaces.map(workspace => {
-    const active = same(workspace.path, state.workspace);
-    const list = sessionsIn(workspace.path);
-    const shut = isFolded('ws:' + workspace.path);
-    const children = list.length && !shut
-      ? `<div class="ws-sessions">${list.map(session =>
-          `<button class="ws-session" data-session="${session.id}">${dotHtml(session.dotStatus || (session.running ? 'idle' : 'ended'))}` +
-          `<span class="ellipsis">${esc(titleOf(session))}</span></button>`).join('')}</div>`
-      : '';
-    const fold = list.length
-      ? `<span class="fold ${shut ? 'shut' : ''}" data-fold-workspace="${esc(workspace.path)}" title="${shut ? 'Show' : 'Hide'} its agents">${icon('chevron', 13)}</span>`
-      : '<span class="fold-space"></span>';
-    return `<div class="ws ${active ? 'active' : ''}">` +
-      `<button class="ws-row" data-path="${esc(workspace.path)}" title="${esc(workspace.path)}">${fold}` +
+    const active = view === 'project' && same(workspace.path, state.workspace);
+    const running = sessionsIn(workspace.path).filter(session => session.running);
+    return `<div class="ws-row${active ? ' active' : ''}">` +
+      `<button class="ws-main" type="button" data-path="${esc(workspace.path)}" title="${esc(workspace.path)}"${active ? ' aria-current="page"' : ''}>` +
       `<span class="ws-icon">${icon(workspace.unity ? 'cube' : 'folder', 15)}</span>` +
-      `<span class="ellipsis">${esc(workspace.name)}</span>` +
-      (workspace.exists ? '' : '<span class="tag-warn">missing</span>') +
-      (list.length ? `<span class="count">${list.length}</span>` : '') +
-      `<span class="row-more" data-workspace-menu="${esc(workspace.path)}" title="More">${icon('more', 15)}</span>` +
-      `</button>${children}</div>`;
+      `<span class="ws-name ellipsis">${esc(workspace.name)}</span>` +
+      (workspace.exists ? '' : '<span class="tag-warn">missing</span>') + '</button>' +
+      dotsHtml(running) +
+      `<button class="row-more" type="button" data-workspace-menu="${esc(workspace.path)}" title="More" aria-label="More for ${esc(workspace.name)}">${icon('more', 15)}</button></div>`;
   }).join('');
 }
 
-function renderAgents() {
-  const shut = isFolded('agents');
-  const running = [...sessions.values()].filter(session => session.running).length;
-  const toggle = $('#toggle-agents');
-  toggle.classList.toggle('shut', shut);
-  toggle.title = shut ? 'Show agents' : 'Hide agents';
-  toggle.innerHTML = `<span class="fold">${icon('chevron', 13)}</span><span>Agents</span>` +
-    (shut && running ? `<span class="count live" title="Running">${running}</span>` : '');
-  $('#agents').hidden = shut;
-  $('#agents').innerHTML =state.agents.map(agent => {
-    const status = agent.checking
-      ? '<span class="ver">checking…</span>'
-      : agent.installed
-        ? `<span class="ver" title="${esc(agent.version)}">${esc(shortVersion(agent.version))}</span>`
-        : `<button class="tag-btn" data-install="${esc(agent.name)}">Install</button>`;
-    const add = agent.multi && agent.installed
-      ? `<button class="icon-btn small" data-add="${esc(agent.name)}" title="Add another ${esc(agent.name)} account">${icon('plus', 14)}</button>`
-      : '';
-    const rows = state.accounts.filter(account => account.agent === agent.name).map(account => {
-      const running = runningFor(account.key);
-      const dot = account.checking ? 'wait' : account.signedIn === true ? 'on' : account.signedIn === false ? 'off' : 'idle';
-      return `<button class="account ${agent.installed ? '' : 'disabled'}" data-account="${esc(account.key)}" title="Start ${esc(agent.name)} (${esc(account.name)})">` +
-        `<span class="dot ${dot}"></span>` +
-        `<span class="acc-text"><span class="acc-top"><span class="acc-name">${esc(account.name)}</span>` +
-        (account.plan ? `<span class="plan">${esc(account.plan)}</span>` : '') +
-        (running ? `<span class="count live" title="Running">${running}</span>` : '') +
-        `</span><span class="acc-sub ellipsis">${esc(accountLine(account))}</span></span>` +
-        `<span class="row-more" data-account-menu="${esc(account.key)}" title="More">${icon('more', 15)}</span></button>`;
-    }).join('');
-    return `<div class="agent"><div class="agent-head">${avatar(agent)}<span class="agent-name ellipsis">${esc(agent.name)}</span>${status}${add}</div>${rows}</div>`;
-  }).join('');
+// At most this many dots per project in the sidebar; the rest is a number.
+const MAX_DOTS = 6;
+
+function dotsHtml(list) {
+  if (!list.length) return '';
+  const more = list.length - MAX_DOTS;
+  return `<span class="dots">${list.slice(0, MAX_DOTS).map(sessionDot).join('')}` +
+    (more > 0 ? `<span class="dots-more" title="${more} more">+${more}</span>` : '') + '</span>';
 }
+
+// A pane's status dot outside the pane; refreshDots keeps it current through data-dot.
+function sessionDot(session) {
+  const status = session.dotStatus || (session.running ? 'idle' : 'ended');
+  const name = `${agentName(session)} · ${titleOf(session)}`;
+  const [cls, label] = DOTS[status];
+  return `<span class="${cls}" role="img" data-dot="${session.id}" data-name="${esc(name)}" title="${esc(name)}: ${label}" aria-label="${esc(name)}: ${label}"></span>`;
+}
+
+// ---------- top bar ----------
 
 function renderTopbar() {
   const workspace = workspaceOf(state.workspace);
-  $('#ws-name').textContent = workspace ? workspace.name : 'No workspace';
-  $('#ws-path').textContent = state.workspace || '';
-  $('#open-unity').hidden = !workspace?.unity;
+  const home = view === 'home';
+  const name = $('#ws-name');
+  name.textContent = home ? 'Home' : workspace ? workspace.name : 'No project';
+  name.title = home ? '' : state.workspace || '';
+  $('#project-menu').hidden = home;
+  $('#nav-home').setAttribute('aria-current', home ? 'page' : 'false');
+  renderGitChip();
   // The bar's buttons changed, so their room did too.
   fitTopbar();
 }
 
 function renderPanes() {
   const visible = sessionsIn(state.workspace);
+  const home = view === 'home';
   if (maxed && !visible.some(session => session.id === maxed)) maxed = null;
   for (const session of sessions.values()) {
     session.el.hidden = !same(session.workspace, state.workspace) || (maxed && session.id !== maxed);
@@ -358,6 +352,7 @@ function renderPanes() {
     const maxButton = session.el.querySelector('[data-act="max"]');
     maxButton.innerHTML = icon(session.id === maxed ? 'shrink' : 'expand', 14);
     maxButton.title = session.id === maxed ? 'Restore' : 'Maximize';
+    maxButton.setAttribute('aria-label', maxButton.title);
     updatePaneSub(session);
   }
   const count = maxed ? 1 : visible.length;
@@ -366,16 +361,19 @@ function renderPanes() {
   const grid = $('#grid');
   grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
   grid.style.gridTemplateRows = `repeat(${rows}, minmax(${rows > 2 ? 260 : 0}px, 1fr))`;
-  grid.hidden = count === 0;
-  $('#empty').hidden = count !== 0;
-  if (count === 0) renderEmpty();
+  // Home hides the grid without taking the terminals out of the page; they refit when it shows again.
+  grid.hidden = home || count === 0;
+  $('#empty').hidden = home || count !== 0;
+  $('#home').hidden = !home;
+  if (!home && count === 0) renderEmpty();
   if (cols !== paneColumns) {
     paneColumns = cols;
     setPanelWidth(localStorage.getItem('panelWidth'), false);
   }
-  for (const session of visible) scheduleFit(session);
+  if (!home) for (const session of visible) scheduleFit(session);
 }
 
+// A project without panes: its agents as cards, its recent chats and the handoff tip.
 function renderEmpty() {
   const workspace = workspaceOf(state.workspace);
   const ready = state.accounts.filter(account => agentOf(account)?.installed);
@@ -390,7 +388,8 @@ function renderEmpty() {
   $('#empty').innerHTML =
     `<div class="hero"><div class="logo">${LOGO}</div><h1>What are we building today?</h1>` +
     `<p>Start an agent in <b>${esc(workspace ? workspace.name : 'your project')}</b>. Each one gets its own pane, and you can run several side by side.</p></div>` +
-    `<div class="cards">${cards || `<p class="tip">${checking ? 'Looking for your agents…' : 'No agents installed yet. Use Install in the sidebar.'}</p>`}</div>` +
+    `<div class="cards">${cards || `<p class="tip">${checking ? 'Looking for your agents…'
+      : 'No agents installed yet. <button class="text-btn link" data-settings-tab="agents">Install one in Settings</button>.'}</p>`}</div>` +
     (recent.length
       ? `<div class="recent"><div class="recent-head"><span>Recent chats</span><button class="text-btn" data-history>See all</button></div>` +
         recent.map(chatRow).join('') + '</div>'
@@ -406,6 +405,281 @@ function updatePaneSub(session) {
   else {
     const agent = agentOf(account);
     sub.textContent = account ? `${agent ? agent.name + ' · ' : ''}${account.name} · ${accountLine(account)}` : '';
+  }
+}
+
+// ---------- views ----------
+
+// Opens a project's panes (from the sidebar, a Home card or a pane's own dot). A project that is already the
+// selected one just shows again.
+function openProject(path) {
+  if (!same(path, state.workspace)) return selectWorkspace(path);
+  if (view === 'project') return;
+  view = 'project';
+  render();
+}
+
+function showHome() {
+  if (view === 'home') return;
+  view = 'home';
+  closeMenu();
+  render();
+}
+
+// ---------- sidebar: Recent ----------
+
+// The history in the sidebar, newest first across projects (also ones no longer in the sidebar). A click continues the
+// chat exactly like History's Resume; an open chat shows its pane. The search looks in all of it.
+const RECENT_PAGE = 60;
+let recentQuery = '';
+let recentLimit = RECENT_PAGE;
+
+function renderRecent() {
+  const box = $('#recent');
+  const found = history.filter(chat => HomeData.matches(chat, recentQuery));
+  if (!found.length) {
+    box.innerHTML = `<p class="side-empty">${recentQuery ? 'No chats match.' : 'No chats yet. Start an agent and it shows up here.'}</p>`;
+    return;
+  }
+  const shown = found.slice(0, recentLimit);
+  box.innerHTML = HomeData.groupRecent(shown).map(group =>
+    `<div class="recent-group" role="group" aria-label="${group.label}"><div class="recent-label" aria-hidden="true">${group.label}</div>` +
+    group.chats.map(recentRow).join('') + '</div>').join('') +
+    (found.length > shown.length
+      ? `<button class="text-btn recent-more" type="button" data-recent-more>Show older chats (${found.length - shown.length})</button>`
+      : '');
+}
+
+function recentRow(chat) {
+  const agent = chatAgent(chat);
+  const project = workspaceOf(chat.workspace)?.name || folderName(chat.workspace);
+  const problem = chat.open ? '' : resumeProblem(chat);
+  const title = chat.title || 'Untitled chat';
+  const tip = chat.open ? `Show it in ${project}` : problem || `Resume in ${project}`;
+  return `<div class="chat-row${problem ? ' cant' : ''}">` +
+    `<button class="chat-main" type="button" data-recent="${esc(chat.id)}" title="${esc(`${title} · ${project}\n${tip}`)}">` +
+    avatar(agent, 'sm') +
+    `<span class="chat-title ellipsis${chat.title ? '' : ' placeholder'}">${esc(title)}</span>` +
+    (chat.open ? '<span class="chat-when open">open</span>' : `<span class="chat-when">${esc(HomeData.shortTime(HomeData.activeOf(chat)))}</span>`) +
+    '</button>' +
+    `<button class="row-more" type="button" data-chat-menu="${esc(chat.id)}" title="More" aria-label="More for ${esc(title)}">${icon('more', 14)}</button></div>`;
+}
+
+function setRecentSearch(open) {
+  const box = $('.recent-search');
+  const input = $('#recent-search');
+  box.hidden = !open;
+  $('#search-recent').setAttribute('aria-expanded', String(open));
+  if (open) return input.focus();
+  input.value = '';
+  if (recentQuery) {
+    recentQuery = '';
+    recentLimit = RECENT_PAGE;
+    renderRecent();
+  }
+}
+
+// ---------- Home ----------
+
+// Every project as a card: what runs there and its status, a 10-day activity line from the history's chat times, its
+// last chats, and one-click starts. Whatever needs you is on top. Live parts (dots, counts, the needs-you strip)
+// change in place, so a status change doesn't redraw a card under the pointer.
+function renderHome() {
+  if (view !== 'home') return;
+  const box = $('#home');
+  const scroll = box.scrollTop;
+  const recent = history.slice(0, 4);
+  box.innerHTML = '<div class="home-inner">' +
+    `<header class="hello"><h2>What are we building today?</h2><p id="home-counts">${esc(homeCounts(statusCounts()))}</p></header>` +
+    `<div class="needs-list" id="home-needs">${needsHtml()}</div>` +
+    `<div class="project-grid">${state.workspaces.map(projectCard).join('')}` +
+    `<button class="project-card add" type="button" data-add-project aria-haspopup="menu">${icon('plus', 22)}<span>Add a folder or make a new project</span></button></div>` +
+    (recent.length
+      ? `<section class="pick-up" aria-labelledby="pick-up-title"><h3 id="pick-up-title">Pick up where you left off</h3><div class="pick-strip">${recent.map(pickUpCard).join('')}</div></section>`
+      : '') +
+    '</div>';
+  box.scrollTop = scroll;
+  for (const workspace of state.workspaces) askGit(workspace.path);
+}
+
+function homeCounts({ needs, working }) {
+  const projects = state.workspaces.length;
+  return `${projects} project${projects === 1 ? '' : 's'} · ${working} agent${working === 1 ? '' : 's'} working · ${needs} waiting for you`;
+}
+
+// One row per pane that needs you, with its question; Open shows the pane.
+function needsHtml() {
+  return [...sessions.values()].filter(session => session.dotStatus === 'needsYou').sort((a, b) => a.order - b.order).map(session => {
+    let question = '';
+    try {
+      const screen = screenParts(session);
+      question = screen.asking && screen.question ? screen.question : session.attentionMessage || '';
+    } catch { /* the pane is being closed */ }
+    const project = workspaceOf(session.workspace)?.name || folderName(session.workspace);
+    return '<div class="needs-row">' +
+      `<span class="dot needs" role="img" aria-label="Needs you" title="Needs you"></span>` +
+      `<b class="ellipsis">${esc(agentName(session))} needs you</b>` +
+      `<span class="needs-text ellipsis">in ${esc(project)}${question ? ` · "${esc(Remote.cut(question, 140))}"` : ''}</span>` +
+      `<button class="ghost-btn small" type="button" data-show-session="${session.id}">Open</button></div>`;
+  }).join('');
+}
+
+// The user's first three installed agents (their main account) start in a card's project with one click.
+function quickStarts() {
+  return state.agents.filter(agent => agent.installed).slice(0, 3)
+    .map(agent => state.accounts.find(account => account.agent === agent.name && account.main)).filter(Boolean);
+}
+
+function projectCard(workspace) {
+  const path = workspace.path;
+  const running = sessionsIn(path).filter(session => session.running);
+  const chats = history.filter(chat => same(chat.workspace, path));
+  const agents = running.length
+    ? running.slice(0, 8).map(session => `<span class="card-agent">${avatar(agentOf(accountOf(session.key)), 'sm')}${sessionDot(session)}</span>`).join('') +
+      (running.length > 8 ? `<span class="muted">+${running.length - 8}</span>` : '')
+    : '<span class="muted">No agents running</span>';
+  const active = running.length ? 'Active now' : chats.length ? `Active ${HomeData.ago(HomeData.activeOf(chats[0]))}` : 'No chats yet';
+  const starts = workspace.exists ? quickStarts().map(account => {
+    const agent = agentOf(account);
+    const tip = `Start ${agent.name} in ${workspace.name}`;
+    return `<button class="quick-start" type="button" data-quick="${esc(account.key)}" data-path="${esc(path)}" title="${esc(tip)}" aria-label="${esc(tip)}">${avatar(agent, 'sm')}</button>`;
+  }).join('') : '';
+  const counts = HomeData.activity(history, path);
+  return `<article class="project-card${same(path, state.workspace) ? ' current' : ''}">` +
+    `<h3 class="card-head"><button class="card-open" type="button" data-open-project="${esc(path)}" title="Open ${esc(workspace.name)}">` +
+    `<span class="ellipsis">${esc(workspace.name)}</span></button>` +
+    (workspace.exists ? '' : '<span class="tag-warn">missing</span>') +
+    `<span class="git-chip" data-git="${esc(path.toLowerCase())}"${gitInfo.get(path.toLowerCase()) ? '' : ' hidden'}>${gitChipInner(gitInfo.get(path.toLowerCase()))}</span></h3>` +
+    `<div class="card-path ellipsis" title="${esc(path)}">${esc(HomeData.shortPath(path))}</div>` +
+    `<div class="card-agents">${agents}</div>` +
+    sparkline(counts) +
+    `<div class="card-chats">${chats.slice(0, 2).map(chat => `<div class="ellipsis">${esc(chat.title || 'Untitled chat')}</div>`).join('') || '<div class="muted">No chats yet</div>'}</div>` +
+    `<div class="card-foot"><span class="muted ellipsis">${esc(active)}</span><span class="quick-starts">${starts}</span></div></article>`;
+}
+
+function sparkline(counts) {
+  const points = HomeData.sparkPoints(counts).map(point => point.join(',')).join(' ');
+  const total = counts.reduce((sum, count) => sum + count, 0);
+  return `<svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none" role="img" ` +
+    `aria-label="${total} chat${total === 1 ? '' : 's'} started in the last 10 days"><title>Chats started per day, last 10 days</title>` +
+    `<polygon class="spark-fill" points="0,26 ${points} 100,26"/><polyline class="spark-line" points="${points}" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+function pickUpCard(chat) {
+  const agent = chatAgent(chat);
+  const project = workspaceOf(chat.workspace)?.name || folderName(chat.workspace);
+  const problem = chat.open ? '' : resumeProblem(chat);
+  const title = chat.title || 'Untitled chat';
+  return `<button class="pick-chat" type="button" data-recent="${esc(chat.id)}" title="${esc(chat.open ? `Show it in ${project}` : problem || `Resume in ${project}`)}">` +
+    `${avatar(agent, 'sm')}<span class="pick-text"><span class="ellipsis">${esc(title)}</span>` +
+    `<span class="pick-sub ellipsis">${esc(project)} · ${esc(chat.open ? 'open' : HomeData.shortTime(HomeData.activeOf(chat)))}</span></span></button>`;
+}
+
+// ---------- git branch and changes: the top bar's chip and the Home cards ----------
+
+// The Changes tab's own git status (gitChanges), asked for one project at a time. These requests are numbered below
+// zero, so the Changes tab never takes their answer for its own; its answers update the chip too. A project that isn't
+// a repository, or whose git config wasn't trusted (the Changes tab asks), gets no chip.
+const gitInfo = new Map(); // lower-case path -> { branch, changed } or null
+const gitAsked = new Map(); // lower-case path -> when it was last asked
+const gitQueue = [];
+let gitSeq = 0;
+let gitWaiting = null; // { key, at }
+const GIT_AGAIN_MS = 30000;
+
+function askGit(path, force = false) {
+  if (!path) return;
+  const key = path.toLowerCase();
+  if (!force && Date.now() - (gitAsked.get(key) || 0) < GIT_AGAIN_MS) return;
+  gitAsked.set(key, Date.now());
+  if (!gitQueue.some(item => same(item, path))) gitQueue.push(path);
+  pumpGit();
+}
+
+function pumpGit() {
+  if (gitWaiting && Date.now() - gitWaiting.at < LOST_MS) return;
+  gitWaiting = null;
+  const path = gitQueue.shift();
+  if (!path) return;
+  gitWaiting = { key: path.toLowerCase(), at: Date.now() };
+  send({ type: 'gitChanges', workspace: path, seq: -(++gitSeq) });
+}
+
+function gitArrived(message) {
+  if (typeof message.workspace !== 'string' || !message.workspace) return;
+  const key = message.workspace.toLowerCase();
+  const files = Array.isArray(message.files) ? message.files : [];
+  gitInfo.set(key, message.error || message.trust ? null
+    : { branch: String(message.branch || ''), changed: Math.max(Number(message.total) || 0, files.length) });
+  if (message.seq < 0 && gitWaiting?.key === key) {
+    gitWaiting = null;
+    pumpGit();
+  }
+  for (const chip of document.querySelectorAll(`.git-chip[data-git="${CSS.escape(key)}"]`)) {
+    const info = gitInfo.get(key);
+    chip.hidden = !info;
+    chip.innerHTML = gitChipInner(info);
+  }
+  if (same(message.workspace, state.workspace)) renderGitChip();
+}
+
+function gitChipInner(info) {
+  if (!info) return '';
+  const changed = info.changed ? ` · ${info.changed} changed` : '';
+  return `${icon('branch', 12)}<span class="ellipsis">${esc(info.branch || 'git')}</span>${changed ? `<span class="git-changed">${changed}</span>` : ''}`;
+}
+
+function renderGitChip() {
+  const chip = $('#git-chip');
+  const info = view === 'project' ? gitInfo.get(String(state.workspace).toLowerCase()) : null;
+  chip.hidden = !info;
+  if (!info) return;
+  chip.innerHTML = gitChipInner(info);
+  const label = `Branch ${info.branch || 'unknown'}, ${info.changed ? info.changed + ' changed file' + (info.changed === 1 ? '' : 's') : 'no changes'}. Show the changes`;
+  chip.title = label;
+  chip.setAttribute('aria-label', label);
+}
+
+// The selected project looks again every 30 seconds while it shows; the Changes tab's 5 s refresh updates it too.
+setInterval(() => {
+  if (view === 'project' && document.visibilityState === 'visible') askGit(state.workspace);
+}, GIT_AGAIN_MS);
+
+// ---------- status line, mascot ----------
+
+// Panes that need you and panes that work, everywhere. The sidebar's footer, the mascot's antenna and Home follow it.
+function statusCounts() {
+  let needs = 0;
+  let working = 0;
+  for (const session of sessions.values()) {
+    if (session.dotStatus === 'needsYou') needs++;
+    else if (session.dotStatus === 'working') working++;
+  }
+  return { needs, working };
+}
+
+let shellKey = '';
+
+function shellStatus(force = false) {
+  const counts = statusCounts();
+  const needing = [...sessions.values()].filter(session => session.dotStatus === 'needsYou').map(session => session.id).join(',');
+  const key = `${counts.working}|${needing}`;
+  if (key === shellKey && !force) return;
+  const needsChanged = key.split('|')[1] !== shellKey.split('|')[1];
+  shellKey = key;
+  const parts = [];
+  if (counts.needs) parts.push(`<span class="dot needs" aria-hidden="true"></span><span>${counts.needs} needs you</span>`);
+  if (counts.working) parts.push(`<span class="dot working" aria-hidden="true"></span><span>${counts.working} working</span>`);
+  $('#foot-state').innerHTML = parts.join('<span class="sep" aria-hidden="true">·</span>') || '<span>All quiet</span>';
+  $('#foot-state').title = HomeData.statusLine(counts);
+  try {
+    window.Mascot?.setState({ working: counts.working, needs: counts.needs });
+  } catch { /* the mascot is decoration; the status line says the same */ }
+  if (view === 'home') {
+    const line = $('#home-counts');
+    if (line) line.textContent = homeCounts(counts);
+    const strip = $('#home-needs');
+    if (strip && (needsChanged || force)) strip.innerHTML = needsHtml();
   }
 }
 
@@ -603,7 +877,7 @@ document.addEventListener('pointercancel', () => endDrag(false));
 function openSession(key, mode = 'start', chat = null, options = {}) {
   const account = accountOf(key);
   const agent = agentOf(account);
-  if (!account || !agent) return options.remote ? null : toast('That account is gone. Click refresh.', 'error');
+  if (!account || !agent) return options.remote ? null : toast('That account is gone. Use Check accounts again in Settings.', 'error');
   if (mode !== 'install' && !agent.installed) {
     if (options.remote) return null;
     if (agent.checking) return toast(`Still checking ${agent.name}. Try again in a moment.`);
@@ -626,10 +900,10 @@ function openSession(key, mode = 'start', chat = null, options = {}) {
     `<div class="pane-head">${dotHtml('idle')}${avatar(agent, 'sm')}` +
     '<span class="pane-title ellipsis"></span><span class="pane-sub ellipsis"></span>' +
     '<span class="pane-actions">' +
-    `<button class="icon-btn small" data-act="menu" title="More">${icon('more', 15)}</button>` +
-    `<button class="icon-btn small" data-act="max" title="Maximize">${icon('expand', 14)}</button>` +
-    `<button class="icon-btn small" data-act="new" title="New pane with this account">${icon('plus', 15)}</button>` +
-    `<button class="icon-btn small" data-act="close" title="Close">${icon('close', 15)}</button>` +
+    `<button class="icon-btn small" data-act="menu" title="More" aria-label="More">${icon('more', 15)}</button>` +
+    `<button class="icon-btn small" data-act="max" title="Maximize" aria-label="Maximize">${icon('expand', 14)}</button>` +
+    `<button class="icon-btn small" data-act="new" title="New pane with this account" aria-label="New pane with this account">${icon('plus', 15)}</button>` +
+    `<button class="icon-btn small" data-act="close" title="Close" aria-label="Close">${icon('close', 15)}</button>` +
     '</span></div><div class="pane-body"><div class="term"></div></div>';
   $('#grid').append(session.el);
   sessions.set(id, session);
@@ -697,7 +971,12 @@ function openSession(key, mode = 'start', chat = null, options = {}) {
   session.el.addEventListener('focusin', () => clearAttention(session));
   new ResizeObserver(() => scheduleFit(session)).observe(session.el.querySelector('.pane-body'));
 
-  if (!options.remote) maxed = null;
+  // Started at the PC: its project shows. A phone's start leaves the PC's view, dialogs and focus as they are.
+  if (!options.remote) {
+    maxed = null;
+    view = 'project';
+    closeSettings();
+  }
   showTitle(session);
   render();
   // Resolves once the C# side was told to start the agent; typing from the phone waits for it.
@@ -753,6 +1032,8 @@ function handleKey(session, event) {
   }
   // Let the browser paste, so Ctrl+V pastes text instead of sending a control key.
   if (event.ctrlKey && key === 'v') return false;
+  // Ctrl+, opens Settings from a pane too: the page's own key handler gets it. (Ctrl+N stays the agent's own key.)
+  if (event.ctrlKey && !event.altKey && !event.shiftKey && key === ',') return false;
   // Ctrl+= / Ctrl+- / Ctrl+0 change the text size of every pane, like zoom in a browser.
   if (event.ctrlKey && !event.altKey && (key === '=' || key === '+' || (key === '-' && !event.shiftKey) || key === '0')) {
     setFontSize(key === '0' ? DEFAULT_FONT_SIZE : fontSize + (key === '-' ? -1 : 1));
@@ -781,34 +1062,23 @@ function setFontSize(size, save = true) {
   }
 }
 
-async function textSizeDialog() {
-  const before = fontSize;
-  const answer = modal({
-    title: 'Text size',
-    body: `<label>Terminal text <span class="size-value">${fontSize} px</span>` +
-      `<input type="range" name="size" min="9" max="24" step="1" value="${fontSize}"></label>` +
-      '<p class="muted">Applies to every pane. Ctrl+= and Ctrl+- change it too; Ctrl+0 goes back to 13.</p>',
-    confirm: 'Done',
-  });
-  const slider = document.querySelector('.modal input[name="size"]');
-  slider.addEventListener('input', () => {
-    setFontSize(slider.value, false);
-    slider.closest('label').querySelector('.size-value').textContent = `${fontSize} px`;
-  });
-  const result = await answer;
-  setFontSize(result ? result.size : before);
-}
+// Settings → General shows the size; these four are its quick choices.
+const FONT_SIZES = [['S', 11], ['M', 13], ['L', 15], ['XL', 18]];
 
 // ---------- version and update notice ----------
 
-// appInfo from the C# side: version, releases (the releases page), updateCheck (on or off) and update ({ version, url }
-// of a newer release, or null). The C# side asks GitHub at most once a day; the page only shows what it found.
+// appInfo from the C# side: version, releases (the releases page), updateCheck (on or off), update ({ version, url }
+// of a newer release, or null) and mascotAnimations. The C# side asks GitHub at most once a day; the page only shows
+// what it found.
 let appInfo = null;
 
 function appInfoArrived(message) {
   appInfo = message;
-  $('#app-version').textContent = message.version ? `v${message.version}` : '';
   renderUpdateNote();
+  try {
+    window.Mascot?.setEnabled(message.mascotAnimations !== false);
+  } catch { /* the mascot is decoration */ }
+  if (settingsView?.tab === 'general' || settingsView?.tab === 'about') renderSettingsTab(true);
 }
 
 // Hidden for a version you closed it for; the next version shows again.
@@ -819,25 +1089,7 @@ function renderUpdateNote() {
   note.innerHTML = note.hidden ? '' :
     `<button class="update-link" data-update-open title="Open the release page">${icon('download', 14)}` +
     `<span class="ellipsis">Agent Arcade ${esc(update.version)} is available</span></button>` +
-    `<button class="icon-btn small" data-update-close title="Hide until the next version">${icon('close', 13)}</button>`;
-}
-
-async function versionDialog() {
-  if (!appInfo) return;
-  await modal({
-    title: `Agent Arcade ${appInfo.version}`,
-    body: `<label class="switch"><input type="checkbox" name="updateCheck"${appInfo.updateCheck ? ' checked' : ''}>` +
-      '<span class="switch-track"></span><span>Tell me when a new version is out</span></label>' +
-      "<p class=\"muted\">Once a day Agent Arcade asks GitHub's releases API for the newest version number. It sends no " +
-      'identifier and downloads nothing: you update yourself from the releases page.</p>' +
-      '<p><button type="button" class="text-btn link" data-releases>All releases</button></p>',
-    confirm: 'Done',
-    cancel: null,
-    opened: root => {
-      root.querySelector('[name="updateCheck"]').addEventListener('change', event => send({ type: 'updateCheck', on: event.target.checked }));
-      root.querySelector('[data-releases]').addEventListener('click', () => send({ type: 'openUrl', url: appInfo.releases }));
-    },
-  });
+    `<button class="icon-btn small" data-update-close title="Hide until the next version" aria-label="Hide until the next version">${icon('close', 13)}</button>`;
 }
 
 function scheduleFit(session) {
@@ -892,9 +1144,10 @@ function endSession(session, { code = null, error = null, phone = false } = {}) 
     (resumable ? '<button data-act="resume" title="Continue this chat">Resume</button>' : '') +
     (isChat(session) ? '<button data-act="fresh">New chat</button>' : '<button data-act="restart">Restart</button>') +
     '<button data-act="close">Close</button></div>');
-  if (session.mode === 'login' && !error && !phone) toast('Sign-in finished. The sidebar shows the email in a moment.');
+  if (session.mode === 'login' && !error && !phone) toast('Sign-in finished. Settings → Agents and accounts shows the email in a moment.');
   renderWorkspaces();
-  renderAgents();
+  renderHome();
+  renderAgentsTab();
   remoteAttention(session, 'ended', endMessage(session));
   remoteSoon();
 }
@@ -924,11 +1177,17 @@ async function closeSession(session, force = false) {
   render();
 }
 
+// Only for the PC's own clicks: it shows the project's panes.
 function focusSession(id) {
   const session = sessions.get(id);
   if (!session) return;
   if (maxed && maxed !== id) maxed = null;
-  renderPanes();
+  if (view !== 'project') {
+    view = 'project';
+    render();
+  } else {
+    renderPanes();
+  }
   session.term.focus();
   session.el.classList.remove('flash');
   void session.el.offsetWidth;
@@ -1045,6 +1304,12 @@ const APPROVAL = /do you want|would you like to|allow (this|command|execution)|a
 const REPORTS = /^(?:\x1b\[[IO]|\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[M[\s\S]{3})+$/;
 let notifyOn = localStorage.getItem('notifications') !== 'off';
 
+// The pane menu and Settings → General switch it, for every pane.
+function setNotify(on) {
+  notifyOn = on;
+  localStorage.setItem('notifications', on ? 'on' : 'off');
+}
+
 const agentName = session => agentOf(accountOf(session.key))?.name || 'The agent';
 
 // typedAt: when you started typing after the last Enter; the echo of a draft isn't the agent working.
@@ -1119,15 +1384,18 @@ function dotHtml(status) {
   return `<span class="${cls}" role="img" title="${label}" aria-label="${label}"></span>`;
 }
 
+// A dot outside the pane (sessionDot) says whose it is: data-name goes before the status.
 function setDot(dot, status) {
   const [cls, label] = DOTS[status];
+  const text = dot.dataset.name ? `${dot.dataset.name}: ${label}` : label;
   dot.className = cls;
-  dot.title = label;
-  dot.setAttribute('aria-label', label);
+  dot.title = text;
+  dot.setAttribute('aria-label', text);
 }
 
-// Sets each pane's dot, and its dot in the sidebar, from paneStatus. The sidebar dot changes in place: redrawing the
-// sidebar every time a status changes could swallow a click that is halfway through.
+// Sets each pane's dot, and its dots in the sidebar and on Home, from paneStatus; then the status line and the mascot.
+// The dots change in place: redrawing the sidebar every time a status changes could swallow a click that is halfway
+// through.
 function refreshDots() {
   for (const session of sessions.values()) {
     const screen = session.running ? screenParts(session) : null;
@@ -1136,9 +1404,9 @@ function refreshDots() {
     if (status === session.dotStatus) continue;
     session.dotStatus = status;
     setDot(session.el.querySelector('.pane-head .dot'), status);
-    const listed = document.querySelector(`#workspaces .ws-session[data-session="${CSS.escape(session.id)}"] .dot`);
-    if (listed) setDot(listed, status);
+    for (const listed of document.querySelectorAll(`[data-dot="${CSS.escape(session.id)}"]`)) setDot(listed, status);
   }
+  shellStatus();
 }
 
 // claimed: the 1 s check already counted this dialog as new (Remote.dialogAppeared).
@@ -1201,7 +1469,7 @@ function attentionText(session) {
 
 function notify(session, body) {
   const title = session.customTitle || session.autoTitle || session.label;
-  if (notifyOn) send({ type: 'notify', session: session.id, title, body, visible: !session.el.hidden });
+  if (notifyOn) send({ type: 'notify', session: session.id, title, body, visible: view === 'project' && !session.el.hidden });
 }
 
 function clearAttention(session) {
@@ -1213,10 +1481,12 @@ function clearAttention(session) {
   remoteSoon();
 }
 
+// A notification, Home's needs-you strip or a status dot: the pane's project shows and the pane gets focus.
 function showSession(id) {
   const session = sessions.get(id);
   if (!session) return;
-  if (!same(session.workspace, state.workspace)) selectWorkspace(session.workspace);
+  closeSettings();
+  openProject(session.workspace);
   focusSession(id);
 }
 
@@ -1333,6 +1603,7 @@ function setSidebar(hidden) {
   $('.app').classList.toggle('side-hidden', hidden);
   const button = $('#toggle-sidebar');
   button.title = hidden ? 'Show the sidebar' : 'Hide the sidebar';
+  button.setAttribute('aria-label', button.title);
   button.setAttribute('aria-pressed', String(hidden));
   localStorage.setItem('sidebar', hidden ? 'hidden' : 'shown');
   fitTopbar();
@@ -1361,6 +1632,7 @@ function setPanel(open) {
   $('.app').classList.toggle('panel-open', open);
   const button = $('#toggle-panel');
   button.title = open ? 'Hide the side panel' : 'Show the side panel';
+  button.setAttribute('aria-label', button.title);
   button.setAttribute('aria-pressed', String(open));
   localStorage.setItem('panel', open ? 'open' : 'closed');
   fitTopbar();
@@ -1403,13 +1675,15 @@ function panelWorkspaceChanged() {
 // (panel-overlay), so they keep their width.
 const MIN_COLUMN = 360;
 const MIN_PANEL = 280;
+// The sidebar's width in app.css (.app's first column).
+const SIDEBAR_WIDTH = 252;
 
 function setPanelWidth(width, save = true) {
   const app = $('.app');
-  // The columns of panes with the grid's gaps (10) between them.
-  const panes = MIN_COLUMN * paneColumns + 10 * (paneColumns - 1);
-  // The app's padding (20), the sidebar with its gap (282) and the panel's gap (10).
-  const room = window.innerWidth - 20 - (app.classList.contains('side-hidden') ? 0 : 282) - 10 - panes;
+  // The columns of panes with the grid's gaps (8) between them, and the grid's padding (16).
+  const panes = MIN_COLUMN * paneColumns + 8 * (paneColumns - 1) + 16;
+  // The sidebar (SIDEBAR_WIDTH) when it shows.
+  const room = window.innerWidth - (app.classList.contains('side-hidden') ? 0 : SIDEBAR_WIDTH) - panes;
   const overlay = room < MIN_PANEL;
   const wanted = Math.max(MIN_PANEL, Math.round(Number(width) || 480));
   const shown = Math.min(wanted, overlay ? window.innerWidth - 20 : room);
@@ -1738,9 +2012,9 @@ function viewImage(session, index) {
     session.el.querySelector('.pane-body').insertAdjacentHTML('beforeend',
       '<div class="image-view" tabindex="-1"><div class="image-bar">' +
       `${icon('image', 15)}<span class="image-name ellipsis"></span><span class="image-count"></span>` +
-      `<button class="icon-btn small" data-act="image-paste" title="Paste the path into the pane, so the agent can look at it">${icon('terminal', 15)}</button>` +
-      `<button class="icon-btn small" data-act="image-reveal" title="Show in folder">${icon('folder', 15)}</button>` +
-      `<button class="icon-btn small" data-act="image-close" title="Close (Esc)">${icon('close', 15)}</button>` +
+      `<button class="icon-btn small" data-act="image-paste" title="Paste the path into the pane, so the agent can look at it" aria-label="Paste the path into the pane">${icon('terminal', 15)}</button>` +
+      `<button class="icon-btn small" data-act="image-reveal" title="Show in folder" aria-label="Show in folder">${icon('folder', 15)}</button>` +
+      `<button class="icon-btn small" data-act="image-close" title="Close (Esc)" aria-label="Close the image">${icon('close', 15)}</button>` +
       '</div><div class="image-stage"><img alt="" draggable="false" title="Click to switch between fit and actual size"></div></div>');
     view = session.el.querySelector('.image-view');
     view.addEventListener('keydown', event => imageKey(session, event));
@@ -1804,13 +2078,12 @@ function paneMenu(session, anchor) {
         screenChanged(session);
       },
     },
-    { label: 'Text size…', sub: `${fontSize} px · Ctrl+= / Ctrl+-`, icon: 'text', run: textSizeDialog },
+    { label: 'Text size…', sub: `${fontSize} px · Ctrl+= / Ctrl+-`, icon: 'text', run: () => openSettings('general') },
     {
       label: notifyOn ? 'Turn off Windows notifications' : 'Turn on Windows notifications',
       sub: 'When an agent is done or needs you, for every pane', icon: 'bell',
       run: () => {
-        notifyOn = !notifyOn;
-        localStorage.setItem('notifications', notifyOn ? 'on' : 'off');
+        setNotify(!notifyOn);
         toast(notifyOn ? 'Windows tells you when an agent is done or needs you, unless you are looking at it.' : 'No more Windows notifications. Panes still turn red when an agent needs you.');
       },
     },
@@ -1919,7 +2192,7 @@ async function askInstall(agent) {
   if (needs?.length) return showInstallNeeds(agent, needs);
   const ok = await modal({
     title: `Install or update ${agent.name}?`,
-    body: `<p>This runs in a new pane:</p><pre class="cmd">${esc(agent.install)}</pre><p class="muted">When it's done, the sidebar updates by itself.</p>`,
+    body: `<p>This runs in a new pane:</p><pre class="cmd">${esc(agent.install)}</pre><p class="muted">When it's done, Settings → Agents and accounts updates by itself.</p>`,
     confirm: 'Install',
   });
   if (!ok) return;
@@ -2059,6 +2332,54 @@ function newAgentMenu(anchor) {
   menu(anchor, items);
 }
 
+// The top bar's ⋯: the project's folder, images, shared instructions, Windows Terminal, Unity and chat history.
+function projectMenu(anchor) {
+  const workspace = workspaceOf(state.workspace);
+  const name = workspace?.name || 'this project';
+  const chats = history.filter(chat => same(chat.workspace, state.workspace)).length;
+  const items = [
+    { label: 'Open folder', sub: 'In File Explorer', icon: 'folder', run: () => send({ type: 'openFolder' }) },
+    { label: 'Images', sub: 'In the side panel, to drag onto a pane', icon: 'image', run: toggleImages },
+    { label: 'Shared instructions…', sub: 'The same instructions for every agent', icon: 'doc', run: () => openSettings('instructions') },
+    { label: 'Open in Windows Terminal…', sub: 'An agent outside Agent Arcade', icon: 'external', run: () => terminalMenu(anchor) },
+  ];
+  if (workspace?.unity) items.push({ label: 'Open in Unity', sub: 'The editor this project uses', icon: 'cube', run: () => send({ type: 'openUnity' }) });
+  items.push('-', {
+    label: 'Chat history', sub: chats ? `${chats} chat${chats === 1 ? '' : 's'} in ${name}` : `No chats in ${name} yet`, icon: 'history',
+    run: () => openHistory('project', state.workspace),
+  });
+  menu(anchor, items);
+}
+
+// An agent in Windows Terminal, in the selected project, with the account's own folder.
+function terminalMenu(anchor) {
+  const items = [{ title: `Windows Terminal in ${workspaceOf(state.workspace)?.name || 'this project'}` }];
+  for (const account of state.accounts) {
+    const agent = agentOf(account);
+    if (!agent?.installed) continue;
+    items.push({ label: `${agent.name} · ${account.name}`, sub: accountLine(account), avatar: avatar(agent, 'sm'), run: () => send({ type: 'external', account: account.key }) });
+  }
+  if (items.length === 1) items.push({ label: 'No agents installed yet', disabled: true, run: () => {} });
+  menu(anchor, items);
+}
+
+// The sidebar's + next to Projects and Home's last card: a folder you have, or a new empty one.
+function addProjectMenu(anchor) {
+  menu(anchor, [
+    { label: 'Add a project folder…', sub: 'A folder you already have', icon: 'folder', run: () => send({ type: 'addWorkspace' }) },
+    {
+      label: 'New project…', sub: state.projectsFolder ? `An empty folder in ${state.projectsFolder}` : 'An empty folder for a new project',
+      icon: 'folder-plus', run: () => newProject(),
+    },
+  ]);
+}
+
+// Ctrl+N and the sidebar's New agent: the same menu as the top bar's + New agent.
+function openNewAgentMenu() {
+  const side = $('#side-new-agent');
+  newAgentMenu(side.offsetParent ? side : $('#new-agent'));
+}
+
 // ---------- chat history ----------
 
 function chatAgent(chat) {
@@ -2087,7 +2408,7 @@ function chatRow(chat) {
     `<span class="dot ${chat.open ? 'on' : 'off'}"></span>${avatar(agent, 'sm')}` +
     `<span class="hist-text"><span class="hist-title ellipsis${chat.title ? '' : ' placeholder'}">${esc(chat.title || 'Untitled chat')}</span>` +
     `<span class="hist-sub ellipsis">${esc(agent.name)} · ${esc(chat.accountName)} · ${esc(when(chat.started))}${esc(length)}</span></span>` +
-    `${action}<button class="icon-btn small" data-chat-menu="${esc(chat.id)}" title="More">${icon('more', 15)}</button></div>`;
+    `${action}<button class="icon-btn small" data-chat-menu="${esc(chat.id)}" title="More" aria-label="More">${icon('more', 15)}</button></div>`;
 }
 
 // Continues a chat from the history in its own project. Returns the new pane's session.
@@ -2111,8 +2432,10 @@ function resumeChat(chat) {
   return openSession(chat.account, 'resume', chat);
 }
 
+// Picks a project at the PC and shows its panes.
 function selectWorkspace(path) {
   state.workspace = path;
+  view = 'project';
   render();
   panelWorkspaceChanged();
   send({ type: 'selectWorkspace', path });
@@ -2153,15 +2476,15 @@ function openHistory(scope = 'project', path = state.workspace) {
   closeMenu();
   closeHistory();
   // One of the two big dialogs at a time, so Escape always knows which one to close.
-  closePhone();
+  closeSettings();
   const root = document.createElement('div');
   root.className = 'modal-backdrop';
   root.innerHTML =
-    '<div class="modal history" role="dialog" aria-modal="true">' +
+    '<div class="modal history" role="dialog" aria-modal="true" aria-label="Chat history">' +
     '<div class="hist-head"><h2>Chat history</h2><div class="seg">' +
     '<button data-scope="project"></button><button data-scope="all">All projects</button></div>' +
-    `<button class="icon-btn" data-close title="Close">${icon('close', 15)}</button></div>` +
-    '<input class="hist-search" placeholder="Search titles, agents and projects" spellcheck="false" autocomplete="off">' +
+    `<button class="icon-btn" data-close title="Close" aria-label="Close">${icon('close', 15)}</button></div>` +
+    '<input class="hist-search" placeholder="Search titles, agents and projects" spellcheck="false" autocomplete="off" aria-label="Search chats">' +
     '<div class="hist-list"></div></div>';
   historyView = { root, scope, path, query: '' };
   root.addEventListener('mousedown', event => {
@@ -2277,6 +2600,7 @@ const remote = {
   jobs: new Set(), // typing waiting or running: { device, at, cancelled }
   removed: new Set(), // phones removed on the PC: their requests that still arrive are refused
   pairWaiting: false, // a phone waits for Allow or Deny in the Phone dialog
+  info: null, // the newest remoteInfo: the Phone tab's facts and keep-awake
 };
 
 const panes = () => [...sessions.values()].sort((a, b) => a.order - b.order);
@@ -2698,91 +3022,83 @@ function remoteRename(message) {
   return remoteOk();
 }
 
-// ---------- phone remote: the Phone dialog ----------
+// ---------- phone remote: Settings → Phone ----------
 
+// The Phone tab of the open Settings window is what REMOTE_API.md calls the Phone dialog: a pairing code lives only
+// while it shows, and a phone's pairing question waits there for Allow or Deny. phoneView is set while it shows.
 let phoneView = null;
 
+// The sidebar's phone button: a green badge while a phone is connected, a red diamond while one waits for Allow.
 function showPhones() {
   const button = $('#phone');
-  button.innerHTML = (remote.pairWaiting ? '<span class="dot needs"></span>' : remote.phones ? '<span class="dot on"></span>' : '') + '<span>Phone</span>';
-  button.title = remote.pairWaiting ? 'A phone wants to pair with this PC'
-    : remote.phones ? `${remote.phones} phone${remote.phones === 1 ? '' : 's'} connected` : 'Use Agent Arcade from your phone';
+  const text = remote.pairWaiting ? 'Phone remote: a phone wants to pair with this PC'
+    : remote.phones ? `Phone remote: ${remote.phones} phone${remote.phones === 1 ? '' : 's'} connected` : 'Phone remote: use Agent Arcade from your phone';
+  button.innerHTML = icon('phone', 16) + (remote.pairWaiting ? '<span class="badge needs"></span>' : remote.phones ? '<span class="badge on"></span>' : '');
+  button.title = text;
+  button.setAttribute('aria-label', text);
 }
 
-function openPhone() {
-  closeMenu();
+// The Phone tab shows in panel. Opening it makes no pairing code: Pair a phone does.
+function openPhoneTab(panel) {
   closePhone();
-  closeHistory();
-  const root = document.createElement('div');
-  root.className = 'modal-backdrop';
-  root.innerHTML =
-    '<div class="modal phone" role="dialog" aria-modal="true">' +
-    `<div class="hist-head"><h2>Phone remote</h2><button class="icon-btn" data-close title="Close">${icon('close', 15)}</button></div>` +
-    '<div class="phone-body"></div>' +
-    '<p class="phone-note">A paired phone can read your panes and type into your agents, like you can at this PC. ' +
-    'Only pair your own phone, and allow it only right after you scanned the code yourself. If Windows asks, allow Agent Arcade on private networks. ' +
-    'Set your Wi-Fi to Private only if it is your own home network; on shared or public Wi-Fi keep it Public and use Tailscale.</p></div>';
-  phoneView = { root, info: null, asked: null, timer: setInterval(showValidity, 10000) };
-  root.addEventListener('mousedown', event => {
-    if (event.target === root) closePhone();
-  });
-  root.addEventListener('change', event => {
-    if (event.target.name === 'remote') send({ type: 'remoteEnable', on: event.target.checked });
-    if (event.target.name === 'awake') send({ type: 'keepAwake', mode: event.target.value });
-  });
-  root.addEventListener('click', event => {
-    const target = event.target;
-    if (target.closest('[data-close]')) return closePhone();
-    if (target.closest('[data-pair]')) return send({ type: 'remotePair' });
-    if (target.closest('[data-new-code]')) return send({ type: 'remoteNewCode' });
-    if (target.closest('[data-app-link]') && phoneView?.info?.app?.url) return send({ type: 'openUrl', url: phoneView.info.app.url });
-    // Answers the question the dialog shows; the C# side ignores an answer for any other.
-    const answer = target.closest('[data-pair-answer]');
-    const pairing = phoneView?.info?.pairing;
-    if (answer && !answer.disabled && pairing) return send({ type: 'remotePairAnswer', id: pairing.id, allow: answer.dataset.pairAnswer === 'allow' });
-    const copy = target.closest('[data-link]');
-    if (copy && copy.dataset.link) {
-      // Kept out of Windows clipboard history and the cloud clipboard (MainForm.SecretData).
-      send({ type: 'copySecret', text: copy.dataset.link });
-      return toast('Pairing link copied. It works once, for 10 minutes, and stays out of clipboard history.');
-    }
-    const remove = target.closest('[data-remove-device]');
-    const device = remove && phoneView?.info?.devices?.find(item => item.id === remove.dataset.removeDevice);
-    if (device) removePhone(device);
-  });
-  document.body.append(root);
+  phoneView = { root: panel, info: remote.info, asked: null, timer: setInterval(showValidity, 10000) };
   renderPhone();
-  root.querySelector('[data-close]').focus();
   send({ type: 'remoteDialog' });
 }
 
-// Closing ends the pairing code it showed. A phone that waits for Allow keeps waiting; its question is there when the
-// dialog opens again.
+// Leaving the tab or closing Settings ends the pairing code it showed. A phone that waits for Allow keeps waiting; its
+// question is there when the tab opens again.
 function closePhone() {
   if (!phoneView) return;
   clearInterval(phoneView.timer);
-  phoneView.root.remove();
   phoneView = null;
   send({ type: 'remoteDialogClosed' });
 }
 
+function phoneChange(event) {
+  if (event.target.name === 'remote') send({ type: 'remoteEnable', on: event.target.checked });
+}
+
+function phoneClick(event) {
+  const target = event.target;
+  if (target.closest('[data-pair]')) return send({ type: 'remotePair' });
+  if (target.closest('[data-new-code]')) return send({ type: 'remoteNewCode' });
+  if (target.closest('[data-app-link]') && phoneView?.info?.app?.url) return send({ type: 'openUrl', url: phoneView.info.app.url });
+  // Answers the question the tab shows; the C# side ignores an answer for any other.
+  const answer = target.closest('[data-pair-answer]');
+  const pairing = phoneView?.info?.pairing;
+  if (answer && !answer.disabled && pairing) return send({ type: 'remotePairAnswer', id: pairing.id, allow: answer.dataset.pairAnswer === 'allow' });
+  const copy = target.closest('[data-link]');
+  if (copy && copy.dataset.link) {
+    // Kept out of Windows clipboard history and the cloud clipboard (MainForm.SecretData).
+    send({ type: 'copySecret', text: copy.dataset.link });
+    return toast('Pairing link copied. It works once, for 10 minutes, and stays out of clipboard history.');
+  }
+  const remove = target.closest('[data-remove-device]');
+  const device = remove && phoneView?.info?.devices?.find(item => item.id === remove.dataset.removeDevice);
+  if (device) removePhone(device);
+}
+
+// remoteInfo: the Phone tab's facts, and keep-awake for General. Kept, so a tab that opens shows them at once.
 function phoneInfo(message) {
-  // The Phone button shows a waiting pairing also while the dialog is closed.
+  remote.info = message;
+  // The phone button shows a waiting pairing also while the tab is closed.
   const waiting = !!message.pairing;
   if (waiting !== remote.pairWaiting) {
     remote.pairWaiting = waiting;
     showPhones();
   }
+  if (settingsView?.tab === 'general') renderAwake();
   if (!phoneView) return;
   phoneView.info = message;
   renderPhone();
 }
 
-// A phone waits for Allow. The PC never opens the Phone dialog for it (a phone doesn't move the PC's view): a notice,
-// and the question is in the dialog.
+// A phone waits for Allow. The PC never opens Settings for it (a phone doesn't move the PC's view): a notice, the
+// phone button's badge, and the question in the Phone tab.
 function pairAsked(message) {
   if (phoneView) return;
-  toast(`${String(message.name || 'A phone')} wants to pair with this PC. Open Phone in the sidebar to allow or deny it.`);
+  toast(`${String(message.name || 'A phone')} wants to pair with this PC. Open Settings → Phone (the phone at the bottom of the sidebar) to allow or deny it.`);
 }
 
 function codeState(info) {
@@ -2815,11 +3131,10 @@ function renderPhone() {
     body.innerHTML = '<p class="muted">Checking Phone remote…</p>';
     return;
   }
-  const focused = ['remote', 'awake'].includes(document.activeElement?.name) ? document.activeElement.name : null;
   const devices = Array.isArray(info.devices) ? info.devices : [];
   const addresses = Array.isArray(info.addresses) ? info.addresses : [];
   let html =
-    `<label class="switch"><input type="checkbox" name="remote"${info.enabled ? ' checked' : ''}>` +
+    `<label class="switch"><input type="checkbox" name="remote" data-key="remote"${info.enabled ? ' checked' : ''}>` +
     '<span class="switch-track"></span><span>Let my phone watch and drive these agents</span></label>';
   if (info.warning) html += `<p class="phone-warning">${esc(info.warning)}</p>`;
   if (info.error) html += `<p class="phone-error">${esc(info.error)}</p>`;
@@ -2838,16 +3153,15 @@ function renderPhone() {
   } else if (info.enabled && !info.error) {
     html += '<p class="muted">Starting…</p>';
   }
-  html += awakeSection(info.awake);
+  html += awakeNote(info.awake);
   if (devices.length) {
     html += '<div class="phone-section"><span class="phone-label">Paired phones</span>' + devices.map(device =>
       `<div class="device-row"><span class="dot ${device.connected ? 'on' : 'off'}"></span>` +
       `<span class="hist-text"><span class="device-name ellipsis">${esc(device.name)}</span>` +
       `<span class="hist-sub ellipsis">${esc(seenText(device) + (device.client ? ' · ' + device.client : ''))}</span></span>` +
-      `<button class="ghost-btn small" data-remove-device="${esc(device.id)}">Remove</button></div>`).join('') + '</div>';
+      `<button class="ghost-btn small" data-remove-device="${esc(device.id)}" data-key="remove-${esc(device.id)}" aria-label="Remove ${esc(device.name)}">Remove</button></div>`).join('') + '</div>';
   }
-  body.innerHTML = html;
-  if (focused) body.querySelector(`[name="${focused}"]`)?.focus();
+  keepFocus(body, () => { body.innerHTML = html; });
 }
 
 function pngQr(value) {
@@ -2861,7 +3175,7 @@ function appSection(app) {
   return '<div class="phone-section"><span class="phone-label">1. Get Agent Arcade Remote (Android 8+)</span><div class="phone-pair">' +
     `<div class="qr-card app-qr"><img src="${esc(qr)}" alt="Download page of Agent Arcade Remote" draggable="false"></div>` +
     '<div class="phone-facts"><span class="muted">Scan this with your phone\'s camera to open the download page, and install the app from there.</span>' +
-    `<button class="text-btn link app-link" data-app-link>${esc(app.url.replace(/^https:\/\//, '').replace(/#.*$/, ''))}</button></div></div></div>`;
+    `<button class="text-btn link app-link" data-app-link data-key="app-link">${esc(app.url.replace(/^https:\/\//, '').replace(/#.*$/, ''))}</button></div></div></div>`;
 }
 
 // Step 2: Pair a phone makes a code and shows its QR code; a phone that used it waits for Allow or Deny.
@@ -2876,13 +3190,13 @@ function pairSection(info) {
       `<span class="phone-valid">${esc(codeState(info))}</span>` +
       '<span class="muted">Scan the code with Agent Arcade Remote on your phone, and check that it shows the same fingerprint. ' +
       'This PC then asks you to allow the phone.</span>' +
-      '<div class="phone-actions"><button class="ghost-btn small" data-new-code>New code</button>' +
-      `<button class="ghost-btn small" data-link="${esc(info.link)}">Copy link</button></div></div></div>`;
+      '<div class="phone-actions"><button class="ghost-btn small" data-new-code data-key="new-code">New code</button>' +
+      `<button class="ghost-btn small" data-link="${esc(info.link)}" data-key="copy-link">Copy link</button></div></div></div>`;
   }
   const last = codeState(info);
   return '<div class="phone-facts">' + (last ? `<span class="muted">${esc(last)}</span>` : '') +
     '<span class="muted">Shows a QR code to scan with Agent Arcade Remote. It works once, for 10 minutes, and this PC asks you before it pairs the phone.</span>' +
-    '<div class="phone-actions"><button class="ghost-btn small" data-pair>Pair a phone</button></div></div>';
+    '<div class="phone-actions"><button class="ghost-btn small" data-pair data-key="pair">Pair a phone</button></div></div>';
 }
 
 // Allow works only a moment after the question shows, so a click meant for the button that was there can't pair a
@@ -2899,8 +3213,8 @@ function pairQuestion(pairing) {
     `<span class="device-name">${esc(pairing.name)}</span>` +
     (pairing.client ? `<span class="muted">${esc(pairing.client)}</span>` : '') +
     '<span class="muted">Allow it only if it is your own phone and you just scanned the code. It waits up to a minute.</span>' +
-    '<div class="phone-actions"><button class="ghost-btn small" data-pair-answer="deny">Deny</button>' +
-    `<button class="primary-btn small" data-pair-answer="allow"${armed ? '' : ' disabled'}>Allow</button></div></div>`;
+    '<div class="phone-actions"><button class="ghost-btn small" data-pair-answer="deny" data-key="pair-deny">Deny</button>' +
+    `<button class="primary-btn small" data-pair-answer="allow" data-key="pair-allow"${armed ? '' : ' disabled'}>Allow</button></div></div>`;
 }
 
 // Tailscale hands out 100.64.0.0/10 addresses.
@@ -2909,21 +3223,23 @@ function isTailscale(host) {
   return a === 100 && b >= 64 && b <= 127;
 }
 
-// Whether Windows may sleep while the agents work, or while the phone wants to reach the PC.
-function awakeSection(awake) {
-  if (!awake) return '';
-  const modes = [
-    ['agents', 'While agents run'],
-    ['remote', 'While agents run or Phone remote is on'],
-    ['off', 'Never, Windows decides'],
-  ];
-  let html = '<div class="phone-section"><span class="phone-label">Keep this PC awake</span>' +
-    `<select name="awake">${modes.map(([value, label]) =>
-      `<option value="${value}"${awake.mode === value ? ' selected' : ''}>${label}</option>`).join('')}</select>` +
-    `<span class="muted">${awake.on
-      ? 'Windows won\'t go to sleep on its own now. The screen still turns off.'
-      : awake.mode === 'off' ? 'Windows sleeps as its power settings say, also while agents work.'
-      : 'Windows may go to sleep now: no agent is running.'}</span>`;
+// Whether Windows may sleep while the agents work, or while the phone wants to reach the PC (Settings → General;
+// the Phone tab says what it is now). [value, short label, today's full wording]
+const AWAKE_MODES = [
+  ['agents', 'While agents run', 'While agents run'],
+  ['remote', 'Also for Phone', 'While agents run or Phone remote is on'],
+  ['off', 'Off', 'Never, Windows decides'],
+];
+
+function awakeState(awake) {
+  return awake.on
+    ? "Windows won't go to sleep on its own now. The screen still turns off."
+    : awake.mode === 'off' ? 'Windows sleeps as its power settings say, also while agents work.'
+      : 'Windows may go to sleep now: no agent is running.';
+}
+
+function awakeWarnings(awake) {
+  let html = '';
   if (awake.mode !== 'off' && awake.onBattery) {
     html += '<span class="phone-warning">On battery, Windows still goes to sleep a few minutes after its sleep time. Plug the PC in.</span>';
   }
@@ -2931,7 +3247,29 @@ function awakeSection(awake) {
     html += '<span class="muted">Closing the lid still puts it to sleep. To keep it running with the lid closed, set ' +
       '"When I close the lid" to "Do nothing" for Plugged in, under Settings > System > Power & battery > Lid & power button controls.</span>';
   }
-  return html + '</div>';
+  return html;
+}
+
+// The Phone tab's note: what keeps the PC awake now, and where to change it.
+function awakeNote(awake) {
+  if (!awake) return '';
+  const mode = AWAKE_MODES.find(([value]) => value === awake.mode) || AWAKE_MODES[0];
+  return '<div class="phone-section"><span class="phone-label">Keep this PC awake</span>' +
+    `<span class="muted">${esc(mode[2])}. ${esc(awakeState(awake))} ` +
+    '<button class="text-btn link" type="button" data-settings-tab="general" data-key="awake-general">Change it in General</button></span>' +
+    awakeWarnings(awake) + '</div>';
+}
+
+// Settings → General: the three choices and what they mean now.
+function renderAwake() {
+  const box = settingsView?.root.querySelector('#awake-field');
+  if (!box) return;
+  const awake = remote.info?.awake;
+  keepFocus(box, () => {
+    box.querySelector('.field-help').innerHTML = awake ? esc(awakeState(awake)) + awakeWarnings(awake) : 'Checking…';
+    box.querySelector('.field-control').innerHTML = `<div class="seg" role="group" aria-label="Keep this PC awake">${AWAKE_MODES.map(([value, label, full]) =>
+      `<button type="button" data-awake="${value}" data-key="awake-${value}" title="${esc(full)}" aria-pressed="${awake?.mode === value}"${awake ? '' : ' disabled'}>${esc(label)}</button>`).join('')}</div>`;
+  });
 }
 
 async function removePhone(device) {
@@ -2944,45 +3282,503 @@ async function removePhone(device) {
   if (ok) send({ type: 'remoteRemove', device: device.id });
 }
 
-// Like the history: a menu or dialog on top closes first.
+// ---------- Settings ----------
+
+// One window for what isn't a project: General, Agents and accounts, Phone, Shared instructions, MCP servers and About.
+// A dialog inside the page: Esc closes it, Tab stays inside it, and focus goes back where it was. Only the PC opens
+// it; a phone's actions never do.
+const SETTINGS_TABS = [
+  ['general', 'General'], ['agents', 'Agents and accounts'], ['phone', 'Phone'],
+  ['instructions', 'Shared instructions'], ['mcp', 'MCP servers'], ['about', 'About'],
+];
+let settingsView = null; // { root, tab, opener }
+
+function openSettings(tab = 'general') {
+  closeMenu();
+  closeHistory();
+  if (!SETTINGS_TABS.some(([id]) => id === tab)) tab = 'general';
+  if (settingsView) return showSettingsTab(tab, true);
+  const root = document.createElement('div');
+  root.className = 'modal-backdrop settings-backdrop';
+  root.innerHTML =
+    '<div class="settings-window" role="dialog" aria-modal="true" aria-labelledby="settings-title">' +
+    '<div class="settings-side"><h2 id="settings-title">Settings</h2>' +
+    '<div class="settings-tabs" role="tablist" aria-orientation="vertical" aria-labelledby="settings-title">' +
+    SETTINGS_TABS.map(([id, label]) =>
+      `<button class="settings-tab" type="button" role="tab" id="settings-tab-${id}" data-settings-tab="${id}" aria-controls="settings-panel" aria-selected="false" tabindex="-1">${esc(label)}</button>`).join('') +
+    '</div></div>' +
+    '<div class="settings-panel" id="settings-panel" role="tabpanel" tabindex="-1"></div>' +
+    `<button class="icon-btn settings-close" type="button" data-settings-close title="Close (Esc)" aria-label="Close settings">${icon('close', 16)}</button>` +
+    '</div>';
+  settingsView = { root, tab: null, opener: document.activeElement };
+  root.addEventListener('mousedown', event => {
+    if (event.target === root) closeSettings();
+  });
+  root.addEventListener('click', settingsClick);
+  root.addEventListener('change', settingsChange);
+  root.addEventListener('input', settingsInput);
+  root.addEventListener('keydown', settingsTabKeys);
+  document.body.append(root);
+  // The newest Phone remote and keep-awake facts (remoteInfo). The Phone tab asks for them itself.
+  if (tab !== 'phone') send({ type: 'remoteDialog' });
+  showSettingsTab(tab, true);
+}
+
+function closeSettings() {
+  if (!settingsView) return;
+  closePhone();
+  const { root, opener } = settingsView;
+  settingsView = null;
+  root.remove();
+  // Focus goes back where it was, when that is still on screen.
+  if (opener?.isConnected && opener !== document.body && opener.getClientRects().length) opener.focus();
+}
+
+// focus: the tab itself gets focus (opened, or picked with the keyboard).
+function showSettingsTab(tab, focus = false) {
+  if (!settingsView) return;
+  if (settingsView.tab === 'phone' && tab !== 'phone') closePhone();
+  const changed = settingsView.tab !== tab;
+  settingsView.tab = tab;
+  for (const button of settingsView.root.querySelectorAll('.settings-tab')) {
+    const on = button.dataset.settingsTab === tab;
+    button.setAttribute('aria-selected', String(on));
+    button.tabIndex = on ? 0 : -1;
+  }
+  const panel = settingsView.root.querySelector('.settings-panel');
+  panel.setAttribute('aria-labelledby', `settings-tab-${tab}`);
+  if (changed) {
+    renderSettingsTab();
+    panel.scrollTop = 0;
+  }
+  if (focus) settingsView.root.querySelector(`#settings-tab-${tab}`).focus();
+}
+
+// update: the facts behind the open tab changed; it is drawn again where it is, and the focused control keeps focus.
+function renderSettingsTab(update = false) {
+  if (!settingsView) return;
+  const panel = settingsView.root.querySelector('.settings-panel');
+  const tab = settingsView.tab;
+  if (tab === 'phone') {
+    if (!update) {
+      panel.innerHTML = phoneTabHtml();
+      openPhoneTab(panel);
+    }
+    return;
+  }
+  keepFocus(panel, () => {
+    if (tab === 'general') panel.innerHTML = generalHtml();
+    else if (tab === 'agents') panel.innerHTML = agentsHtml();
+    else if (tab === 'instructions') panel.innerHTML = instructionsHtml();
+    else if (tab === 'mcp') panel.innerHTML = mcpTabHtml();
+    else if (tab === 'about') panel.innerHTML = aboutHtml();
+  });
+  if (tab === 'general') renderAwake();
+  if (tab === 'about') mountMascot(panel.querySelector('.about-mascot'), 120);
+  if (tab === 'mcp') {
+    if (update) renderMcp();
+    else refreshMcp();
+  }
+}
+
+// The state changed (agents, accounts, sign-ins, running panes, the selected project): the open tab shows it.
+function renderAgentsTab() {
+  if (['agents', 'instructions', 'general'].includes(settingsView?.tab)) renderSettingsTab(true);
+}
+
+// Redraws part of a dialog without losing the keyboard's place: the control with the same data-key gets focus back.
+// When it is gone, the dialog's panel takes focus, so it never falls out of the dialog (and never onto a new button).
+function keepFocus(container, draw) {
+  const active = document.activeElement;
+  const key = container.contains(active) && active !== container ? active.dataset?.key || '' : null;
+  draw();
+  if (key === null) return;
+  const again = key && container.querySelector(`[data-key="${CSS.escape(key)}"]`);
+  if (again && !again.disabled) again.focus();
+  else (container.closest('.settings-panel') || container).focus?.();
+}
+
+const field = (label, help, control, extra = '') =>
+  `<div class="field"${extra}><div class="field-text"><span class="field-label">${label}</span><span class="field-help">${help}</span></div>` +
+  `<div class="field-control">${control}</div></div>`;
+
+const toggle = (name, on, label) =>
+  `<button class="toggle" type="button" role="switch" data-toggle="${name}" data-key="toggle-${name}" aria-checked="${!!on}" aria-label="${esc(label)}"></button>`;
+
+function generalHtml() {
+  const folder = state.projectsFolder;
+  return '<h3 class="settings-title">General</h3><p class="lead">How Agent Arcade looks and behaves on this PC.</p>' +
+    field('Text size', `Every pane, the same size: <b class="size-value">${fontSize} px</b>. Ctrl+= and Ctrl+- in a pane change it too; Ctrl+0 goes back to 13.`,
+      `<div class="seg" role="group" aria-label="Text size">${FONT_SIZES.map(([label, size]) =>
+        `<button type="button" data-size="${size}" data-key="size-${label}" title="${size} px" aria-pressed="${fontSize === size}">${label}</button>`).join('')}</div>` +
+      `<input type="range" class="size-range" min="9" max="24" step="1" value="${fontSize}" data-key="size-range" aria-label="Text size in pixels">`) +
+    field('Notifications', 'A Windows notification when an agent is done or needs you, unless you are looking at it.',
+      toggle('notify', notifyOn, 'Windows notifications')) +
+    field('Keep this PC awake', '', '', ' id="awake-field"') +
+    field('New projects go to', folder
+      ? `<span class="path-text" title="${esc(folder)}">${esc(HomeData.shortPath(folder))}</span>` +
+        (state.projectsFolderChosen ? 'You picked this folder.' : 'Next to your projects, until you pick a folder.')
+      : 'Nowhere yet: add a project folder first, or pick a folder.',
+      '<button class="ghost-btn small" type="button" data-projects-folder data-key="projects-folder">Change…</button>' +
+      (state.projectsFolderChosen ? '<button class="ghost-btn small" type="button" data-projects-auto data-key="projects-auto" title="New projects go next to your projects again">Automatic</button>' : '')) +
+    field('Check for updates', "Once a day, GitHub's releases API is asked for the newest version number. No identifier is sent and nothing is downloaded. " +
+      '<button class="text-btn link" type="button" data-releases data-key="releases">All releases</button>',
+      toggle('updates', appInfo?.updateCheck, 'Tell me when a new version is out')) +
+    field('Mascot animations', 'The robot blinks, looks around and reacts to clicks. Windows "reduce motion" turns it off too.',
+      toggle('mascot', appInfo?.mascotAnimations !== false, 'Mascot animations'));
+}
+
+// Today's agent list with versions, every account with its email, and the ways to add, install and sign in.
+function agentsHtml() {
+  const rows = state.agents.map(agent => {
+    const version = agent.checking
+      ? '<span class="muted">checking…</span>'
+      : agent.installed
+        ? `<span class="ver" title="${esc(agent.version)}">${esc(shortVersion(agent.version))}</span>`
+        : `<button class="tag-btn" type="button" data-install="${esc(agent.name)}" data-key="install-${esc(agent.name)}">Install</button>`;
+    const accounts = state.accounts.filter(account => account.agent === agent.name).map(account => {
+      const running = runningFor(account.key);
+      const [dot, said] = account.checking ? ['wait', 'Checking'] : account.signedIn === true ? ['on', 'Signed in']
+        : account.signedIn === false ? ['off', 'Not signed in'] : ['idle', 'Check inside the agent'];
+      return `<div class="acc-row${agent.installed ? '' : ' disabled'}"><span class="dot ${dot}" role="img" title="${said}" aria-label="${said}"></span>` +
+        `<span class="acc-text"><span class="acc-top"><span class="acc-name">${esc(account.name)}</span>` +
+        (account.plan ? `<span class="plan">${esc(account.plan)}</span>` : '') +
+        (running ? `<span class="count live" title="Running">${running} running</span>` : '') +
+        `</span><span class="acc-sub ellipsis">${esc(accountLine(account))}</span></span>` +
+        `<button class="icon-btn small" type="button" data-account-menu="${esc(account.key)}" data-key="account-${esc(account.key)}" ` +
+        `title="New session, sign in, install, Windows Terminal, remove" aria-label="More for ${esc(agent.name)} (${esc(account.name)})" aria-haspopup="menu">${icon('more', 15)}</button></div>`;
+    }).join('');
+    const add = agent.multi && agent.installed
+      ? `<button class="ghost-btn small" type="button" data-add="${esc(agent.name)}" data-key="add-${esc(agent.name)}" title="Add another ${esc(agent.name)} account">${icon('plus', 13)}<span>Account</span></button>`
+      : '';
+    return `<tr><td><span class="agent-cell">${avatar(agent)}<span class="agent-name">${esc(agent.name)}</span></span></td>` +
+      `<td>${version}</td><td class="acc-cell">${accounts}</td><td class="add-cell">${add}</td></tr>`;
+  }).join('');
+  return '<h3 class="settings-title">Agents and accounts</h3>' +
+    '<p class="lead">Each agent signs in with its own official login. Agent Arcade never reads your tokens.</p>' +
+    (rows
+      ? '<table class="agents-table"><thead><tr><th scope="col">Agent</th><th scope="col">Version</th><th scope="col">Accounts</th>' +
+        `<th scope="col"><span class="sr-only">Add an account</span></th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<p class="muted">Looking for your agents…</p>') +
+    '<div class="settings-actions">' +
+    '<button class="ghost-btn" type="button" data-edit-agents data-key="edit-agents">Edit agent list</button>' +
+    '<button class="ghost-btn" type="button" data-add-account data-key="add-account">Add account…</button>' +
+    `<button class="ghost-btn" type="button" data-refresh data-key="refresh">${icon('refresh', 14)}<span>Check accounts again</span></button></div>` +
+    '<p class="note">An account\'s ⋯ starts a session, signs in (or switches the account it uses), opens it in Windows Terminal, installs or updates the agent, or removes the account.</p>';
+}
+
+function phoneTabHtml() {
+  return '<h3 class="settings-title">Phone</h3><p class="lead">Watch and drive your agents from Agent Arcade Remote on Android.</p>' +
+    '<div class="phone-body"></div>' +
+    '<p class="phone-note">A paired phone can read your panes and type into your agents, like you can at this PC. ' +
+    'Only pair your own phone, and allow it only right after you scanned the code yourself. If Windows asks, allow Agent Arcade on private networks. ' +
+    'Set your Wi-Fi to Private only if it is your own home network; on shared or public Wi-Fi keep it Public and use Tailscale.</p>';
+}
+
+// The sync dialog's content: AGENTS.md and the files that point to it, for the selected project.
+function instructionsHtml() {
+  const workspace = workspaceOf(state.workspace);
+  return '<h3 class="settings-title">Shared instructions</h3><p class="lead">Give every agent in a project the same instructions.</p>' +
+    (workspace
+      ? `<div class="settings-card"><p class="card-for">For <b>${esc(workspace.name)}</b> <span class="path-text">${esc(HomeData.shortPath(workspace.path))}</span></p>` +
+        '<p>AGENTS.md (or CLAUDE.md, if that is all you have) stays the main file. Missing AGENTS.md, CLAUDE.md and GEMINI.md files are created and only point to it.</p>' +
+        '<p class="muted">Existing files are never changed.</p>' +
+        `<div class="settings-actions"><button class="primary-btn" type="button" data-sync data-key="sync"${workspace.exists ? '' : ' disabled'}>Create missing files</button></div></div>` +
+        '<p class="note">For another project, pick it in the sidebar first.</p>'
+      : '<p class="muted">Pick a project in the sidebar first.</p>');
+}
+
+// ---------- Settings → MCP servers ----------
+
+// web/mcp.js draws the list (McpView) from the C# side's answer to mcpList: only each server's name, scope and
+// status. Without mcp.js the tab says where the list will be; without an answer it says so and offers to ask again.
+const MCP_WAIT_MS = 45000;
+const mcp = { data: null, waiting: false, failed: false, timer: 0 };
+
+function mcpTabHtml() {
+  return '<h3 class="settings-title">MCP servers</h3>' +
+    '<p class="lead">The MCP servers each agent has, and whether they answer right now, from each agent\'s own <span class="mono">mcp list</span> command.</p>' +
+    '<div class="mcp-box" id="mcp-box"></div>';
+}
+
+function refreshMcp() {
+  if (!window.McpView?.render) return renderMcp();
+  clearTimeout(mcp.timer);
+  mcp.waiting = true;
+  mcp.failed = false;
+  mcp.timer = setTimeout(() => {
+    mcp.waiting = false;
+    mcp.failed = true;
+    renderMcp();
+  }, MCP_WAIT_MS);
+  send({ type: 'mcpList' });
+  renderMcp();
+}
+
+function mcpArrived(message) {
+  clearTimeout(mcp.timer);
+  mcp.waiting = false;
+  mcp.failed = false;
+  mcp.data = message;
+  renderMcp();
+}
+
+function renderMcp() {
+  const box = settingsView?.tab === 'mcp' ? settingsView.root.querySelector('#mcp-box') : null;
+  if (!box) return;
+  keepFocus(box, () => {
+    if (!window.McpView?.render) {
+      box.innerHTML = '<div class="settings-card placeholder"><p>MCP servers will show here.</p>' +
+        '<p class="muted">Only names and status are shown. Agent Arcade never reads a server\'s command line, keys or environment.</p></div>';
+      return;
+    }
+    if (mcp.data) {
+      try {
+        window.McpView.render(box, mcp.data, refreshMcp);
+      } catch {
+        box.innerHTML = '<p class="phone-error">The MCP servers couldn\'t be shown.</p>' +
+          '<button class="ghost-btn small" type="button" data-mcp-again data-key="mcp-again">Check again</button>';
+      }
+      return;
+    }
+    box.innerHTML = mcp.failed
+      ? '<p class="muted">No answer came about the MCP servers.</p><button class="ghost-btn small" type="button" data-mcp-again data-key="mcp-again">Check again</button>'
+      : '<p class="muted">Asking each agent for its MCP servers… This can take a few seconds.</p>';
+  });
+}
+
+// ---------- Settings → About ----------
+
+function aboutHtml() {
+  const version = appInfo?.version || '';
+  const update = appInfo?.update;
+  const links = [['website', 'Website'], ['github', 'GitHub'], ['changelog', 'Changelog']];
+  return '<div class="about"><div class="about-mascot"></div>' +
+    `<h3 class="settings-title">Agent Arcade${version ? ' ' + esc(version) : ''}</h3>` +
+    '<p class="lead">Free for personal use · PolyForm Noncommercial · offered by 3Dmatters</p>' +
+    (update ? `<p><button class="text-btn link" type="button" data-update-open data-key="update">Agent Arcade ${esc(update.version)} is available</button></p>` : '') +
+    `<div class="about-links">${links.map(([key, label]) =>
+      `<button class="ghost-btn small" type="button" data-link-to="${key}" data-key="link-${key}">${icon('external', 13)}<span>${label}</span></button>`).join('')}` +
+    '<button class="ghost-btn small" type="button" data-releases data-key="releases">All releases</button></div>' +
+    (window.Mascot ? '<p class="note">Click the robot. Then click it five times, fast.</p>' : '') + '</div>';
+}
+
+// The mascot (web/mascot.js) in slot; the app icon when that file is missing or fails. The button takes focus only
+// when it is clicked, never through Tab, so it can't take the keyboard from a pane.
+function mountMascot(slot, size) {
+  if (!slot) return;
+  if (window.Mascot?.mount) {
+    try {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'mascot';
+      button.tabIndex = -1;
+      button.title = 'Agent Arcade';
+      button.setAttribute('aria-label', 'Agent Arcade mascot');
+      button.style.width = button.style.height = size + 'px';
+      slot.replaceChildren(button);
+      window.Mascot.mount(button, { size });
+      return;
+    } catch { /* the icon below instead */ }
+  }
+  slot.innerHTML = `<span class="mascot static" style="width:${size}px;height:${size}px">${LOGO}</span>`;
+}
+
+// ---------- Settings: clicks, switches and keys ----------
+
+function settingsClick(event) {
+  if (!settingsView) return;
+  const target = event.target;
+  const tab = target.closest('[data-settings-tab]');
+  if (tab) return showSettingsTab(tab.dataset.settingsTab, true);
+  if (target.closest('[data-settings-close]')) return closeSettings();
+  if (target.closest('[data-releases]')) return appInfo?.releases && send({ type: 'openUrl', url: appInfo.releases });
+  if (target.closest('[data-update-open]')) return appInfo?.update && send({ type: 'openUrl', url: appInfo.update.url });
+  switch (settingsView.tab) {
+    case 'general': return generalClick(target);
+    case 'agents': return agentsClick(target);
+    case 'phone': return phoneClick(event);
+    case 'instructions':
+      if (target.closest('[data-sync]')) send({ type: 'syncInstructions' });
+      return;
+    case 'mcp':
+      if (target.closest('[data-mcp-again]')) refreshMcp();
+      return;
+    case 'about': {
+      const link = target.closest('[data-link-to]');
+      if (link && LINKS[link.dataset.linkTo]) send({ type: 'openUrl', url: LINKS[link.dataset.linkTo] });
+    }
+  }
+}
+
+function generalClick(target) {
+  const size = target.closest('[data-size]');
+  if (size) return changeFontSize(size.dataset.size, true);
+  const awake = target.closest('[data-awake]');
+  if (awake) return send({ type: 'keepAwake', mode: awake.dataset.awake });
+  if (target.closest('[data-projects-folder]')) return send({ type: 'projectsFolder', reset: false });
+  if (target.closest('[data-projects-auto]')) return send({ type: 'projectsFolder', reset: true });
+  const switched = target.closest('[data-toggle]');
+  if (!switched) return;
+  const on = switched.getAttribute('aria-checked') !== 'true';
+  switched.setAttribute('aria-checked', String(on));
+  if (switched.dataset.toggle === 'notify') setNotify(on);
+  if (switched.dataset.toggle === 'updates') send({ type: 'updateCheck', on });
+  if (switched.dataset.toggle === 'mascot') {
+    send({ type: 'mascotAnimations', on });
+    try {
+      window.Mascot?.setEnabled(on);
+    } catch { /* the mascot is decoration */ }
+  }
+}
+
+// The S/M/L/XL buttons and the slider: every pane at once, saved when the choice is made.
+function changeFontSize(size, save) {
+  setFontSize(size, save);
+  const panel = settingsView?.root.querySelector('.settings-panel');
+  if (!panel || settingsView.tab !== 'general') return;
+  panel.querySelector('.size-value').textContent = `${fontSize} px`;
+  const range = panel.querySelector('.size-range');
+  if (Number(range.value) !== fontSize) range.value = fontSize;
+  for (const button of panel.querySelectorAll('[data-size]')) button.setAttribute('aria-pressed', String(Number(button.dataset.size) === fontSize));
+}
+
+function agentsClick(target) {
+  const more = target.closest('[data-account-menu]');
+  if (more) return accountMenu(accountOf(more.dataset.accountMenu), more);
+  const install = target.closest('[data-install]');
+  if (install) return askInstall(state.agents.find(agent => agent.name === install.dataset.install));
+  const add = target.closest('[data-add]');
+  if (add) return addAccount(add.dataset.add);
+  if (target.closest('[data-add-account]')) return addAccount();
+  if (target.closest('[data-edit-agents]')) return send({ type: 'editAgents' });
+  if (target.closest('[data-refresh]')) send({ type: 'refresh' });
+}
+
+function settingsChange(event) {
+  if (settingsView?.tab === 'phone') return phoneChange(event);
+  if (event.target.classList.contains('size-range')) changeFontSize(event.target.value, true);
+}
+
+function settingsInput(event) {
+  if (event.target.classList.contains('size-range')) changeFontSize(event.target.value, false);
+}
+
+// The tabs are a vertical tab list: arrow keys, Home and End move between them.
+function settingsTabKeys(event) {
+  const tab = event.target.closest?.('.settings-tab');
+  if (!tab) return;
+  const ids = SETTINGS_TABS.map(([id]) => id);
+  const index = ids.indexOf(tab.dataset.settingsTab);
+  const next = { ArrowDown: index + 1, ArrowRight: index + 1, ArrowUp: index - 1, ArrowLeft: index - 1, Home: 0, End: ids.length - 1 }[event.key];
+  if (next === undefined) return;
+  event.preventDefault();
+  showSettingsTab(ids[(next + ids.length) % ids.length], true);
+}
+
+const focusables = root => [...root.querySelectorAll('button, [href], input, select, textarea, [tabindex]')]
+  .filter(item => item.tabIndex >= 0 && !item.disabled && item.getClientRects().length);
+
+// While Settings is open, Tab stays inside it, Esc closes it (a menu or a dialog on top of it closes first), and
+// focus that lands outside it (a click on the dimmed page) goes back into it.
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && phoneView && !openMenu && !document.querySelector('.modal:not(.phone)')) closePhone();
+  if (!settingsView || openMenu || document.querySelector('.modal')) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    return closeSettings();
+  }
+  if (event.key !== 'Tab') return;
+  const items = focusables(settingsView.root.querySelector('.settings-window'));
+  if (!items.length) return;
+  const active = document.activeElement;
+  const inside = settingsView.root.contains(active);
+  if (!inside || (event.shiftKey ? active === items[0] : active === items.at(-1))) {
+    event.preventDefault();
+    (event.shiftKey ? items.at(-1) : items[0]).focus();
+  }
 }, true);
+
+document.addEventListener('focusin', event => {
+  if (!settingsView || settingsView.root.contains(event.target) || event.target.closest?.('.modal, .menu')) return;
+  settingsView.root.querySelector('.settings-panel').focus();
+});
+
+// Ctrl+, opens Settings (also from a pane), Ctrl+N the new-agent menu (not from inside a pane, where it is the agent's
+// own key). Neither while another dialog is open.
+document.addEventListener('keydown', event => {
+  if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || document.querySelector('.modal')) return;
+  const key = event.key.toLowerCase();
+  if (key === ',') {
+    event.preventDefault();
+    if (!settingsView) openSettings();
+  } else if (key === 'n' && !settingsView && !event.target.closest?.('.xterm')) {
+    event.preventDefault();
+    openNewAgentMenu();
+  }
+});
+
 
 // ---------- wiring ----------
 
 $('#workspaces').addEventListener('click', event => {
   const more = event.target.closest('[data-workspace-menu]');
   if (more) return workspaceMenu(more.dataset.workspaceMenu, more);
-  const fold = event.target.closest('[data-fold-workspace]');
-  if (fold) {
-    toggleFold('ws:' + fold.dataset.foldWorkspace);
-    return renderWorkspaces();
-  }
-  const child = event.target.closest('[data-session]');
-  if (child) {
-    const session = sessions.get(child.dataset.session);
-    if (session && !same(session.workspace, state.workspace)) selectWorkspace(session.workspace);
-    return focusSession(child.dataset.session);
-  }
-  const row = event.target.closest('.ws-row');
-  if (row && !same(row.dataset.path, state.workspace)) selectWorkspace(row.dataset.path);
+  // A pane's dot shows that pane.
+  const dot = event.target.closest('[data-dot]');
+  if (dot && sessions.has(dot.dataset.dot)) return showSession(dot.dataset.dot);
+  const row = event.target.closest('[data-path]');
+  if (row) openProject(row.dataset.path);
 });
 
-$('#agents').addEventListener('click', event => {
-  const more = event.target.closest('[data-account-menu]');
-  if (more) return accountMenu(accountOf(more.dataset.accountMenu), more);
-  const install = event.target.closest('[data-install]');
-  if (install) return askInstall(state.agents.find(agent => agent.name === install.dataset.install));
-  const add = event.target.closest('[data-add]');
-  if (add) return addAccount(add.dataset.add);
-  const row = event.target.closest('[data-account]');
-  if (row) openSession(row.dataset.account);
+// A chat in Recent or Home's "Pick up where you left off": continued like History's Resume, or its pane shown.
+function recentClick(event) {
+  const more = event.target.closest('[data-chat-menu]');
+  if (more) return chatOf(more.dataset.chatMenu) && chatMenu(chatOf(more.dataset.chatMenu), more);
+  const row = event.target.closest('[data-recent]');
+  if (row && chatOf(row.dataset.recent)) return resumeChat(chatOf(row.dataset.recent));
+  if (event.target.closest('[data-recent-more]')) {
+    recentLimit += RECENT_PAGE * 2;
+    renderRecent();
+  }
+}
+
+$('#recent').addEventListener('click', recentClick);
+$('#search-recent').addEventListener('click', () => setRecentSearch($('.recent-search').hidden));
+$('#recent-search').addEventListener('input', event => {
+  recentQuery = event.target.value.trim();
+  recentLimit = RECENT_PAGE;
+  renderRecent();
+});
+$('#recent-search').addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  event.stopPropagation();
+  setRecentSearch(false);
+  $('#search-recent').focus();
+});
+
+$('#home').addEventListener('click', event => {
+  const quick = event.target.closest('[data-quick]');
+  if (quick) {
+    openProject(quick.dataset.path);
+    return openSession(quick.dataset.quick);
+  }
+  const shown = event.target.closest('[data-show-session]');
+  if (shown) return showSession(shown.dataset.showSession);
+  const dot = event.target.closest('[data-dot]');
+  if (dot && sessions.has(dot.dataset.dot)) return showSession(dot.dataset.dot);
+  const add = event.target.closest('[data-add-project]');
+  if (add) return addProjectMenu(add);
+  const open = event.target.closest('[data-open-project]');
+  if (open) return openProject(open.dataset.openProject);
+  recentClick(event);
 });
 
 $('#empty').addEventListener('click', event => {
   const card = event.target.closest('[data-account]');
   if (card) return openSession(card.dataset.account);
+  const settings = event.target.closest('[data-settings-tab]');
+  if (settings) return openSettings(settings.dataset.settingsTab);
   if (event.target.closest('[data-history]')) return openHistory();
   const resume = event.target.closest('[data-resume], [data-show-chat]');
   if (resume) return chatOf(resume.dataset.resume || resume.dataset.showChat) && resumeChat(chatOf(resume.dataset.resume || resume.dataset.showChat));
@@ -3012,33 +3808,30 @@ $('#grid').addEventListener('dblclick', event => {
   if (label) editTitle(sessions.get(label.closest('.pane').dataset.session));
 });
 
-$('#logo').innerHTML = LOGO;
-$('#add-workspace').innerHTML = icon('plus', 15);
-$('#new-project').innerHTML = icon('folder-plus', 15);
-$('#refresh').innerHTML = icon('refresh', 15);
-$('#add-account').innerHTML = icon('plus', 15);
-$('#open-unity').innerHTML = icon('cube', 15) + '<span>Open Unity</span>';
-$('#open-folder').innerHTML = icon('folder', 15) + '<span>Folder</span>';
-$('#sync').innerHTML = icon('doc', 15) + '<span>Shared instructions</span>';
+mountMascot($('#mascot-slot'), 30);
+try {
+  if (window.Mascot) window.Mascot.onToast = text => toast(String(text));
+} catch { /* the mascot is decoration */ }
+$('#side-new-agent').innerHTML = icon('plus', 15) + '<span>New agent</span><kbd>Ctrl N</kbd>';
+$('#nav-home').innerHTML = icon('home', 16) + '<span>Home</span>';
+$('#add-project').innerHTML = icon('plus', 15);
+$('#search-recent').innerHTML = icon('search', 14);
+$('#settings').innerHTML = icon('gear', 17);
 $('#new-agent').innerHTML = icon('plus', 15) + '<span>New agent</span>' + icon('chevron', 14);
-$('#history').innerHTML = icon('history', 15) + '<span>History</span>';
-$('#images').innerHTML = icon('image', 15) + '<span>Images</span>';
-$('#images-refresh').innerHTML = icon('refresh', 14);
-renderAgents();
-
-$('#add-workspace').addEventListener('click', () => send({ type: 'addWorkspace' }));
-$('#new-project').addEventListener('click', () => newProject());
-$('#refresh').addEventListener('click', () => send({ type: 'refresh' }));
-$('#add-account').addEventListener('click', () => addAccount());
-$('#toggle-agents').addEventListener('click', () => {
-  toggleFold('agents');
-  renderAgents();
+$('#project-menu').innerHTML = icon('more', 16);
+$('#git-chip').addEventListener('click', () => {
+  if (panelShows('changes')) return setPanel(false);
+  panelTab = 'changes';
+  setPanel(true);
 });
-$('#edit-agents').addEventListener('click', () => send({ type: 'editAgents' }));
-$('#text-size').addEventListener('click', textSizeDialog);
-$('#phone').addEventListener('click', openPhone);
+$('#images-refresh').innerHTML = icon('refresh', 14);
+
+$('#side-new-agent').addEventListener('click', event => newAgentMenu(event.currentTarget));
+$('#nav-home').addEventListener('click', showHome);
+$('#add-project').addEventListener('click', event => addProjectMenu(event.currentTarget));
+$('#phone').addEventListener('click', () => openSettings('phone'));
+$('#settings').addEventListener('click', () => openSettings('general'));
 showPhones();
-$('#app-version').addEventListener('click', versionDialog);
 $('#update-note').addEventListener('click', event => {
   const update = appInfo?.update;
   if (!update) return;
@@ -3048,11 +3841,8 @@ $('#update-note').addEventListener('click', event => {
     renderUpdateNote();
   }
 });
-$('#open-unity').addEventListener('click', () => send({ type: 'openUnity' }));
-$('#open-folder').addEventListener('click', () => send({ type: 'openFolder' }));
 $('#new-agent').addEventListener('click', event => newAgentMenu(event.currentTarget));
-$('#history').addEventListener('click', () => openHistory());
-$('#images').addEventListener('click', toggleImages);
+$('#project-menu').addEventListener('click', event => projectMenu(event.currentTarget));
 $('#images-refresh').addEventListener('click', () => {
   imagesKey = '';
   loadImages();
@@ -3104,15 +3894,7 @@ $('#images-grid').addEventListener('dragstart', event => {
   event.dataTransfer.setData(IMAGE_DRAG, tile.dataset.path);
   event.dataTransfer.effectAllowed = 'copy';
 });
-$('#sync').addEventListener('click', async () => {
-  const ok = await modal({
-    title: 'Give every agent the same instructions?',
-    body: '<p>AGENTS.md (or CLAUDE.md, if that is all you have) stays the main file. Missing AGENTS.md, CLAUDE.md and GEMINI.md files are created and only point to it.</p>' +
-      '<p class="muted">Existing files are never changed.</p>',
-    confirm: 'Create missing files',
-  });
-  if (ok) send({ type: 'syncInstructions' });
-});
+render();
 
 if (bridge) {
   bridge.addEventListener('message', event => {
@@ -3120,7 +3902,11 @@ if (bridge) {
     switch (message.type) {
       case 'state': {
         const before = state.workspace;
+        const listed = state.workspaces;
         state = message;
+        // A folder just added at the PC (Add a project folder, New project, put back from History) opens. A project
+        // a phone made is added at the end and the PC's view stays.
+        if (!same(before, state.workspace) && !listed.some(workspace => same(workspace.path, state.workspace)) && before) view = 'project';
         render();
         renderHistory();
         if (!same(before, state.workspace)) panelWorkspaceChanged();
@@ -3145,6 +3931,8 @@ if (bridge) {
       case 'history':
         history = message.chats || [];
         renderHistory();
+        renderRecent();
+        renderHome();
         if (!$('#empty').hidden) renderEmpty();
         break;
       case 'started': {
@@ -3186,6 +3974,7 @@ if (bridge) {
         previewUrlArrived(message);
         break;
       case 'changes':
+        gitArrived(message);
         changesArrived(message);
         break;
       case 'diff':
@@ -3211,6 +4000,10 @@ if (bridge) {
         break;
       case 'appInfo':
         appInfoArrived(message);
+        break;
+      // Settings → MCP servers (Mcp.cs): server names and status per agent.
+      case 'mcpList':
+        mcpArrived(message);
         break;
       case 'accountAdded': {
         const account = accountOf(message.account);
