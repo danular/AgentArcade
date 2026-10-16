@@ -12,11 +12,14 @@
      github.com and keep the user-attachments link it inserts on its own line here. -->
 
 <p>
-  <img src="docs/media/panes.png" alt="Agent Arcade with four demo agents in a grid: two working (orange dots), one asking for permission (red), one idle (green)" width="49%">
+  <img src="docs/media/home.png" alt="Home: a card per project with its git branch, running agents and their status, a 10-day activity line and its last chats; one agent needs you, listed on top" width="100%">
+</p>
+<p>
+  <img src="docs/media/panes.png" alt="A project with four demo agents in a grid: two working (orange dots), one asking for permission (red diamond), one idle; the sidebar lists projects with their status dots and recent chats" width="49%">
   <img src="docs/media/side-panel.png" alt="One agent pane asking for permission, next to the side panel's Changes tab with a git diff" width="49%">
 </p>
 
-<sub>Screenshots from a test copy, with stand-in demo agents and a made-up project.</sub>
+<sub>Screenshots from a test copy, with stand-in demo agents and made-up projects.</sub>
 
 A Windows app that runs your AI coding agents side by side on one project: Claude Code, Codex (ChatGPT), GitHub Copilot CLI, Cursor, Antigravity CLI and Gemini CLI (API key or Code Assist), each in its own pane inside the app.
 
@@ -27,7 +30,7 @@ Free for personal use. Professional use needs Agent Arcade Pro (EUR 25 per user 
 - Windows 11 on x64 only. Windows 10 and Windows on ARM aren't tested, and there is no Mac or Linux version.
 - The phone app is Android only (8.0 or newer). There is no iPhone app.
 - No worktree isolation: agents in one project share its folder. Give them separate tasks, or open separate folders as separate workspaces.
-- Agents don't survive an app restart. Closing Agent Arcade stops them; History can resume their chats afterwards.
+- Agents don't survive an app restart. Closing Agent Arcade stops them; Recent in the sidebar can resume their chats afterwards.
 - Status dots, alerts and phone approvals come from reading each agent's screen (approval prompts, "esc to interrupt" lines) and the notifications it sends. When a vendor changes its interface, a dot or an alert can be wrong until Agent Arcade catches up.
 - Not code-signed yet: SmartScreen warns on first start, and Smart App Control blocks it, until the code-signing certificate arrives.
 
@@ -65,6 +68,8 @@ Then open **Settings** (the gear at the bottom of the sidebar) → **Agents and 
 - The sidebar has **New agent** (Ctrl+N, the same menu as in the top bar), **Home**, your **Projects** with a status dot per running agent (click a dot to show that pane) and **Recent**: your chats across projects, newest first; click one to continue it, the magnifier searches them. Its footer says how many agents need you or are working, and has the phone button and the gear for **Settings** (Ctrl+,).
 - The top bar shows the project, its git branch and changed files (click it for the Changes tab), **New agent**, and a **⋯** menu with Open folder, Images, Shared instructions, Open in Windows Terminal, Open in Unity (for a Unity project) and the project's chat history. The button left of the project name hides the whole sidebar, so the panes get its width; click it again to bring the sidebar back.
 - **Settings** has General (text size, notifications, keep this PC awake, where new projects go, update check, mascot animations), Agents and accounts (versions, accounts and emails, add account, install, sign in, check again, edit agent list), Phone, Shared instructions, MCP servers and About.
+- **Settings → MCP servers** lists the MCP servers of each installed agent, per account, from the agent's own list command in the selected project (`claude mcp list`, `codex mcp list --json`, `gemini mcp list`, `copilot mcp list`, `cursor-agent mcp list`): each server's name, scope when the agent says it, and whether it answers. Nothing else is read or kept: no command lines, URLs, keys or environment. Claude Code, Gemini CLI and Cursor check a server by connecting to it, so opening the tab or **Check again** starts their servers briefly. Antigravity CLI has no list command ("not available").
+- The robot next to the name in the sidebar wears the agents' status on its antenna: pulsing orange while one works, red when one needs you. It blinks and follows the pointer, and it likes being clicked. Settings → General → **Mascot animations**, or Windows' reduce-motion setting, keeps it still.
 - Drag a pane by its header onto another pane to swap their places in the grid.
 - Drop files or images on a pane to paste their paths into the agent's prompt. Claude Code and Codex attach pasted image paths; Gemini gets them as `@path`. Images dragged from a browser are saved to `%TEMP%\AgentArcade\drops` first.
 - Click an image path an agent prints to view the image in the pane (arrow keys switch images, Esc closes).
@@ -118,7 +123,7 @@ This publishes the app to `%LOCALAPPDATA%\Programs\AgentArcade` and adds a Start
 
 `install-and-run.ps1` does it all in one go: it builds first (a build error leaves the open app alone), then closes the open app the way its close button does (with agents running, the app asks you first, and Cancel stops the script), installs, and starts the new version. Run it from a terminal outside Agent Arcade or with the Claude app's Run button, not from a pane inside Agent Arcade. `test-run.ps1` builds a test copy into `%TEMP%\AgentArcade-test-build` and starts it next to the installed app, with its own data in `%TEMP%\AgentArcade-test-home` (see below); it installs nothing.
 
-To try a change without installing: `dotnet run` (while the installed app is closed). To run the built-in checks: `AgentArcade.exe --self-check`, then read `%TEMP%\AgentArcade-selfcheck.txt`; with `--fixtures docs\phone-remote\fixtures` it also writes the Phone remote contract's example files there ([their README](docs/phone-remote/fixtures/README.md)). `node --test tests/remote.test.js` checks the page's alert rules (one alert per dialog), `node --test tests/home/home.test.js` Home's and Recent's helpers (activity per day, Today / Yesterday / Earlier, short times), and `node --test tests/status/status.test.mjs` the golden screens below (the self-check runs them too when `node.exe` is on PATH).
+To try a change without installing: `dotnet run` (while the installed app is closed). To run the built-in checks: `AgentArcade.exe --self-check`, then read `%TEMP%\AgentArcade-selfcheck.txt`; with `--fixtures docs\phone-remote\fixtures` it also writes the Phone remote contract's example files there ([their README](docs/phone-remote/fixtures/README.md)). `node --test tests/remote.test.js` checks the page's alert rules (one alert per dialog), `node --test tests/home/home.test.js` Home's and Recent's helpers (activity per day, Today / Yesterday / Earlier, short times), `node --test tests/mascot.test.mjs` the mascot (states, easter eggs, reduced motion), `node --test tests/mcp.test.js` the MCP servers table, and `node --test tests/status/status.test.mjs` the golden screens below (the self-check runs them too when `node.exe` is on PATH).
 
 To run a test build next to the installed app, set `AGENT_ARCADE_HOME` to an empty folder first. That copy keeps its own settings, agents, history and paired phones there, and doesn't count as the same app. With `AGENT_ARCADE_REMOTE_LOOPBACK=1` its Phone remote listens on 127.0.0.1 only, so Windows doesn't show a firewall prompt for it; give it another `RemotePort` in its `settings.json`.
 
