@@ -104,8 +104,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .xterm :focus
 .brand { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px; }
 .brand-name { font-size: 15px; font-weight: 600; white-space: nowrap; }
 .mascot-slot { display: grid; flex: none; place-items: center; width: 30px; height: 30px; }
-.mascot { display: grid; place-items: center; padding: 0; overflow: hidden; border-radius: 9px; }
-.mascot.static { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
+/* No overflow: hidden on the mascot: the robot hops out of its box (web/mascot.js). Only the static icon is clipped. */
+.mascot { display: grid; place-items: center; padding: 0; border-radius: 9px; }
+.mascot.static { overflow: hidden; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
 .mascot.static img { display: block; width: 100%; height: 100%; }
 .logo {
   display: grid;
