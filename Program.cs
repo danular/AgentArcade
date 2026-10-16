@@ -540,6 +540,8 @@ static class SelfCheck
 
         GitSafetyCheck.Run(Check, lines.Add);
 
+        McpCheck.Run(Check);
+
         RemoteSelfCheck.Run(Check);
         RemoteFixtures.Run(Check, fixtures);
 
