@@ -152,10 +152,10 @@ LAYOUT = '''<!doctype html>
         <a class="brand" href="index.html"><img src="assets/img/icon-64.png" alt="" width="30" height="30">{{name}}</a>
         <p class="muted small">All your agents. One window. Free for personal use; Pro for work.</p>
       </div>
-      <div><h4>Product</h4><ul><li><a href="download.html">Download</a></li><li><a href="phone.html">Phone remote</a></li><li><a href="voice.html">Voice</a></li><li><a href="pricing.html">Pricing</a></li><li><a href="changelog.html">Changelog</a></li></ul></div>
-      <div><h4>Resources</h4><ul><li><a href="docs.html">Docs</a></li><li><a href="security.html">Security</a></li><li><a href="pricing.html#need-pro">Do I need Pro?</a></li><li><a href="{{github}}">Source on GitHub</a></li></ul></div>
-      <div><h4>Community</h4><ul><li><a href="{{discuss}}">Discussions</a></li><li><a href="{{issues}}">Report a bug</a></li><li><a href="{{releases}}">All releases</a></li></ul></div>
-      <div><h4>Legal</h4><ul><li><a href="legal.html#license">License</a></li><li><a href="legal.html#privacy">Privacy</a></li><li><a href="legal.html#terms">Terms of sale</a></li><li><a href="legal.html#trademarks">Trademarks</a></li><li><a href="legal.html#imprint">Imprint</a></li></ul></div>
+      <div><h2>Product</h2><ul><li><a href="download.html">Download</a></li><li><a href="phone.html">Phone remote</a></li><li><a href="voice.html">Voice</a></li><li><a href="pricing.html">Pricing</a></li><li><a href="changelog.html">Changelog</a></li></ul></div>
+      <div><h2>Resources</h2><ul><li><a href="docs.html">Docs</a></li><li><a href="security.html">Security</a></li><li><a href="pricing.html#need-pro">Do I need Pro?</a></li><li><a href="{{github}}">Source on GitHub</a></li></ul></div>
+      <div><h2>Community</h2><ul><li><a href="{{discuss}}">Discussions</a></li><li><a href="{{issues}}">Report a bug</a></li><li><a href="{{releases}}">All releases</a></li></ul></div>
+      <div><h2>Legal</h2><ul><li><a href="legal.html#license">License</a></li><li><a href="legal.html#privacy">Privacy</a></li><li><a href="legal.html#terms">Terms of sale</a></li><li><a href="legal.html#trademarks">Trademarks</a></li><li><a href="legal.html#imprint">Imprint</a></li></ul></div>
     </div>
     <p class="disclaimer">&copy; {{year}} {{name}}. %%disclaimer%%</p>
   </div>
