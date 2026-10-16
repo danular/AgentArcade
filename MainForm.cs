@@ -428,6 +428,9 @@ sealed class MainForm : Form, IRemoteHost
                 case "newProject":
                     NewProjectFromPage(Json.Str(m, "name"));
                     break;
+                case "projectsFolder":
+                    PickProjectsFolder(m.TryGetProperty("reset", out var reset) && reset.ValueKind == JsonValueKind.True);
+                    break;
                 case "selectWorkspace":
                     SelectWorkspace(Json.Str(m, "path"));
                     break;
@@ -511,10 +514,15 @@ sealed class MainForm : Form, IRemoteHost
                     PostAppInfo();
                     CheckForUpdate();
                     break;
+                case "mascotAnimations":
+                    _settings.MascotAnimations = m.TryGetProperty("on", out var lively) && lively.ValueKind == JsonValueKind.True;
+                    _settings.Save();
+                    PostAppInfo();
+                    break;
                 case "editAgents":
                     AgentStore.Load();
                     Commands.StartVisible(Path.Combine(Environment.SystemDirectory, "notepad.exe"), "\"" + AgentStore.FilePath + "\"", AppSettings.Folder);
-                    Toast("Opened agents.json. Save it, then click refresh. Delete the file to get the default list back.");
+                    Toast("Opened agents.json. Save it, then click Check accounts again in Settings. Delete the file to get the default list back.");
                     break;
             }
         }
@@ -540,7 +548,7 @@ sealed class MainForm : Form, IRemoteHost
                 accountKey = chat.AccountKey;
                 workspace = chat.Workspace;
             }
-            var (agent, account) = FindAccount(accountKey) ?? throw new InvalidOperationException("That account no longer exists. Click refresh.");
+            var (agent, account) = FindAccount(accountKey) ?? throw new InvalidOperationException("That account no longer exists. Click Check accounts again in Settings.");
             string commandLine;
             string directory;
             Dictionary<string, string?> env;
@@ -619,7 +627,7 @@ sealed class MainForm : Form, IRemoteHost
             List<InstallNeed> needs;
             try
             {
-                var (agent, _) = FindAccount(accountKey) ?? throw new InvalidOperationException("That account no longer exists. Click refresh.");
+                var (agent, _) = FindAccount(accountKey) ?? throw new InvalidOperationException("That account no longer exists. Click Check accounts again in Settings.");
                 needs = await Prerequisites.CheckAsync(agent);
             }
             catch (Exception ex)
@@ -739,7 +747,8 @@ sealed class MainForm : Form, IRemoteHost
 
     // ---------- version and update notice ----------
 
-    // The sidebar shows the version, whether the update check is on, and a newer release when one was seen.
+    // Settings shows the version, whether the update check and the mascot's animations are on, and the sidebar a newer
+    // release when one was seen.
     void PostAppInfo()
     {
         var tag = _settings.UpdateTag;
@@ -751,6 +760,7 @@ sealed class MainForm : Form, IRemoteHost
             releases = UpdateCheck.Releases,
             updateCheck = _settings.UpdateCheck,
             update = newer ? new { version = UpdateCheck.Shown(tag!), url = UpdateCheck.PageFor(_settings.UpdateUrl) } : null,
+            mascotAnimations = _settings.MascotAnimations != false,
         });
     }
 
@@ -1178,6 +1188,7 @@ sealed class MainForm : Form, IRemoteHost
                 named = chat.Named,
                 started = chat.Started,
                 ended = chat.Ended,
+                lastActive = chat.LastActive,
                 open = _sessions.Values.Any(item => item.Chat == chat),
                 resume = ChatArgs.Kind(_agents.FirstOrDefault(agent => agent.Name == chat.Agent), chat),
             }),
@@ -1324,8 +1335,36 @@ sealed class MainForm : Form, IRemoteHost
         PostState();
     }
 
-    // Where New project makes its folder: next to the current workspace, or a new install's source\repos (NewProject.Folder).
-    string? ProjectsFolder() => NewProject.Folder(_settings.ProjectPath, _settings.Projects, _settings.DefaultProjectsFolder);
+    // Where New project makes its folder: the one picked in Settings, else next to the current workspace, or a new
+    // install's source\repos (NewProject.Folder).
+    string? ProjectsFolder() => NewProject.Folder(_settings.ProjectPath, _settings.Projects, _settings.DefaultProjectsFolder, _settings.NewProjectsFolder);
+
+    // Settings → General, "New projects go to": Change picks a folder on this PC, Automatic (reset) goes back to the
+    // rule. The page and the phones see the result as projectsFolder.
+    void PickProjectsFolder(bool reset)
+    {
+        string? picked = null;
+        if (!reset)
+        {
+            using var dialog = new FolderBrowserDialog
+            {
+                Description = "Where should new projects go?",
+                UseDescriptionForTitle = true,
+                InitialDirectory = ProjectsFolder() is { } now && Directory.Exists(now) ? now : "",
+            };
+            if (dialog.ShowDialog(this) != DialogResult.OK) return;
+            picked = NewProject.Chosen(dialog.SelectedPath);
+            if (picked == null)
+            {
+                Toast("Pick a folder on this PC for new projects.", "error");
+                return;
+            }
+        }
+        _settings.NewProjectsFolder = picked;
+        _settings.Save();
+        // The phones get the new projectsFolder with it.
+        PostState();
+    }
 
     // New project, from the page or a phone: an empty folder next to the current workspace, listed in the sidebar.
     (string? Path, RemoteReply Reply) CreateProject(string name)
@@ -1708,7 +1747,7 @@ sealed class MainForm : Form, IRemoteHost
     }
 
     object RemoteState() => RemoteModel.State(_run, _settings.ProjectPath, _settings.Projects, _agents, _lastTools, _accounts, _infos, _summaries.Values, RemoteHosts(),
-        RemoteModel.Power(AwakeMode(), _awake.Reason != null), _settings.DefaultProjectsFolder);
+        RemoteModel.Power(AwakeMode(), _awake.Reason != null), _settings.DefaultProjectsFolder, _settings.NewProjectsFolder);
 
     List<object> RemoteChats() => RemoteModel.Chats(_history, _agents, chat => _sessions.FirstOrDefault(pair => pair.Value.Chat == chat).Key);
 
@@ -1836,8 +1875,10 @@ sealed class MainForm : Form, IRemoteHost
             type = "state",
             workspace = _settings.ProjectPath,
             workspaces = RemoteModel.Workspaces(_settings.Projects),
-            // Where New project makes its folder, for the dialog's preview; null when there is nowhere.
+            // Where New project makes its folder, for the dialog's preview; null when there is nowhere. Chosen: the user
+            // picked it in Settings.
             projectsFolder = ProjectsFolder(),
+            projectsFolderChosen = NewProject.Chosen(_settings.NewProjectsFolder) != null,
             agents = _agents.Select(agent =>
             {
                 ToolStatus? tool = null;

@@ -70,6 +70,11 @@ sealed class AppSettings
     // Null until it was closed once; the window then opens at about 85% of the primary work area (WindowPlace).
     public WindowBox? WindowBounds { get; set; }
     public bool? WindowMaximized { get; set; }
+    // Settings → General: the mascot blinks, looks around and reacts to clicks. Null (older files) means on.
+    public bool? MascotAnimations { get; set; }
+    // Settings → General, "New projects go to": a folder the user picked. Null (older files, or Automatic) keeps
+    // NewProject.Folder's own rule; a picked folder that is gone counts as null.
+    public string? NewProjectsFolder { get; set; }
 
     static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 

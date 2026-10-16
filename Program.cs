@@ -1138,6 +1138,22 @@ static class RemoteSelfCheck
                 && (File.Exists(AppSettings.FilePath) || AppSettings.Load().DefaultProjectsFolder == NewProject.DefaultFolder),
             "Documents and the user folder put new projects in source\\repos, made with the first one; a project keeps them next to it; older settings keep the old rule");
 
+        // A folder picked in Settings (NewProjectsFolder) comes first while it is there; a missing, relative or network
+        // one keeps the rule above (a network path is only read as text). Older settings files have neither that nor
+        // MascotAnimations, which then means on.
+        var picked = Path.Combine(folder, "home", "picked");
+        Directory.CreateDirectory(picked);
+        var pickedState = JsonSerializer.SerializeToElement(RemoteModel.State(RemoteModel.NewRun(), documents, [documents], [], null, [], null, [], [], null, repos, picked), RemoteModel.Wire);
+        check(
+            "new-project-chosen",
+            NewProject.Folder(documents, [documents], repos, picked) == picked
+                && NewProject.Folder(Path.Combine(projects, "First"), [], null, picked + Path.DirectorySeparatorChar) == picked
+                && NewProject.Folder(Path.Combine(projects, "First"), [], null, Path.Combine(folder, "home", "gone")) == projects
+                && NewProject.Chosen(@"\\server\share\projects") == null && NewProject.Chosen("relative") == null && NewProject.Chosen(null) == null
+                && Json.Str(pickedState, "projectsFolder") == picked
+                && older is { NewProjectsFolder: null, MascotAnimations: null },
+            "a folder picked for new projects wins while it is there; a missing, relative or network one falls back to the rule; older settings have neither field");
+
         // The window: the first start takes about 85% of the primary work area; a saved place stays on a screen that is
         // there (moved and shrunk into the one it overlaps most), or centred on the primary one when its screen is gone.
         var primaryArea = new Rectangle(0, 0, 2000, 1000);

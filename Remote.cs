@@ -666,9 +666,11 @@ static partial class NewProject
     // The folder that holds workspace, or when that has none or is missing, the one of the first listed workspace
     // that has one; null when none has. With a fallback (a new install's DefaultProjectsFolder), a workspace that is
     // Documents, the user folder or a OneDrive root isn't a project: new projects go to the fallback instead, which
-    // Create makes when it isn't there yet.
-    public static string? Folder(string workspace, IEnumerable<string> projects, string? fallback = null)
+    // Create makes when it isn't there yet. A folder the user picked in Settings (AppSettings.NewProjectsFolder) comes
+    // first while it is there.
+    public static string? Folder(string workspace, IEnumerable<string> projects, string? fallback = null, string? chosen = null)
     {
+        if (Chosen(chosen) is { } picked) return picked;
         foreach (var path in projects.Prepend(workspace))
         {
             try
@@ -685,6 +687,22 @@ static partial class NewProject
             }
         }
         return null;
+    }
+
+    // A picked projects folder as a full path when it is a folder on this PC that exists; null otherwise (then the
+    // automatic rule counts). Network paths never count: nothing is made on another computer.
+    public static string? Chosen(string? chosen)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(chosen) || !Path.IsPathFullyQualified(chosen) || ProjectFiles.IsNetworkPath(chosen)) return null;
+            var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(chosen));
+            return Directory.Exists(full) ? full : null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or System.Security.SecurityException)
+        {
+            return null;
+        }
     }
 
     // Folders that hold much more than projects: the user folder, Documents (where a new install starts) and OneDrive.
@@ -840,8 +858,9 @@ static class RemoteModel
         IEnumerable<JsonElement> sessions,
         IEnumerable<string> hosts,
         object? power = null,
-        string? projectsFallback = null)
-        => State(Pc, Version, run, workspace, NewProject.Folder(workspace, projects, projectsFallback), Workspaces(projects), agents, tools, accounts, infos, sessions, hosts, power);
+        string? projectsFallback = null,
+        string? projectsChosen = null)
+        => State(Pc, Version, run, workspace, NewProject.Folder(workspace, projects, projectsFallback, projectsChosen), Workspaces(projects), agents, tools, accounts, infos, sessions, hosts, power);
 
     // The same from parts that are already known: what this PC is called, its version, its projects folder and the
     // workspaces. The contract fixtures pass made-up ones, so nothing in them comes from this PC.
