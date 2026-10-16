@@ -571,7 +571,7 @@ The phone skips the alert when `seenOnPc` is true, when that chat is open on the
 
 - `run` is 16 lowercase hex characters (8 random bytes), for example `9c4e1a7f03b2d865`. The PC makes a new one each time its page starts, and keeps it until the next start. Within one run a pane id is never used for a second pane, so (`id`, `run`) names one pane for good.
 - State, every Session and every Attention carry it. A Session always has the `run` of the State it came with.
-- When the run changes while a phone is connected, the PC sends `state` with the new run before any Session or Attention of that run. The panes of the old run are gone; a `closed` may or may not come for each of them.
+- When the run changes while a phone is connected, the PC sends `state` with the new run before any Session or Attention of that run. The panes of the old run are gone; a `closed` may or may not come for each of them. Every `watch` ends with them, also when a pane of the new run gets a watched id: the phone sends `watch` again for a pane of the new run it shows, and no `unwatch` for the old ones.
 - The phone compares runs only for equality, never parses them, and treats a missing `run` (a 1.0 PC) as one unknown run that never changes.
 
 What the phone does:
