@@ -552,22 +552,25 @@ static class RemoteLink
         return lan.Concat(tailscale).Distinct().ToList();
     }
 
-    // A sentence for the Phone dialog when a LAN address in hosts is on a network Windows treats as public: Windows
-    // then blocks the phone there. Null when there is none, or when Windows can't tell.
+    // A sentence for the Phone dialog when a LAN address in hosts is on a network Windows treats as public and the
+    // firewall blocks the phone there. Null when there is none, when Windows' own rule for Agent Arcade allows public
+    // networks (the user ticked Public when Windows asked), or when Windows can't tell.
     public static string? PublicNetworkWarning(IEnumerable<string> hosts)
     {
         try
         {
-            var lan = hosts.Select(host => IPAddress.TryParse(host.Split(':')[0], out var address) ? address : null)
-                .OfType<IPAddress>()
-                .Where(address => !IsTailscale(address))
-                .ToHashSet();
+            var lanHosts = hosts.Select(host => (Address: IPAddress.TryParse(host.Split(':')[0], out var address) ? address : null, Host: host))
+                .Where(item => item.Address != null && !IsTailscale(item.Address))
+                .ToList();
+            var lan = lanHosts.Select(item => item.Address!).ToHashSet();
             if (lan.Count == 0) return null;
             var networks = NetworkProfiles.PublicNetworks();
             foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (!Guid.TryParse(adapter.Id, out var id) || !networks.TryGetValue(id, out var name)) continue;
                 if (!adapter.GetIPProperties().UnicastAddresses.Any(unicast => lan.Contains(unicast.Address))) continue;
+                var port = int.TryParse(lanHosts[0].Host.Split(':').ElementAtOrDefault(1), out var number) ? number : 0;
+                if (Firewall.AllowsOnPublic(Environment.ProcessPath, port)) return null;
                 var page = adapter.NetworkInterfaceType == NetworkInterfaceType.Wireless80211 ? "Wi-Fi > " + name : "Ethernet";
                 // Private lets every device on that network reach this PC, so it is only for the user's own network.
                 return "Windows treats \"" + name + "\" as a public network, so it blocks your phone there. Set it to Private only if this is your own home network "
@@ -596,6 +599,53 @@ static class RemoteLink
     static readonly Lazy<string> AppQrCode = new(() => Qr(AppDownload));
 
     public static string AppQr => AppQrCode.Value;
+}
+
+// Whether Windows Defender Firewall lets this program take TCP connections on public networks: an enabled inbound rule
+// for it allows them there (Windows makes one when the user ticks Public in its prompt) and none blocks them. Only
+// reads the rules, never changes them. Asked at most every 30 s.
+static class Firewall
+{
+    const int Inbound = 1, Block = 0, PublicProfile = 4, Tcp = 6, AnyProtocol = 256;
+    static (long At, string Key, bool Allows) _last = (0, "", false);
+
+    public static bool AllowsOnPublic(string? program, int port)
+    {
+        if (string.IsNullOrEmpty(program) || port <= 0) return false;
+        var key = program + ":" + port;
+        if (_last.Key == key && Environment.TickCount64 - _last.At < 30000) return _last.Allows;
+        var allows = false;
+        try
+        {
+            dynamic policy = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FwPolicy2", true)!)!;
+            foreach (dynamic rule in policy.Rules)
+            {
+                string? app = rule.ApplicationName;
+                if (string.IsNullOrEmpty(app) || !(bool)rule.Enabled || (int)rule.Direction != Inbound || ((int)rule.Profiles & PublicProfile) == 0) continue;
+                if (!string.Equals(Environment.ExpandEnvironmentVariables(app), program, StringComparison.OrdinalIgnoreCase)) continue;
+                int protocol = rule.Protocol;
+                if (protocol != Tcp && protocol != AnyProtocol) continue;
+                // A block rule wins over any allow rule.
+                if ((int)rule.Action == Block)
+                {
+                    allows = false;
+                    break;
+                }
+                if (Covers((string?)rule.LocalPorts, port)) allows = true;
+            }
+        }
+        catch (Exception)
+        {
+            allows = false;
+        }
+        _last = (Environment.TickCount64, key, allows);
+        return allows;
+    }
+
+    // A rule's local ports: "*", "47821", "80,443" or "47000-48000".
+    public static bool Covers(string? ports, int port)
+        => string.IsNullOrEmpty(ports) || ports == "*" || ports.Split(',').Any(part => part.Trim().Split('-') is var range
+            && int.TryParse(range[0], out var low) && (range.Length == 1 ? low == port : int.TryParse(range[1], out var high) && low <= port && port <= high));
 }
 
 // The networks Windows treats as public, from the Network List Manager.

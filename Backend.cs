@@ -32,6 +32,25 @@ static class TextGuard
     }
 }
 
+// What a chat title may hold: TextGuard's rules, and no mouse reports. A pane that tracks the mouse (Codex) gets ESC [<35;12;9M
+// for every move, and up to 1.5.1 web/app.js kept <35;12;9M of it in the typed line; a title left with no letters is empty.
+static class ChatTitle
+{
+    static readonly Regex MouseReport = new(@"<\d{1,3};\d{1,5};\d{1,5}[Mm]", RegexOptions.Compiled);
+
+    // What is left of a report cut off at either end of a title: ";8M", "<65;19", "<65;1…".
+    static readonly Regex Piece = new(@"(?<=^|\s)<?[\d;]*;[\d;]*[Mm]?…?(?=\s|$)", RegexOptions.Compiled);
+
+    public static string Clean(string? title)
+    {
+        title = TextGuard.Redact(title);
+        if (!MouseReport.IsMatch(title)) return title;
+        title = Piece.Replace(MouseReport.Replace(title, " "), " ");
+        title = string.Join(' ', title.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return title.Any(char.IsLetter) ? title : "";
+    }
+}
+
 static class Json
 {
     public static readonly JsonSerializerOptions Options = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
@@ -409,14 +428,15 @@ static class HistoryStore
             var chats = JsonSerializer.Deserialize<List<ChatRecord>>(File.ReadAllText(FilePath), Json.Options)?
                 .Where(chat => chat.Id.Length > 0 && chat.Agent.Length > 0)
                 .ToList() ?? new();
-            // A key that became a title before TextGuard knew its kind is hidden now. The file is saved only when a
-            // title changed, so this happens once.
+            // A key that became a title before TextGuard knew its kind is hidden now, and mouse reports come out
+            // (ChatTitle). The file is saved only when a title changed, so this happens once.
             var scrubbed = false;
             foreach (var chat in chats)
             {
-                var clean = TextGuard.Redact(chat.Title);
+                var clean = ChatTitle.Clean(chat.Title);
                 if (clean == chat.Title) continue;
                 chat.Title = clean;
+                if (clean.Length == 0) chat.Named = false;
                 scrubbed = true;
             }
             if (scrubbed)

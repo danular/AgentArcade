@@ -1144,8 +1144,8 @@ sealed class MainForm : Form, IRemoteHost
     {
         var chat = _history.FirstOrDefault(item => item.Id == chatId);
         if (chat == null) return;
-        // A key typed into a pane or into Rename never lands in history.json.
-        title = string.Join(' ', TextGuard.Redact(title).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        // A key typed into a pane or into Rename never lands in history.json, nor do mouse reports (ChatTitle).
+        title = string.Join(' ', ChatTitle.Clean(title).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         if (title.Length > 120) title = title[..120];
         if (chat.Title == title && chat.Named == (named && title.Length > 0)) return;
         chat.Title = title;

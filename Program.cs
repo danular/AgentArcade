@@ -354,6 +354,16 @@ static class SelfCheck
                     && !network.Contains("Home Wi-Fi", StringComparison.Ordinal) && network.Contains("[network]", StringComparison.Ordinal)
                     && Mask("OK   project — " + profile + "Other", profile).Contains(profile + "Other", StringComparison.Ordinal),
                 "this report shows emails as their first letter and domain, the user folder as %USERPROFILE% and no network name");
+
+            // Titles that 1.5.1 and older made from mouse reports, whole, cut off by the 60-character limit, and mixed with words.
+            string[] mouse = [";12;9M<35;11;8M<35;9;7M<35;7;6M<35;4;5M<35;2;5M<35;23;1…", "<35;1;1M", "fix the bridge<35;12;9M<35;11;8M foam"];
+            var titles = mouse.Select(ChatTitle.Clean).ToList();
+            const string numbers = "Fix the foam at 10:30; 2;3 items <b>";
+            var clean = titles.SequenceEqual(["", "", "fix the bridge foam"]) && ChatTitle.Clean(numbers) == numbers
+                && ChatTitle.Clean("use " + key) == "use sk-proj-[hidden]";
+            Check("chat-title", clean, clean
+                ? "mouse reports come out of chat titles, a title of only mouse reports becomes empty, other text stays, keys are hidden"
+                : string.Join(" | ", titles) + " | " + ChatTitle.Clean(numbers));
         }
 
         var scratch = Path.Combine(Path.GetTempPath(), "AgentArcade-selfcheck-" + Environment.ProcessId);
@@ -1225,8 +1235,15 @@ static class RemoteSelfCheck
         // stays out of the report.
         var warning = RemoteLink.PublicNetworkWarning(RemoteLink.Hosts(47821, false));
         check("remote-network", true, warning == null
-            ? "no address of the pairing link is on a public network"
+            ? "no address of the pairing link is on a public network, or Windows lets this copy take connections there"
             : Regex.Replace(SelfCheck.HideNetworks(warning, PublicNetworkNames()), "\"[^\"]*\"", "\"[network]\""));
+
+        // A rule's ports, and (reading only) whether Windows' rules let this copy take connections on public networks.
+        var covers = Firewall.Covers("*", 47821) && Firewall.Covers(null, 47821) && Firewall.Covers("80, 47821", 47821)
+            && Firewall.Covers("47000-48000", 47821) && !Firewall.Covers("80,443", 47821) && !Firewall.Covers("47822-48000", 47821);
+        check("remote-firewall", covers, covers
+            ? "rule ports read right; Windows " + (Firewall.AllowsOnPublic(Environment.ProcessPath, 47821) ? "lets" : "doesn't let") + " this copy take connections on public networks"
+            : "a rule's ports read wrong");
 
         using var screen = JsonDocument.Parse("{\"id\":\"s1\",\"seq\":3,\"total\":100,\"from\":90,\"cursor\":{\"x\":1,\"y\":99},\"lines\":[[],[],[],[],[],[],[],[],[],[{\"t\":\"last\"}]]}");
         using var cut = JsonDocument.Parse(RemoteModel.ScreenMessage(screen.RootElement, 4));

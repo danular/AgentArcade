@@ -771,7 +771,8 @@ function trackPrompt(session, data) {
   }
   const text = data
     .replace(/\x1b\[200~([\s\S]*?)(?:\x1b\[201~|$)/g, (_, pasted) => session.phoneTyping ? pasted.replace(/[\r\n]+/g, ' ') : '')
-    .replace(/\x1b(\[[0-9;?]*[ -/]*[@-~]|O.|.)/g, '');
+    // Escape sequences: keys, focus and mouse reports (ESC [<35;12;9M; ESC [M and three bytes in the old encoding).
+    .replace(/\x1b(\[M[\s\S]{3}|\[[0-?]*[ -/]*[@-~]|O.|.)/g, '');
   for (const c of text) {
     if (c === '\r' || c === '\n') {
       const line = session.typed.trim();
