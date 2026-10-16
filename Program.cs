@@ -930,6 +930,29 @@ static class RemoteSelfCheck
                 && NewProject.Refusal(null, "Third")?.Status == 404 && NewProject.Refusal(projects, "a?b")?.Status == 400,
             "a new folder is listed at the end; a listed folder that was missing on disk is made but not listed twice; the check while typing gives the reason");
 
+        // A new install (DefaultProjectsFolder) makes new projects in source\repos while its workspace is Documents or the
+        // user folder, and makes that folder with the first one; a real project still gets them next to it. Settings
+        // from before keep the old rule.
+        var repos = Path.Combine(folder, "home", "source", "repos");
+        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var noDrive = Enumerable.Range('D', 23).Select(letter => (char)letter + @":\").FirstOrDefault(drive => !Directory.Exists(drive)) ?? @"Q:\";
+        var refusedEarly = NewProject.Refusal(repos, "First");
+        var (fresh, freshReply) = NewProject.Create(NewProject.Folder(documents, [documents], repos), "First");
+        var older = JsonSerializer.Deserialize<AppSettings>("{\"ProjectPath\":\"C:\\\\Projects\\\\Game\"}");
+        var freshState = JsonSerializer.SerializeToElement(RemoteModel.State(RemoteModel.NewRun(), documents, [documents], [], null, [], null, [], [], null, repos), RemoteModel.Wire);
+        check(
+            "new-project-default",
+            NewProject.Folder(documents, [documents], repos) == repos && NewProject.Folder(profile, [], repos) == repos
+                && NewProject.Folder(Path.Combine(projects, "First"), [documents], repos) == projects
+                && NewProject.Folder(documents, [], null) == Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(documents))
+                && refusedEarly == null && freshReply.Status == 201 && fresh == Path.Combine(repos, "First") && Directory.Exists(fresh)
+                && NewProject.Refusal(Path.Combine(noDrive, "source", "repos"), "First")?.Status == 404
+                && Json.Str(freshState, "projectsFolder") == repos
+                && older is { DefaultProjectsFolder: null }
+                && (File.Exists(AppSettings.FilePath) || AppSettings.Load().DefaultProjectsFolder == NewProject.DefaultFolder),
+            "Documents and the user folder put new projects in source\\repos, made with the first one; a project keeps them next to it; older settings keep the old rule");
+
         var agents = AgentStore.Defaults();
         var claude = agents.First(agent => agent.Command == "claude");
         var stateRun = RemoteModel.NewRun();

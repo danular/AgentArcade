@@ -660,16 +660,23 @@ static partial class NewProject
         return null;
     }
 
+    // A new install's projects folder (AppSettings.DefaultProjectsFolder), where Visual Studio puts projects too.
+    public static string DefaultFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "source", "repos");
+
     // The folder that holds workspace, or when that has none or is missing, the one of the first listed workspace
-    // that has one; null when none has.
-    public static string? Folder(string workspace, IEnumerable<string> projects)
+    // that has one; null when none has. With a fallback (a new install's DefaultProjectsFolder), a workspace that is
+    // Documents, the user folder or a OneDrive root isn't a project: new projects go to the fallback instead, which
+    // Create makes when it isn't there yet.
+    public static string? Folder(string workspace, IEnumerable<string> projects, string? fallback = null)
     {
         foreach (var path in projects.Prepend(workspace))
         {
             try
             {
                 if (path.Length == 0) continue;
-                var parent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)));
+                var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+                if (fallback != null && IsHome(full)) return Path.TrimEndingDirectorySeparator(Path.GetFullPath(fallback));
+                var parent = Path.GetDirectoryName(full);
                 if (parent != null && Directory.Exists(parent)) return parent;
             }
             catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or System.Security.SecurityException)
@@ -680,12 +687,28 @@ static partial class NewProject
         return null;
     }
 
+    // Folders that hold much more than projects: the user folder, Documents (where a new install starts) and OneDrive.
+    static bool IsHome(string full)
+    {
+        string?[] homes =
+        [
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            Environment.GetEnvironmentVariable("OneDrive"),
+            Environment.GetEnvironmentVariable("OneDriveConsumer"),
+            Environment.GetEnvironmentVariable("OneDriveCommercial"),
+        ];
+        return homes.Any(home => !string.IsNullOrEmpty(home) && string.Equals(Path.TrimEndingDirectorySeparator(home), full, StringComparison.OrdinalIgnoreCase));
+    }
+
     // Why name (already trimmed) can't be made in folder right now, with the status and code the phone gets; null when
-    // it can. The page's New project dialog asks this while you type.
+    // it can. The page's New project dialog asks this while you type. A projects folder that isn't there yet (a new
+    // install's source\repos) is made with the first project, as long as its drive is there.
     public static (int Status, string Code, string Problem)? Refusal(string? folder, string name)
     {
         if (Problem(name) is { } problem) return (400, "badName", problem);
-        if (folder == null || !Directory.Exists(folder)) return (404, "noProjectsFolder", "Agent Arcade on your PC has no projects folder. Add a project there first.");
+        if (folder == null || !Directory.Exists(folder) && !Directory.Exists(Path.GetPathRoot(folder)))
+            return (404, "noProjectsFolder", "Agent Arcade on your PC has no projects folder. Add a project there first.");
         var path = Path.Combine(folder, name);
         if (!string.Equals(Path.GetDirectoryName(Path.GetFullPath(path)), Path.TrimEndingDirectorySeparator(folder), StringComparison.OrdinalIgnoreCase))
             return (400, "badName", "That name can't be a folder.");
@@ -804,7 +827,8 @@ static class RemoteModel
     public static object Power(string keepAwake, bool awake, bool onBattery, bool lidSleeps) => new { keepAwake, awake, onBattery, lidSleeps };
 
     // run is the page's current run (sessions carry the same one). tools holds the probe results by agent name; while
-    // the PC checks again, the previous ones. hosts are the addresses of the pairing link.
+    // the PC checks again, the previous ones. hosts are the addresses of the pairing link. projectsFallback is
+    // AppSettings.DefaultProjectsFolder (NewProject.Folder).
     public static object State(
         string run,
         string workspace,
@@ -815,8 +839,9 @@ static class RemoteModel
         IReadOnlyDictionary<string, AccountInfo>? infos,
         IEnumerable<JsonElement> sessions,
         IEnumerable<string> hosts,
-        object? power = null)
-        => State(Pc, Version, run, workspace, NewProject.Folder(workspace, projects), Workspaces(projects), agents, tools, accounts, infos, sessions, hosts, power);
+        object? power = null,
+        string? projectsFallback = null)
+        => State(Pc, Version, run, workspace, NewProject.Folder(workspace, projects, projectsFallback), Workspaces(projects), agents, tools, accounts, infos, sessions, hosts, power);
 
     // The same from parts that are already known: what this PC is called, its version, its projects folder and the
     // workspaces. The contract fixtures pass made-up ones, so nothing in them comes from this PC.

@@ -371,7 +371,7 @@ sealed class MainForm : Form, IRemoteHost
                     break;
                 case "newProjectCheck":
                     var checkName = Json.Str(m, "name");
-                    var refusal = NewProject.Refusal(NewProject.Folder(_settings.ProjectPath, _settings.Projects), checkName.Trim());
+                    var refusal = NewProject.Refusal(ProjectsFolder(), checkName.Trim());
                     Post(new { type = "newProjectProblem", name = checkName, problem = refusal?.Problem });
                     break;
                 case "newProject":
@@ -1234,10 +1234,13 @@ sealed class MainForm : Form, IRemoteHost
         PostState();
     }
 
+    // Where New project makes its folder: next to the current workspace, or a new install's source\repos (NewProject.Folder).
+    string? ProjectsFolder() => NewProject.Folder(_settings.ProjectPath, _settings.Projects, _settings.DefaultProjectsFolder);
+
     // New project, from the page or a phone: an empty folder next to the current workspace, listed in the sidebar.
     (string? Path, RemoteReply Reply) CreateProject(string name)
     {
-        var made = NewProject.CreateAndList(NewProject.Folder(_settings.ProjectPath, _settings.Projects), name, _settings.Projects);
+        var made = NewProject.CreateAndList(ProjectsFolder(), name, _settings.Projects);
         if (made.Path != null) _settings.Save();
         return made;
     }
@@ -1615,7 +1618,7 @@ sealed class MainForm : Form, IRemoteHost
     }
 
     object RemoteState() => RemoteModel.State(_run, _settings.ProjectPath, _settings.Projects, _agents, _lastTools, _accounts, _infos, _summaries.Values, RemoteHosts(),
-        RemoteModel.Power(AwakeMode(), _awake.Reason != null));
+        RemoteModel.Power(AwakeMode(), _awake.Reason != null), _settings.DefaultProjectsFolder);
 
     List<object> RemoteChats() => RemoteModel.Chats(_history, _agents, chat => _sessions.FirstOrDefault(pair => pair.Value.Chat == chat).Key);
 
@@ -1744,7 +1747,7 @@ sealed class MainForm : Form, IRemoteHost
             workspace = _settings.ProjectPath,
             workspaces = RemoteModel.Workspaces(_settings.Projects),
             // Where New project makes its folder, for the dialog's preview; null when there is nowhere.
-            projectsFolder = NewProject.Folder(_settings.ProjectPath, _settings.Projects),
+            projectsFolder = ProjectsFolder(),
             agents = _agents.Select(agent =>
             {
                 ToolStatus? tool = null;
