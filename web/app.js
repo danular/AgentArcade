@@ -3407,6 +3407,9 @@ function keepFocus(container, draw) {
   const key = container.contains(active) && active !== container ? active.dataset?.key || '' : null;
   draw();
   if (key === null) return;
+  // Still inside: the focused control was kept, or the drawing focused one itself (McpView's Check again).
+  const now = document.activeElement;
+  if (now !== container && container.contains(now)) return;
   const again = key && container.querySelector(`[data-key="${CSS.escape(key)}"]`);
   if (again && !again.disabled) again.focus();
   else (container.closest('.settings-panel') || container).focus?.();
@@ -3546,18 +3549,17 @@ function renderMcp() {
         '<p class="muted">Only names and status are shown. Agent Arcade never reads a server\'s command line, keys or environment.</p></div>';
       return;
     }
-    if (mcp.data) {
-      try {
-        window.McpView.render(box, mcp.data, refreshMcp);
-      } catch {
-        box.innerHTML = '<p class="phone-error">The MCP servers couldn\'t be shown.</p>' +
-          '<button class="ghost-btn small" type="button" data-mcp-again data-key="mcp-again">Check again</button>';
-      }
+    if (mcp.failed) {
+      box.innerHTML = '<p class="muted">No answer came about the MCP servers.</p><button class="ghost-btn small" type="button" data-mcp-again data-key="mcp-again">Check again</button>';
       return;
     }
-    box.innerHTML = mcp.failed
-      ? '<p class="muted">No answer came about the MCP servers.</p><button class="ghost-btn small" type="button" data-mcp-again data-key="mcp-again">Check again</button>'
-      : '<p class="muted">Asking each agent for its MCP servers… This can take a few seconds.</p>';
+    // While a check runs, McpView shows it (Check again reads Checking…); the answer comes with mcpArrived.
+    try {
+      window.McpView.render(box, mcp.waiting ? null : mcp.data, refreshMcp);
+    } catch {
+      box.innerHTML = '<p class="phone-error">The MCP servers couldn\'t be shown.</p>' +
+        '<button class="ghost-btn small" type="button" data-mcp-again data-key="mcp-again">Check again</button>';
+    }
   });
 }
 
