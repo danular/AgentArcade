@@ -567,13 +567,17 @@ body.resizing-panel iframe { pointer-events: none; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* Centred by the auto margins below, not justify-content: when the cards and chats are taller than the window,
+     centring would push the logo above the top edge, out of reach of the scrollbar. */
+  justify-content: flex-start;
   gap: 24px;
   height: 100%;
   padding: 24px;
   overflow: auto;
   background: radial-gradient(1100px 480px at 50% -12%, rgba(224, 122, 95, .08), transparent 62%), var(--bg);
 }
+.empty > :first-child { margin-top: auto; }
+.empty > :last-child { margin-bottom: auto; }
 .hero { max-width: 580px; text-align: center; }
 .hero .logo { width: 48px; height: 48px; margin: 0 auto; border-radius: 14px; }
 .hero h1 { margin: 16px 0 8px; font: 400 34px/1.2 Georgia, "Times New Roman", serif; letter-spacing: -.3px; }
