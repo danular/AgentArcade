@@ -147,8 +147,8 @@ The versions are what each tool's own `--version` printed on the PC where the fi
 | `Power.cs` | Keeps Windows from sleeping on its own while agents run (a power request), reads the battery and lid settings, and whether someone is at the PC (time since the last input, for alerts) |
 | `Update.cs` | The once-a-day update check: the newest release's tag from GitHub's releases API, compared with the running version |
 | `Backend.cs` | Settings, agent list, accounts, sign-in checks, chat history, Windows Terminal launcher, shared instructions |
-| `web/` | The interface (`index.html`, `app.css`, `app.js`, `icon.png`), `remote.js` (what the phone sees: pane status, approvals, plans and screens read from the terminals) and xterm.js in `web/vendor` (MIT licence) |
-| `tests/` | `remote.test.js` (the page's alert rules) and `status/` (golden screens: synthetic agent screens and what the status parsing must read from them); run with `node --test` |
+| `web/` | The interface (`index.html`, `app.css`, `app.js`, `icon.png`), `mascot.js` (the robot in the sidebar and About: blinks, wears the agents' status on its antenna, still with reduced motion; `mascot.svg` is the same drawing, static), `remote.js` (what the phone sees: pane status, approvals, plans and screens read from the terminals) and xterm.js in `web/vendor` (MIT licence) |
+| `tests/` | `remote.test.js` (the page's alert rules), `mascot.test.mjs` (the mascot's states, easter eggs and reduced motion) and `status/` (golden screens: synthetic agent screens and what the status parsing must read from them); run with `node --test` |
 | `docs/phone-remote/` | The Android app's build plan and `REMOTE_API.md`, the contract between the PC and the phone |
 | `app.ico` | The app icon (the exe, window and taskbar) |
 | `website/` | The marketing website: `pages/` (content) → `python website/build.py` (reads the newest release's version, sizes and SHA-256 values from the GitHub releases API) → `site/` (static HTML, no build tools needed to host it). `video/` renders the 30-second film (`promo.html`, `render.mjs`) and the social image |

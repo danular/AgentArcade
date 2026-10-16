@@ -19,7 +19,7 @@ jobs:
       # The page's alert rules and the golden screens: what the status dots and the phone read from each agent's
       # screen (tests/status). Named by file: current Node.js runs a folder argument as if it were a test file.
       - name: Status and alert tests
-        run: node --test tests/remote.test.js tests/status/status.test.mjs
+        run: node --test tests/remote.test.js tests/status/status.test.mjs tests/mascot.test.mjs
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
