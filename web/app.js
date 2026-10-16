@@ -287,7 +287,7 @@ function renderWorkspaces() {
     const shut = isFolded('ws:' + workspace.path);
     const children = list.length && !shut
       ? `<div class="ws-sessions">${list.map(session =>
-          `<button class="ws-session" data-session="${session.id}"><span class="${DOT_CLASS[session.dotStatus] || (session.running ? 'dot on' : 'dot off')}"></span>` +
+          `<button class="ws-session" data-session="${session.id}">${dotHtml(session.dotStatus || (session.running ? 'idle' : 'ended'))}` +
           `<span class="ellipsis">${esc(titleOf(session))}</span></button>`).join('')}</div>`
       : '';
     const fold = list.length
@@ -617,7 +617,7 @@ function openSession(key, mode = 'start', chat = null, options = {}) {
   session.el.className = 'pane';
   session.el.dataset.session = id;
   session.el.innerHTML =
-    `<div class="pane-head"><span class="dot on"></span>${avatar(agent, 'sm')}` +
+    `<div class="pane-head">${dotHtml('idle')}${avatar(agent, 'sm')}` +
     '<span class="pane-title ellipsis"></span><span class="pane-sub ellipsis"></span>' +
     '<span class="pane-actions">' +
     `<button class="icon-btn small" data-act="menu" title="More">${icon('more', 15)}</button>` +
@@ -1095,8 +1095,28 @@ setInterval(() => {
 
 // ---------- status dots ----------
 
-// Orange: working. Red: needs you. Green: idle or done. Grey: ended. The phone uses the same statuses (paneStatus).
-const DOT_CLASS = { working: 'dot working', needsYou: 'dot needs', done: 'dot on', idle: 'dot on', ended: 'dot off' };
+// Each status has its own shape, not only its own colour, so red and green needn't be told apart: working is a
+// pulsing orange dot, needs you a red diamond, done (not looked at yet) a green ring, idle a green dot, ended a grey
+// dot. The words are the tooltip and what a screen reader says. The phone uses the same statuses (paneStatus).
+const DOTS = {
+  working: ['dot working', 'Working'],
+  needsYou: ['dot needs', 'Needs you'],
+  done: ['dot done', 'Done'],
+  idle: ['dot on', 'Idle'],
+  ended: ['dot off', 'Ended'],
+};
+
+function dotHtml(status) {
+  const [cls, label] = DOTS[status];
+  return `<span class="${cls}" role="img" title="${label}" aria-label="${label}"></span>`;
+}
+
+function setDot(dot, status) {
+  const [cls, label] = DOTS[status];
+  dot.className = cls;
+  dot.title = label;
+  dot.setAttribute('aria-label', label);
+}
 
 // Sets each pane's dot, and its dot in the sidebar, from paneStatus. The sidebar dot changes in place: redrawing the
 // sidebar every time a status changes could swallow a click that is halfway through.
@@ -1107,9 +1127,9 @@ function refreshDots() {
     noteDialog(session, screen, status);
     if (status === session.dotStatus) continue;
     session.dotStatus = status;
-    session.el.querySelector('.pane-head .dot').className = DOT_CLASS[status];
+    setDot(session.el.querySelector('.pane-head .dot'), status);
     const listed = document.querySelector(`#workspaces .ws-session[data-session="${CSS.escape(session.id)}"] .dot`);
-    if (listed) listed.className = DOT_CLASS[status];
+    if (listed) setDot(listed, status);
   }
 }
 
