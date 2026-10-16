@@ -659,6 +659,7 @@ function statusCounts() {
 }
 
 let shellKey = '';
+let mascotKey = '';
 
 function shellStatus(force = false) {
   const counts = statusCounts();
@@ -667,20 +668,27 @@ function shellStatus(force = false) {
   if (key === shellKey && !force) return;
   const needsChanged = key.split('|')[1] !== shellKey.split('|')[1];
   shellKey = key;
+  if (`${counts.working}|${counts.needs}` !== mascotKey) tellMascot();
   const parts = [];
   if (counts.needs) parts.push(`<span class="dot needs" aria-hidden="true"></span><span>${counts.needs} needs you</span>`);
   if (counts.working) parts.push(`<span class="dot working" aria-hidden="true"></span><span>${counts.working} working</span>`);
   $('#foot-state').innerHTML = parts.join('<span class="sep" aria-hidden="true">·</span>') || '<span>All quiet</span>';
   $('#foot-state').title = HomeData.statusLine(counts);
-  try {
-    window.Mascot?.setState({ working: counts.working, needs: counts.needs });
-  } catch { /* the mascot is decoration; the status line says the same */ }
   if (view === 'home') {
     const line = $('#home-counts');
     if (line) line.textContent = homeCounts(counts);
     const strip = $('#home-needs');
     if (strip && (needsChanged || force)) strip.innerHTML = needsHtml();
   }
+}
+
+// The mascot's antenna shows the status line; it moves only while its animations are on (Settings → General).
+function tellMascot() {
+  const { working, needs } = statusCounts();
+  mascotKey = `${working}|${needs}`;
+  try {
+    window.Mascot?.setState({ working, needs });
+  } catch { /* the mascot is decoration; the status line says the same */ }
 }
 
 // ---------- chat titles ----------
@@ -3578,6 +3586,8 @@ function mountMascot(slot, size) {
       button.style.width = button.style.height = size + 'px';
       slot.replaceChildren(button);
       window.Mascot.mount(button, { size });
+      if (appInfo) window.Mascot.setEnabled(appInfo.mascotAnimations !== false);
+      tellMascot();
       return;
     } catch { /* the icon below instead */ }
   }
