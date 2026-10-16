@@ -86,9 +86,8 @@ sealed class MainForm : Form, IRemoteHost
         // The exe carries app.ico (ApplicationIcon); the title bar and taskbar use the same one.
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         // Small enough for half a portrait screen: the page lays itself out for tall and narrow windows (web/layout.js).
-        // In the window's own DPI, so it is the same size on the page at any display scaling.
+        // At the system DPI until the window exists; OnHandleCreated and OnDpiChanged make it the window's own.
         MinimumSize = LogicalToDeviceUnits(SmallestPage);
-        DpiChanged += (_, e) => MinimumSize = new Size(SmallestPage.Width * e.DeviceDpiNew / 96, SmallestPage.Height * e.DeviceDpiNew / 96);
         PlaceWindow();
         BackColor = Color.FromArgb(12, 12, 14);
         Controls.Add(_web);
@@ -104,8 +103,16 @@ sealed class MainForm : Form, IRemoteHost
         _remote = new RemoteServer(this, Path.Combine(AppSettings.Folder, "remote.json"));
     }
 
-    // The smallest window, in CSS pixels of the page (96 DPI).
+    // The smallest window, in CSS pixels of the page (96 DPI), so it is the same on the page at any display scaling.
     static readonly Size SmallestPage = new(600, 480);
+
+    // WinForms scales MinimumSize by itself when the DPI changes (since .NET 8); this sets it exactly afterwards, so
+    // rounding doesn't drift, and also for a maximized window, which WinForms leaves alone.
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        base.OnDpiChanged(e);
+        MinimumSize = LogicalToDeviceUnits(SmallestPage);
+    }
 
     // Opens the window where it was closed (WindowPlace keeps it on a screen that is there now), maximized if it was;
     // the first time at about 85% of the primary work area. Screens are in physical pixels (per-monitor DPI aware).
@@ -153,6 +160,8 @@ sealed class MainForm : Form, IRemoteHost
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
+        // The window now knows the DPI of the monitor it opened on, which needn't be the system's.
+        MinimumSize = LogicalToDeviceUnits(SmallestPage);
         // Dark title bar that matches the page (Windows 11; ignored elsewhere).
         var on = 1;
         DwmSetWindowAttribute(Handle, 20, ref on, sizeof(int));

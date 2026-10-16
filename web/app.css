@@ -105,7 +105,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, .xterm :focus
 @media (prefers-reduced-motion: reduce) {
   .app.drawer .sidebar, .app.drawer.drawer-open .sidebar { transition: none; }
 }
-.app.panel-overlay .side-panel {
+.app.panel-overlay:not(.portrait) .side-panel {
   position: fixed;
   top: 0;
   right: 0;

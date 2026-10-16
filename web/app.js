@@ -1213,6 +1213,7 @@ async function closeSession(session, force = false) {
 function focusSession(id) {
   const session = sessions.get(id);
   if (!session) return;
+  setDrawer(false);
   if (maxed && maxed !== id) maxed = null;
   if (view !== 'project') {
     view = 'project';
@@ -1645,7 +1646,10 @@ function setSidebar(hidden) {
 function setDrawer(open) {
   if (drawerOpen === (drawerMode && open)) return;
   drawerOpen = drawerMode && open;
+  const wasInside = $('.sidebar').contains(document.activeElement);
   showSidebar();
+  if (drawerOpen) $('#nav-home').focus();
+  else if (wasInside) $('#toggle-sidebar').focus();
 }
 
 function showSidebar() {
@@ -1653,8 +1657,9 @@ function showSidebar() {
   const hidden = drawerMode ? !drawerOpen : localStorage.getItem('sidebar') === 'hidden';
   app.classList.toggle('side-hidden', !drawerMode && hidden);
   app.classList.toggle('drawer-open', drawerMode && drawerOpen);
-  // A closed drawer is out of reach for Tab and screen readers too.
+  // A closed drawer is out of reach for Tab and screen readers too, and so is the page behind an open one.
   $('.sidebar').inert = drawerMode && !drawerOpen;
+  $('.main').inert = panel.inert = drawerMode && drawerOpen;
   $('#drawer-backdrop').hidden = !(drawerMode && drawerOpen);
   const button = $('#toggle-sidebar');
   button.title = hidden ? 'Show the sidebar' : 'Hide the sidebar';
@@ -2486,7 +2491,7 @@ function addProjectMenu(anchor) {
 // Ctrl+N and the sidebar's New agent: the same menu as the top bar's + New agent.
 function openNewAgentMenu() {
   const side = $('#side-new-agent');
-  newAgentMenu(side.offsetParent ? side : $('#new-agent'));
+  newAgentMenu(side.offsetParent && !(drawerMode && !drawerOpen) ? side : $('#new-agent'));
 }
 
 // ---------- chat history ----------
@@ -3443,7 +3448,8 @@ function closeSettings() {
   settingsView = null;
   root.remove();
   // Focus goes back where it was, when that is still on screen.
-  if (opener?.isConnected && opener !== document.body && opener.getClientRects().length) opener.focus();
+  if (opener?.isConnected && opener !== document.body && opener.getClientRects().length && !opener.closest('[inert]')) opener.focus();
+  else if (opener?.closest?.('.sidebar')) $('#toggle-sidebar').focus();
 }
 
 // focus: the tab itself gets focus (opened, or picked with the keyboard).
@@ -3968,6 +3974,7 @@ $('#toggle-sidebar').addEventListener('click', () => {
   if (drawerMode) return setDrawer(!drawerOpen);
   setSidebar(!$('.app').classList.contains('side-hidden'));
   fitPanel();
+  layoutGrid();
 });
 applyWindowShape();
 setSidebar(localStorage.getItem('sidebar') === 'hidden');
@@ -3976,13 +3983,13 @@ setSidebar(localStorage.getItem('sidebar') === 'hidden');
 // it open until the menu's choice (menu()); so do the mascot, the chat search and "Show more".
 $('#drawer-backdrop').addEventListener('click', () => setDrawer(false));
 $('.sidebar').addEventListener('click', event => {
-  if (!drawerOpen || !event.target.closest('button')) return;
+  if (!drawerOpen || !event.target.closest('button, [data-dot]')) return;
   if (event.target.closest('[aria-haspopup="menu"], [data-workspace-menu], [data-chat-menu], [data-recent-more], #search-recent, .mascot-slot')) return;
   setDrawer(false);
 });
 // In the capture phase, so a menu open over the drawer or the chat search's own Esc comes first.
 document.addEventListener('keydown', event => {
-  if (event.key !== 'Escape' || !drawerOpen || openMenu || settingsView || document.querySelector('.modal')) return;
+  if (event.key !== 'Escape' || event.defaultPrevented || !drawerOpen || openMenu || settingsView || document.querySelector('.modal')) return;
   if (event.target.closest?.('.recent-search, .xterm')) return;
   setDrawer(false);
   $('#toggle-sidebar').focus();
@@ -4019,7 +4026,7 @@ $('#changes-refresh').addEventListener('click', () => {
 });
 new ResizeObserver(fitTopbar).observe($('.topbar'));
 $('#preview-address').value = localStorage.getItem('previewAddress') || '';
-setPanelWidth(localStorage.getItem('panelWidth'), false);
+fitPanel();
 setPanel(localStorage.getItem('panel') === 'open');
 $('#images-grid').addEventListener('dragstart', event => {
   const tile = event.target.closest('.image-tile');
