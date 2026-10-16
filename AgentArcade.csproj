@@ -7,7 +7,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace>AgentArcade</RootNamespace>
     <AssemblyName>AgentArcade</AssemblyName>
-    <Version>1.3.4</Version>
+    <Version>1.4.0</Version>
     <!-- Windows shows this name on notifications. -->
     <AssemblyTitle>Agent Arcade</AssemblyTitle>
     <Product>Agent Arcade</Product>

@@ -44,6 +44,19 @@
 <section style="padding-bottom:96px">
   <div class="wrap">
     <article class="release">
+      <div><span class="v">1.4.0</span><time datetime="2026-10-16">16 Oct 2026</time></div>
+      <div class="prose">
+        <ul>
+          <li><b>You approve every phone:</b> opening the Phone dialog no longer makes a pairing code. Click <b>Pair a phone</b> to show the QR code; closing the dialog clears it. When a phone uses the code, the Phone dialog asks you to <b>Allow</b> or <b>Deny</b> it, with the phone's name and app version. Nothing is paired until you allow it. Copy link keeps the link out of Windows clipboard history.</li>
+          <li><b>A tap answers only the question you saw:</b> Agent Arcade Remote 1.1 sends the question and screen it showed with every answer. If the question on your PC changed in the meantime, the PC refuses and types nothing. The PC also never presses Enter while a question is open, for any phone version.</li>
+          <li><b>No crossed wires after a restart:</b> each start of Agent Arcade gets its own id, so a phone can't send to a different agent that happens to reuse an old pane number, and old alerts and chats close.</li>
+          <li>The Phone dialog shows each phone's app version, and every phone error now has a code the app can act on (the phone remote contract is now 1.1; 1.0 phones keep working).</li>
+          <li>Agents show neutral monograms (CC, CX, GM, CP, CU) instead of vendor logos, in the app and on the website. The download and phone pages have an <b>Add to Obtainium</b> link, so Obtainium can keep the Android app up to date.</li>
+          <li><b>Agent Arcade Remote 1.1:</b> pairing waits for Allow on your PC; a changed question shows "The question changed" instead of answering; chats from before a PC restart say the agent is gone; the app asks you to update itself or Agent Arcade when versions don't fit; the chat keeps the last lines in view; Rename starts with the title selected.</li>
+        </ul>
+      </div>
+    </article>
+    <article class="release">
       <div><span class="v">1.3.4</span><time datetime="2026-10-16">16 Oct 2026</time></div>
       <div class="prose">
         <ul>
