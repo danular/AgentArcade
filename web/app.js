@@ -538,7 +538,8 @@ function projectCard(workspace) {
     ? running.slice(0, 8).map(session => `<span class="card-agent">${avatar(agentOf(accountOf(session.key)), 'sm')}${sessionDot(session)}</span>`).join('') +
       (running.length > 8 ? `<span class="muted">+${running.length - 8}</span>` : '')
     : '<span class="muted">No agents running</span>';
-  const active = running.length ? 'Active now' : chats.length ? `Active ${HomeData.ago(HomeData.activeOf(chats[0]))}` : 'No chats yet';
+  // A project without chats says so once, in its chat list; its footer then has only the quick starts.
+  const active = running.length ? 'Active now' : chats.length ? `Active ${HomeData.ago(HomeData.activeOf(chats[0]))}` : '';
   const starts = workspace.exists ? quickStarts().map(account => {
     const agent = agentOf(account);
     const tip = `Start ${agent.name} in ${workspace.name}`;
@@ -554,12 +555,17 @@ function projectCard(workspace) {
     `<div class="card-agents">${agents}</div>` +
     sparkline(counts) +
     `<div class="card-chats">${chats.slice(0, 2).map(chat => `<div class="ellipsis">${esc(chat.title || 'Untitled chat')}</div>`).join('') || '<div class="muted">No chats yet</div>'}</div>` +
-    `<div class="card-foot"><span class="muted ellipsis">${esc(active)}</span><span class="quick-starts">${starts}</span></div></article>`;
+    `<div class="card-foot">${active ? `<span class="muted ellipsis">${esc(active)}</span>` : ''}<span class="quick-starts">${starts}</span></div></article>`;
 }
 
+// No chats in those 10 days: a faint baseline keeps the card's shape without a flat orange line.
 function sparkline(counts) {
-  const points = HomeData.sparkPoints(counts).map(point => point.join(',')).join(' ');
   const total = counts.reduce((sum, count) => sum + count, 0);
+  if (!total) {
+    return '<svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none" role="img" aria-label="No chats started in the last 10 days">' +
+      '<title>No chats started in the last 10 days</title><line class="spark-base" x1="0" y1="23" x2="100" y2="23" vector-effect="non-scaling-stroke"/></svg>';
+  }
+  const points = HomeData.sparkPoints(counts).map(point => point.join(',')).join(' ');
   return `<svg class="spark" viewBox="0 0 100 26" preserveAspectRatio="none" role="img" ` +
     `aria-label="${total} chat${total === 1 ? '' : 's'} started in the last 10 days"><title>Chats started per day, last 10 days</title>` +
     `<polygon class="spark-fill" points="0,26 ${points} 100,26"/><polyline class="spark-line" points="${points}" vector-effect="non-scaling-stroke"/></svg>`;

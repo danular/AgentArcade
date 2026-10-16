@@ -601,7 +601,7 @@ body.resizing-panel iframe { pointer-events: none; }
 /* ---------- Home ---------- */
 
 .home { height: 100%; overflow: auto; }
-.home-inner { max-width: 1280px; margin: 0 auto; padding: 22px 26px 32px; }
+.home-inner { max-width: 1720px; margin: 0 auto; padding: 22px 26px 32px; }
 .hello h2 { margin: 0; font: 400 30px/1.15 Georgia, "Times New Roman", serif; letter-spacing: -.3px; }
 .hello p { margin: 6px 0 0; color: var(--muted); }
 .needs-list { display: grid; gap: 8px; margin-top: 18px; }
@@ -617,11 +617,12 @@ body.resizing-panel iframe { pointer-events: none; }
 }
 .needs-row b { flex: none; max-width: 40%; }
 .needs-text { flex: 1; color: var(--muted); font-size: 13px; }
-.project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-top: 18px; }
+/* 2 columns at 1100 px wide, 3 at 1440, 5 at 1920. */
+.project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; margin-top: 18px; }
 .project-card {
   position: relative;
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   min-width: 0;
   padding: 15px 16px;
@@ -632,23 +633,28 @@ body.resizing-panel iframe { pointer-events: none; }
 .project-card:hover { background: #18181e; border-color: var(--border-2); }
 .card-head { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; font-size: 15px; font-weight: 600; }
 /* The project's name opens it; its click area covers the whole card. The dots and quick starts sit above it. */
-.card-open { display: flex; flex: 1; align-items: center; min-width: 0; font-weight: 600; text-align: left; }
+.card-open { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; font-weight: 600; text-align: left; }
 .card-open::after { content: ""; position: absolute; inset: 0; border-radius: 14px; }
 .card-open:focus-visible { outline: none; }
 .card-open:focus-visible::after { outline: 2px solid var(--accent-2); outline-offset: 2px; }
-.card-head .git-chip { flex: 0 1 auto; max-width: 60%; }
+/* When the name and the chip don't both fit, the branch gives way first. */
+.card-head .git-chip { flex: 0 1000 auto; min-width: 46px; max-width: 65%; }
 .card-path { color: var(--faint); font: 11.5px var(--mono); }
 .card-agents { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 20px; font-size: 12.5px; }
 .card-agent { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 5px; }
 .spark { display: block; width: 100%; height: 26px; overflow: visible; }
 .spark-line { fill: none; stroke: var(--accent); stroke-width: 1.6; }
 .spark-fill { fill: rgba(224, 122, 95, .1); stroke: none; }
+/* No chats in the last 10 days: a faint dashed baseline, not a flat orange line. */
+.spark-base { stroke: var(--border-2); stroke-width: 1; stroke-dasharray: 3 4; }
 .card-chats { display: grid; gap: 4px; padding-top: 9px; color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--border); }
-.card-foot { display: flex; align-items: center; gap: 8px; min-height: 22px; font-size: 12.5px; }
+/* At the bottom, so the cards in a row line up however many chats they list. */
+.card-foot { display: flex; align-items: center; gap: 8px; min-height: 22px; margin-top: auto; font-size: 12.5px; }
 .quick-starts { display: flex; gap: 5px; margin-left: auto; }
 .quick-start { position: relative; z-index: 1; display: grid; border-radius: 7px; }
 .quick-start:hover .avatar { box-shadow: 0 0 0 2px var(--accent); }
 .project-card.add {
+  display: grid;
   place-content: center;
   justify-items: center;
   min-height: 190px;
@@ -660,7 +666,8 @@ body.resizing-panel iframe { pointer-events: none; }
 .project-card.add:hover { color: var(--text); border-color: var(--accent); }
 .pick-up { margin-top: 24px; }
 .pick-up h3 { margin: 0 0 8px; color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-.pick-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+/* At most four across, each a quarter of the width (or 210 px), however many chats there are. */
+.pick-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(max(210px, calc((100% - 30px) / 4)), 1fr)); gap: 10px; }
 .pick-chat {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
