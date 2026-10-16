@@ -4,7 +4,7 @@
 // No DOM and no globals except Remote, so Node can test them.
 const Remote = (() => {
   // The same check as APPROVAL in app.js; keep both identical.
-  const APPROVAL = /do you want|would you like to|allow (this|command|execution)|apply this change|yes, and run (in|without) sandbox|\(y\/n\)|\[y\/n\]/i;
+  const APPROVAL = /do you want|would you like to|allow (this|command|execution)|apply this change|yes, and run (in|without) sandbox|\(esc or n\b|delete this file\?|\(y\/n\)|\[y\/n\]/i;
   // An agent's own notification that asks for permission rather than saying it is done.
   const ASKS_OK = /needs your (permission|approval|ok|input)|^approval requested\b|wants to (run|edit|use|execute)|permission to use/i;
   // Working agents say how to stop them; "esc to cancel" also ends dialogs, so there it needs a timer (Gemini CLI's "12s").
@@ -16,7 +16,8 @@ const Remote = (() => {
   // Lines under a dialog's options that still belong to the dialog.
   const FOOTER = /enter to |esc to |tab to |[↑↓]|to navigate|to select|\(esc\)/i;
   const MENU_FOOTER = /enter to (confirm|select)|↑\s*\/?\s*↓|use (the )?arrow keys|to navigate/i;
-  const MENU_CURSOR = /^(\s*[❯›>▶●]\s+)\S/;
+  // Cursor marks the option with →.
+  const MENU_CURSOR = /^(\s*[❯›>▶●→]\s+)\S/;
   const BOX = /[─-╿]/g;
   const BOX_LINE = /^[─-╿\s]*$/;
   const YES_NO = /\(y\/n\)|\[y\/n\]/i;
@@ -27,7 +28,9 @@ const Remote = (() => {
   const ACTIVE_MARKS = ['■', '◼'];
   // Gemini CLI marks the selected option with ●, the others with ❯ › > ▶.
   const CHOICE = /^(\s*([❯›>▶●])?\s*)([1-9])[.)] +(\S.*)$/;
-  const KEY_HINT = /\s*\((?:esc|enter|return|tab|space|shift\+[\w-]+|ctrl\+[\w-]+|alt\+[\w-]+|[a-z0-9])\)$/i;
+  // An option's own key at its end: (esc), (shift+tab), (y); Cursor names two or three: (esc or n).
+  const KEY_NAME = String.raw`(?:esc|enter|return|tab|space|shift\+[\w-]+|ctrl\+[\w-]+|alt\+[\w-]+|[a-z0-9])`;
+  const KEY_HINT = new RegExp(String.raw`\s*\(${KEY_NAME}(?: or ${KEY_NAME})*\)$`, 'i');
   // Gemini CLI starts its answers with ✦.
   const LEAD = /^[\s●⏺•✻✦⎿▌❯›>▶]+/;
   const BULLET = /^[●⏺•✻✦⎿]\s*/;
@@ -181,7 +184,8 @@ const Remote = (() => {
   const choices = rows => findChoices(rows).choices;
 
   // An arrow-key menu at the bottom: a key hint like "Enter to confirm" among the last 4 rows with text, and
-  // right above it at least 2 options at one text column, exactly one of them behind the cursor.
+  // right above it at least 2 options at one text column, exactly one of them behind the cursor. Or a menu without
+  // such a footer whose options each end in their own key (keyedMenu).
   // Returns { first, options } (row indexes) or null.
   function findMenu(rows) {
     let seen = 0;
@@ -193,7 +197,38 @@ const Remote = (() => {
       const menu = menuAbove(rows, i);
       if (menu) return menu;
     }
+    return keyedMenu(rows);
+  }
+
+  // Cursor's approval: options like "→ Run (once) (y)" and "  Skip (esc or n)", each ending in its key, unnumbered,
+  // at one text column and exactly one behind the cursor. Below the last one at most 4 rows with text (Cursor keeps
+  // its model and folder lines there) and no input line.
+  function keyedMenu(rows) {
+    let below = 0;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const line = unbox(rows[i]);
+      if (!line.trim() || BOX_LINE.test(line)) continue;
+      if (KEY_HINT.test(line)) return keyedAbove(rows, i);
+      if (PROMPT.test(rows[i]) || ++below > 4) return null;
+    }
     return null;
+  }
+
+  function keyedAbove(rows, last) {
+    const options = [];
+    let column = -1;
+    let cursors = 0;
+    for (let i = last; i >= 0; i--) {
+      const line = unbox(rows[i]);
+      if (!KEY_HINT.test(line) || CHOICE.test(line)) break;
+      const cursor = line.match(MENU_CURSOR);
+      const at = cursor ? cursor[1].length : line.search(/\S/);
+      if (options.length && at !== column) break;
+      column = at;
+      if (cursor) cursors++;
+      options.unshift(i);
+    }
+    return options.length >= 2 && cursors === 1 ? { first: options[0], options } : null;
   }
 
   function menuAbove(rows, footer) {
@@ -294,26 +329,50 @@ const Remote = (() => {
   // notification sent before its dialog is drawn stands for the dialog that shows within DIALOG_SOON_MS.
   const DIALOG_GONE_MS = 3000;
   const DIALOG_SOON_MS = 3000;
+  // Keys that can answer a dialog: Enter, Esc, Tab, Shift+Tab, a digit, y or n. The same question on screen this long
+  // after one of them, with the screen changed since, was asked again: agents draw the next queued question in the
+  // frame that takes the answered one away, or within the second between two looks.
+  const ANSWER_KEY = /^(?:\r|\x1b|\t|\x1b\[Z|[1-9]|[yn])$/i;
+  const ASKED_AGAIN_MS = 1000;
 
   // tracker holds one pane's alert state: sig (the dialog alerted last), input (keys went to the pane since),
-  // goneAt (when that dialog left the screen) and claimedAt (an alert for a dialog that wasn't drawn yet).
-  const remember = (tracker, sig) => Object.assign(tracker, { sig, input: false, goneAt: 0, claimedAt: 0 });
+  // goneAt (when that dialog left the screen), claimedAt (an alert for a dialog that wasn't drawn yet), and
+  // answeredAt and answeredText (when the last key could answer that dialog, and the pane's text right before it).
+  const remember = (tracker, sig) => Object.assign(tracker, { sig, input: false, goneAt: 0, claimedAt: 0, answeredAt: 0, answeredText: '' });
+
+  // Keys or text went to the pane. text: the pane's text right before them, as dialogAppeared gets it.
+  function dialogKeys(tracker, data, text, now) {
+    tracker.input = true;
+    const answering = !!tracker.sig && ANSWER_KEY.test(data);
+    Object.assign(tracker, { answeredAt: answering ? now : 0, answeredText: answering ? text : '' });
+  }
 
   // Called every second with the pane's screen: true when a dialog appeared that nobody was alerted about. It is
   // recorded, so the alert that follows goes out once. redrawn: the pane was just resized, so a changed signature is
-  // the same dialog wrapped again.
-  function dialogAppeared(tracker, screen, now, redrawn = false) {
+  // the same dialog wrapped again. text: the pane's text now, to tell the same question asked again (askedAgain).
+  function dialogAppeared(tracker, screen, now, redrawn = false, text = '') {
     const sig = dialogSig(screen);
     if (!sig) {
       if (tracker.sig && (tracker.input || now - (tracker.goneAt ||= now) >= DIALOG_GONE_MS)) remember(tracker, '');
       return false;
     }
     tracker.goneAt = 0;
-    if (sig === tracker.sig) return false;
+    if (sig === tracker.sig) return askedAgain(tracker, now, redrawn, text);
     const announced = !!tracker.claimedAt && now - tracker.claimedAt < DIALOG_SOON_MS;
     const rewrapped = redrawn && !!tracker.sig && !tracker.input;
     remember(tracker, sig);
     return !announced && !rewrapped;
+  }
+
+  // The dialog alerted last is on screen. It is a new one when a key that could answer it went in ASKED_AGAIN_MS ago
+  // or more and the screen changed since: answered, then the same question again. A key that changed nothing (the
+  // agent ignored it) or a resize leaves it the same dialog; either way the key is forgotten, so this alerts once.
+  function askedAgain(tracker, now, redrawn, text) {
+    if (!tracker.answeredAt || now - tracker.answeredAt < ASKED_AGAIN_MS) return false;
+    const changed = !redrawn && text !== tracker.answeredText;
+    if (changed) remember(tracker, tracker.sig);
+    else Object.assign(tracker, { answeredAt: 0, answeredText: '' });
+    return changed;
   }
 
   // For a needsYou alert from anywhere else (the agent's own notification, the bell, the quiet timer): true when it
@@ -487,7 +546,7 @@ const Remote = (() => {
 
   return {
     APPROVAL, cut, approval, asksOk, activity, plan, choices, findChoices, findMenu, picking, question, preview, parts,
-    dialogSig, dialogAppeared, claimDialog, dialogKey, trackDialog, dialogInput, expectRefused, progress, keySequence, palette, color256,
+    dialogSig, dialogKeys, dialogAppeared, claimDialog, dialogKey, trackDialog, dialogInput, expectRefused, progress, keySequence, palette, color256,
     serializeScreen,
   };
 })();

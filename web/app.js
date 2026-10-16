@@ -1314,7 +1314,8 @@ const MIN_WORK_MS = 4000;
 const REPAINT_MS = 600;
 // The same check as APPROVAL in remote.js; keep both identical. "Yes, and run in sandbox" / "... without sandbox
 // restrictions" is the option Antigravity CLI's command approval always offers (antigravity.google/docs/cli/features).
-const APPROVAL = /do you want|would you like to|allow (this|command|execution)|apply this change|yes, and run (in|without) sandbox|\(y\/n\)|\[y\/n\]/i;
+// Cursor's approvals end in a Skip or Reject option with "(esc or n)", except "Delete this file?" (Keep is "(n)").
+const APPROVAL = /do you want|would you like to|allow (this|command|execution)|apply this change|yes, and run (in|without) sandbox|\(esc or n\b|delete this file\?|\(y\/n\)|\[y\/n\]/i;
 // Focus and mouse reports that xterm.js sends for the agent; nobody typed them.
 const REPORTS = /^(?:\x1b\[[IO]|\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[M[\s\S]{3})+$/;
 let notifyOn = localStorage.getItem('notifications') !== 'off';
@@ -1331,9 +1332,10 @@ const agentName = session => agentOf(accountOf(session.key))?.name || 'The agent
 function watchTurn(session, data) {
   clearAttention(session);
   if (REPORTS.test(data)) return;
-  // Keys went to the dialog on screen, so once it leaves the screen it was answered (Remote.dialogAppeared), and a
-  // phone's expect may not reach the dialog that follows (Remote.dialogInput).
-  if (session.dialog) session.dialog.input = true;
+  // Keys went to the dialog on screen, so once it leaves the screen it was answered, and after a key that can answer
+  // it the same question may come back at once (Remote.dialogKeys); a phone's expect may not reach the dialog that
+  // follows (Remote.dialogInput).
+  if (session.dialog) Remote.dialogKeys(session.dialog, data, screenText(session), Date.now());
   Remote.dialogInput(session.asked, session.seq);
   // Shift+Enter adds a line to the prompt (newlineFor): typing, also where it is ESC CR.
   if (session.newline) {
@@ -1370,9 +1372,10 @@ function outputArrived(session) {
 setInterval(() => {
   const now = Date.now();
   for (const session of sessions.values()) {
-    // A dialog needs you as soon as it shows, however soon after Enter: once per dialog. After a resize the same
-    // dialog can wrap differently, which isn't a new one.
-    if (session.running && Remote.dialogAppeared(session.dialog ||= {}, screenParts(session), now, now - (session.resizedAt || 0) < 2000)) {
+    // A dialog needs you as soon as it shows, however soon after Enter: once per dialog, and again when it is answered
+    // and the same question comes back. After a resize the same dialog can wrap differently, which isn't a new one.
+    if (session.running && Remote.dialogAppeared(session.dialog ||= {}, screenParts(session), now,
+      now - (session.resizedAt || 0) < 2000, screenText(session))) {
       needsYou(session, '', true);
     }
     if (session.running && session.armed && session.busyStart && now - session.lastOutput > QUIET_MS &&
@@ -2642,6 +2645,9 @@ function screenParts(session) {
 
 // The pane shows choices or a menu at its bottom.
 const picking = session => Remote.picking(screenLines(session, 20).lines);
+
+// The bottom of the pane as text, to see whether it changed after a key (Remote.dialogKeys).
+const screenText = session => screenLines(session, 40).lines.join('\n');
 
 function paneStatus(session, screen) {
   if (!session.running) return 'ended';

@@ -136,11 +136,11 @@ The status dots, needs-you alerts and phone approvals read each agent's screen (
 | Claude Code | 2.1.301 | 16 Oct 2026 | In a Windows console without Unicode its task list marks √ done, ■ in progress, □ open |
 | Codex | codex-cli 0.162.1 | 16 Oct 2026 | Pickers are numbered, so they read as choices |
 | GitHub Copilot CLI | 1.0.98 | 16 Oct 2026 | Approval options as in GitHub's docs. A working line with "Esc to cancel" but no timer isn't an activity line, so the dot goes orange from the output itself |
-| Cursor | 2026.09.28-64d2043 | 16 Oct 2026 | Layout best effort. Its approval (`→ Run (once) (y)`) and menus aren't read as dialogs yet: the pane turns amber through the quiet timer instead (a todo in the test) |
+| Cursor | 2026.09.28-64d2043 | 16 Oct 2026 | The approval follows cursor-agent's own decision screen and was checked against a real session: its options end in their keys (`→ Run (once) (y)`, `Skip (esc or n)`), so it reads as a menu answered with keys, also when two approvals wait ("Approval 1 of 2") |
 | Antigravity CLI | not installed here | 16 Oct 2026 | Unverified: the approval fixture uses only what Google's docs show (the option "Yes, and run in sandbox" or "… without sandbox restrictions", which the approval check matches); the trust dialog follows Google's codelab |
 | Gemini CLI | 0.63.0 | 16 Oct 2026 | No fixtures yet |
 
-The versions are what each tool's own `--version` printed on the PC where the fixtures were written; no agent session was run for them.
+The versions are what each tool's own `--version` printed on the PC where the fixtures were written. No agent session was run for them, except one Cursor session to check its approval screen (nothing from it was copied into the fixtures).
 
 ## Files
 

@@ -1,11 +1,16 @@
- ┌──────────────────────────────────────────────────────────────────────┐
- │ $ npm test                                                           │
- └──────────────────────────────────────────────────────────────────────┘
-  Waiting for approval...
+  ⬢ Read config.js
 
-  Run this command?
-  Not in allowlist: npm test
-   → Run (once) (y)
-     Skip (esc or n)
-     Add Shell(npm) to allowlist? (tab)
-     Auto-run everything (shift+tab)
+  ⬡ $ npm test Waiting for approval...
+
+────────────────────────────────────────────────────────────────────────
+ $  npm test in ~/retry-demo
+
+ Run this command?
+ Not in allowlist: npm test
+  → Run (once) (y)
+    Add Shell(npm) to allowlist? (tab)
+    Run Everything (shift+tab)
+    Skip & tell the agent what to do instead (esc or n)
+
+  Auto · 12%
+  ~/retry-demo · main

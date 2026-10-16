@@ -65,10 +65,11 @@ const EXPECT = {
   'copilot-working': { ...base },
   'copilot-idle': { ...base, preview: [ANSWER] },
 
-  // Cursor's approval keeps its keys on the option lines and marks the option with →, so it isn't read as a dialog
-  // yet (see the todo below): the pane goes amber through the quiet timer. Its "ctrl+c to stop" isn't an activity line.
-  'cursor-approval': { ...base, question: 'Run this command?' },
-  'cursor-menu': { ...base },
+  // Cursor (layout from cursor-agent 2026.09.28's own decision surface): its approval marks the option with → and ends
+  // every option in its key, without numbers or a footer, so it is a menu answered with keys. Its "ctrl+c to stop"
+  // isn't an activity line.
+  'cursor-approval': { ...base, asking: true, asks: true, menu: true, question: 'Run this command?' },
+  'cursor-menu': { ...base, asking: true, menu: true },
   'cursor-tasks': { ...base, plan: RETRY_PLAN },
   'cursor-working': { ...base },
   'cursor-idle': { ...base, preview: [ANSWER] },
@@ -147,5 +148,59 @@ test('APPROVAL is identical in web/app.js and web/remote.js', () => {
   assert.equal(match[1], String(Remote.APPROVAL));
 });
 
-// Known gap, pinned above as it is today: when it is fixed, cursor-approval and cursor-menu ask.
-test.todo("Cursor's approval and menu read as dialogs: its → cursor and inline (y) / (esc or n) keys aren't recognized yet");
+// cursor-approval with its body (the command, the question, the options) swapped for another of Cursor's decisions.
+const cursorDecision = (preview, question, reason, options) => {
+  const card = lines('cursor-approval');
+  const top = card.findIndex(line => /^─+$/.test(line));
+  const footer = card.findIndex((line, i) => i > top && !line.trim() && /·/.test(card[i + 1] || ''));
+  const body = [preview, '', ' ' + question, ...(reason ? [reason] : []), ...options.map((option, i) => (i ? '    ' : '  → ') + option)];
+  return [...card.slice(0, top + 1), ...body, ...card.slice(footer)];
+};
+
+test("Cursor's other approvals ask too, and its answers and lists don't", () => {
+  const write = cursorDecision(' src/config.js +3 -1', 'Write to this file?', ' in src/config.js',
+    ['Proceed (y)', 'Reject & propose changes (esc or n or p)', 'Add Write(src/config.js) to allowlist? (tab)']);
+  const remove = cursorDecision(' Delete file: old-config.js', 'Delete this file?', null, ['Delete (y)', 'Keep (n)']);
+  const fetch = cursorDecision(' 🌐 Web Fetch: example.com', 'Allow this web fetch?', null,
+    ['Fetch (y)', 'Always allow example.com (tab)', 'Skip (esc or n)']);
+  for (const [name, screen, question] of [['write', write, 'Write to this file?'], ['delete', remove, 'Delete this file?'], ['fetch', fetch, 'Allow this web fetch?']]) {
+    const parts = Remote.parts(screen);
+    assert.equal(parts.asking, true, `${name}: asking`);
+    assert.equal(parts.asks, true, `${name}: asks`);
+    assert.equal(parts.menu, true, `${name}: menu`);
+    assert.equal(parts.question, question, `${name}: question`);
+    assert.deepEqual(parts.choices, [], `${name}: choices`);
+  }
+
+  // Two waiting at once: "Approval 1 of 2" above and "←/→ to switch approval" under the options.
+  const card = lines('cursor-approval');
+  const two = [...card.slice(0, 5), ' Approval 1 of 2', '', ...card.slice(5, 13), '', ' ←/→ to switch approval', ...card.slice(13)];
+  assert.equal(Remote.parts(two).asking, true);
+  assert.equal(Remote.parts(two).question, 'Run this command?');
+
+  // Answered: Cursor takes the options away and its input line comes back.
+  const answered = [...card.slice(0, 4), '  ⬢ $ npm test 1.2s', '', ' ┌────────┐', ' │ →      │', ' └────────┘', '  Auto · 12%'];
+  assert.equal(Remote.parts(answered).asking, false);
+  // A list in an answer that ends in keys has no cursor; one option with the cursor isn't a menu either.
+  assert.equal(Remote.parts(['  Keys:', '    Run once (y)', '    Skip (esc or n)', '', ' │ → │']).asking, false);
+  assert.equal(Remote.parts(['  → Run (once) (y)', '', '  Auto · 12%']).asking, false);
+  // The options must be near the bottom: more than 4 rows with text below them means it's gone.
+  assert.equal(Remote.parts([...card.slice(0, 13), 'one', 'two', 'three', 'four', 'five']).menu, false);
+  // Claude Code's numbered options keep their own rules, even with the cursor on a hinted one.
+  const claude = ['│ Do you want to proceed?', '│   1. Yes', "│ ❯ 2. Yes, and don't ask again (shift+tab)", '│   3. No (esc)', '╰────╯'];
+  assert.deepEqual(Remote.parts(claude).choices.map(choice => choice.key), ['1', '2', '3']);
+  assert.equal(Remote.parts(claude).menu, false);
+});
+
+test("Cursor's next waiting approval alerts after the answered one, though its question is the same", () => {
+  const first = lines('cursor-approval');
+  const next = cursorDecision(' $  npm run build in ~/retry-demo', 'Run this command?', ' Not in allowlist: npm run build',
+    ['Run (once) (y)', 'Add Shell(npm) to allowlist? (tab)', 'Run Everything (shift+tab)', 'Skip & tell the agent what to do instead (esc or n)']);
+  assert.equal(Remote.dialogSig(Remote.parts(next)), Remote.dialogSig(Remote.parts(first)));
+  const tracker = {};
+  assert.equal(Remote.dialogAppeared(tracker, Remote.parts(first), 1000, false, first.join('\n')), true);
+  Remote.dialogKeys(tracker, 'y', first.join('\n'), 1200);
+  assert.equal(Remote.dialogAppeared(tracker, Remote.parts(next), 2000, false, next.join('\n')), false);
+  assert.equal(Remote.dialogAppeared(tracker, Remote.parts(next), 3000, false, next.join('\n')), true);
+  assert.equal(Remote.dialogAppeared(tracker, Remote.parts(next), 4000, false, next.join('\n')), false);
+});

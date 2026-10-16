@@ -62,6 +62,60 @@ test('an answered dialog that comes back is new; a redraw gap is not', () => {
   assert.equal(Remote.dialogAppeared(tracker, screen(dialog()), 10000), true);
 });
 
+test('the same question asked again right after an answer alerts again, once', () => {
+  const tracker = {};
+  const first = dialog();
+  assert.equal(Remote.dialogAppeared(tracker, screen(first), 1000, false, first.join('\n')), true);
+  // Enter answers it, and in the same frame the agent asks the same question for its next queued edit: the 1 s check
+  // never sees the screen without it.
+  Remote.dialogKeys(tracker, '\r', first.join('\n'), 1500);
+  const again = ['● Update(a.txt)', '  ⎿  Updated a.txt with 1 addition', ...dialog()];
+  // Too soon after the key to tell a new dialog from the answered one going away.
+  assert.equal(Remote.dialogAppeared(tracker, screen(again), 2000, false, again.join('\n')), false);
+  assert.equal(Remote.dialogAppeared(tracker, screen(again), 3000, false, again.join('\n')), true);
+  // Still on screen, the quiet timer and the agent's own notification about it: nothing new.
+  assert.equal(Remote.dialogAppeared(tracker, screen(again), 4000, false, again.join('\n')), false);
+  assert.equal(Remote.claimDialog(tracker, screen(again), 4500), false);
+  assert.equal(Remote.dialogAppeared(tracker, screen(again), 60000, false, again.join('\n')), false);
+
+  // Answered with 1, gone for less than a second between two checks, then asked again.
+  Remote.dialogKeys(tracker, '1', again.join('\n'), 61000);
+  const third = [...again, '● Update(a.txt)', '  ⎿  Updated a.txt with 2 additions', ...dialog()];
+  assert.equal(Remote.dialogAppeared(tracker, screen(third), 62200, false, third.join('\n')), true);
+  assert.equal(Remote.dialogAppeared(tracker, screen(third), 63200, false, third.join('\n')), false);
+});
+
+test('one question alerts once: keys that answer nothing, arrow keys, typing and a resize', () => {
+  const tracker = {};
+  const lines = dialog();
+  const text = lines.join('\n');
+  assert.equal(Remote.dialogAppeared(tracker, screen(lines), 1000, false, text), true);
+  // A key the agent ignored: the screen stayed as it was.
+  Remote.dialogKeys(tracker, '7', text, 1500);
+  assert.equal(Remote.dialogAppeared(tracker, screen(lines), 3000, false, text), false);
+  // That key is forgotten: a change much later (here only the cursor moving) isn't an answer.
+  const moved = lines.map(line => line.replace('❯ 1.', '  1.').replace('  2.', '❯ 2.'));
+  assert.equal(Remote.dialogAppeared(tracker, screen(moved), 4000, false, moved.join('\n')), false);
+  // Arrow keys move the cursor: the screen changes, but no key answered.
+  Remote.dialogKeys(tracker, '\x1b[B', text, 5000);
+  assert.equal(Remote.dialogAppeared(tracker, screen(moved), 7000, false, moved.join('\n')), false);
+  // y and then typing in the dialog's own field: the last key didn't answer.
+  Remote.dialogKeys(tracker, 'y', moved.join('\n'), 8000);
+  Remote.dialogKeys(tracker, 'use pnpm', moved.join('\n'), 8100);
+  const typed = [...moved.slice(0, -1), '│      use pnpm'.padEnd(59) + '│', moved.at(-1)];
+  assert.equal(Remote.dialogAppeared(tracker, screen(typed), 10000, false, typed.join('\n')), false);
+  // Enter, then a resize wraps the same dialog again before the next check.
+  Remote.dialogKeys(tracker, '\r', typed.join('\n'), 11000);
+  const wrapped = typed.map(line => line.replace(/ +│$/, ' │'));
+  assert.notEqual(wrapped.join('\n'), typed.join('\n'));
+  assert.equal(Remote.dialogAppeared(tracker, screen(wrapped), 12500, true, wrapped.join('\n')), false);
+  assert.equal(Remote.dialogAppeared(tracker, screen(wrapped), 15000, false, wrapped.join('\n')), false);
+  // Keys while no dialog was alerted answer nothing.
+  const fresh = {};
+  Remote.dialogKeys(fresh, '\r', '', 1000);
+  assert.equal(fresh.answeredAt, 0);
+});
+
 test('expect: a phone answers only the dialog its screen showed', () => {
   const asking = screen(dialog());
   const key = Remote.dialogKey(asking);

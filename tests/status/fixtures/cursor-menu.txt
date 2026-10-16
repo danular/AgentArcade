@@ -4,4 +4,4 @@
      Model one
      Model two
 
-  ↑/↓ to navigate · enter to select · esc to cancel
+  ↑/↓ to navigate • Enter to select • Esc to cancel
