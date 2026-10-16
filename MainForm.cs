@@ -83,9 +83,8 @@ sealed class MainForm : Form, IRemoteHost
         Text = AppName;
         // The exe carries app.ico (ApplicationIcon); the title bar and taskbar use the same one.
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-        StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(960, 620);
-        Size = new Size(1500, 900);
+        PlaceWindow();
         BackColor = Color.FromArgb(12, 12, 14);
         Controls.Add(_web);
         _flush.Tick += (_, _) => Flush();
@@ -98,6 +97,49 @@ sealed class MainForm : Form, IRemoteHost
         Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
         _remote = new RemoteServer(this, Path.Combine(AppSettings.Folder, "remote.json"));
+    }
+
+    // Opens the window where it was closed (WindowPlace keeps it on a screen that is there now), maximized if it was;
+    // the first time at about 85% of the primary work area. Screens are in physical pixels (per-monitor DPI aware).
+    void PlaceWindow()
+    {
+        if (Screen.PrimaryScreen is not { } primary)
+        {
+            StartPosition = FormStartPosition.CenterScreen;
+            Size = new Size(1500, 900);
+            return;
+        }
+        var saved = _settings.WindowBounds is { } box ? new Rectangle(box.X, box.Y, box.Width, box.Height) : (Rectangle?)null;
+        StartPosition = FormStartPosition.Manual;
+        Bounds = WindowPlace.Restore(saved, Screen.AllScreens.Select(screen => screen.WorkingArea).ToList(), primary.WorkingArea, MinimumSize);
+        if (_settings.WindowMaximized == true) WindowState = FormWindowState.Maximized;
+        _maximized = WindowState == FormWindowState.Maximized;
+    }
+
+    // Whether the window was maximized before it was minimized, so a minimized window is remembered right.
+    bool _maximized;
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        if (WindowState != FormWindowState.Minimized) _maximized = WindowState == FormWindowState.Maximized;
+    }
+
+    // Keeps the window's normal bounds and maximized state in settings.json for the next start.
+    void RememberWindow()
+    {
+        var normal = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        if (normal.Width <= 0 || normal.Height <= 0) return;
+        _settings.WindowBounds = new WindowBox { X = normal.X, Y = normal.Y, Width = normal.Width, Height = normal.Height };
+        _settings.WindowMaximized = WindowState == FormWindowState.Maximized || (WindowState == FormWindowState.Minimized && _maximized);
+        try
+        {
+            _settings.Save();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Log("couldn't save the window's place: " + ex.Message);
+        }
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -217,6 +259,7 @@ sealed class MainForm : Form, IRemoteHost
         }
         // Closing is decided: the window goes now, not after the agents are stopped. A usable window here would look
         // like an answered Cancel to install-and-run.ps1, which waits for the app to close.
+        if (Visible) RememberWindow();
         Hide();
         _flush.Stop();
         _presence.Stop();
@@ -1901,4 +1944,40 @@ sealed class MainForm : Form, IRemoteHost
 
     [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+}
+
+// Where the window opens, in physical pixels like Form.Bounds in this per-monitor DPI aware app. The first time: about
+// 85% of the primary work area, centred. After that: where it was closed, moved and shrunk until it lies inside the
+// work area it overlaps most, or centred on the primary one when its screen is gone. Never smaller than minimum.
+static class WindowPlace
+{
+    public const int FirstPercent = 85;
+
+    public static Rectangle Restore(Rectangle? saved, IReadOnlyList<Rectangle> workAreas, Rectangle primary, Size minimum)
+    {
+        if (saved is not { Width: > 0, Height: > 0 } box)
+            return Centre(Fit(new Size(primary.Width * FirstPercent / 100, primary.Height * FirstPercent / 100), minimum, primary), primary);
+        Rectangle? best = null;
+        long most = 0;
+        foreach (var area in workAreas)
+        {
+            var overlap = Rectangle.Intersect(area, box);
+            var size = (long)overlap.Width * overlap.Height;
+            if (size > most)
+            {
+                most = size;
+                best = area;
+            }
+        }
+        if (best is not { } on) return Centre(Fit(box.Size, minimum, primary), primary);
+        var fitted = Fit(box.Size, minimum, on);
+        return new Rectangle(Math.Clamp(box.X, on.Left, on.Right - fitted.Width), Math.Clamp(box.Y, on.Top, on.Bottom - fitted.Height), fitted.Width, fitted.Height);
+    }
+
+    // At least minimum, at most the work area (a screen smaller than minimum gets the whole work area).
+    static Size Fit(Size size, Size minimum, Rectangle area) =>
+        new(Math.Min(Math.Max(size.Width, minimum.Width), area.Width), Math.Min(Math.Max(size.Height, minimum.Height), area.Height));
+
+    static Rectangle Centre(Size size, Rectangle area) =>
+        new(area.Left + (area.Width - size.Width) / 2, area.Top + (area.Height - size.Height) / 2, size.Width, size.Height);
 }

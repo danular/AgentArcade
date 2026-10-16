@@ -66,6 +66,10 @@ sealed class AppSettings
     // (NewProject.Folder): %USERPROFILE%\source\repos, made with the first project. Only a new install gets it; older
     // files have null and keep making new projects next to the current one.
     public string? DefaultProjectsFolder { get; set; }
+    // The window as it was closed: its normal (not maximized) bounds in physical pixels, and whether it was maximized.
+    // Null until it was closed once; the window then opens at about 85% of the primary work area (WindowPlace).
+    public WindowBox? WindowBounds { get; set; }
+    public bool? WindowMaximized { get; set; }
 
     static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
@@ -131,6 +135,15 @@ sealed class AppSettings
         RemotePort = StoredPort() ?? RemotePort;
         File.WriteAllText(FilePath, JsonSerializer.Serialize(this, Json.Options));
     }
+}
+
+// AppSettings.WindowBounds: a rectangle in physical pixels (screen coordinates).
+sealed class WindowBox
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
 }
 
 // One "Run git here anyway" in the Changes tab: the project folder and GitCheck.Config of the config it was for.

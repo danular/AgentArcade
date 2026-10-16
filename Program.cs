@@ -949,9 +949,26 @@ static class RemoteSelfCheck
                 && refusedEarly == null && freshReply.Status == 201 && fresh == Path.Combine(repos, "First") && Directory.Exists(fresh)
                 && NewProject.Refusal(Path.Combine(noDrive, "source", "repos"), "First")?.Status == 404
                 && Json.Str(freshState, "projectsFolder") == repos
-                && older is { DefaultProjectsFolder: null }
+                && older is { DefaultProjectsFolder: null, WindowBounds: null, WindowMaximized: null }
                 && (File.Exists(AppSettings.FilePath) || AppSettings.Load().DefaultProjectsFolder == NewProject.DefaultFolder),
             "Documents and the user folder put new projects in source\\repos, made with the first one; a project keeps them next to it; older settings keep the old rule");
+
+        // The window: the first start takes about 85% of the primary work area; a saved place stays on a screen that is
+        // there (moved and shrunk into the one it overlaps most), or centred on the primary one when its screen is gone.
+        var primaryArea = new Rectangle(0, 0, 2000, 1000);
+        var areas = new[] { primaryArea, new Rectangle(2000, 0, 1600, 900) };
+        var smallest = new Size(960, 620);
+        check(
+            "window-place",
+            WindowPlace.Restore(null, areas, primaryArea, smallest) == new Rectangle(150, 75, 1700, 850)
+                && WindowPlace.Restore(new Rectangle(100, 50, 1200, 800), areas, primaryArea, smallest) == new Rectangle(100, 50, 1200, 800)
+                && WindowPlace.Restore(new Rectangle(-300, 100, 1200, 800), areas, primaryArea, smallest) == new Rectangle(0, 100, 1200, 800)
+                && WindowPlace.Restore(new Rectangle(2500, 300, 1200, 800), areas, primaryArea, smallest) == new Rectangle(2400, 100, 1200, 800)
+                && WindowPlace.Restore(new Rectangle(1700, -40, 3000, 1400), areas, primaryArea, smallest) == new Rectangle(2000, 0, 1600, 900)
+                && WindowPlace.Restore(new Rectangle(-6000, 200, 1200, 800), areas, primaryArea, smallest) == new Rectangle(400, 100, 1200, 800)
+                && WindowPlace.Restore(new Rectangle(10, 10, 300, 200), areas, primaryArea, smallest) == new Rectangle(10, 10, 960, 620)
+                && WindowPlace.Restore(null, areas, new Rectangle(0, 0, 1000, 600), smallest) == new Rectangle(20, 0, 960, 600),
+            "85% of the primary work area at first; kept, moved onto or shrunk into a screen that is there; centred when its screen is gone");
 
         var agents = AgentStore.Defaults();
         var claude = agents.First(agent => agent.Command == "claude");
