@@ -470,6 +470,11 @@ function autoTitleOf(line) {
 // the phone types through a paste.
 function trackPrompt(session, data) {
   if (!isChat(session) || session.customTitle || session.autoTitle || session.pasting) return;
+  // Shift+Enter: the next line of the same prompt.
+  if (session.newline) {
+    session.typed += ' ';
+    return;
+  }
   const text = data
     .replace(/\x1b\[200~([\s\S]*?)(?:\x1b\[201~|$)/g, (_, pasted) => session.phoneTyping ? pasted.replace(/[\r\n]+/g, ' ') : '')
     .replace(/\x1b(\[[0-9;?]*[ -/]*[@-~]|O.|.)/g, '');
@@ -712,7 +717,25 @@ function openSession(key, mode = 'start', chat = null, options = {}) {
   return session;
 }
 
+// Shift+Enter adds a line to the prompt instead of sending it. Through ConPTY a line feed reaches Claude Code, Copilot
+// and Gemini as a new line, but Codex (which reads the console's key events) only takes Alt+Enter, ESC CR.
+const NEWLINE = { codex: '\x1b\r' };
+const newlineFor = session =>
+  NEWLINE[String(agentOf(accountOf(session.key))?.command || '').split(/[\\/]/).pop().replace(/\.\w+$/, '').toLowerCase()] || '\n';
+
 function handleKey(session, event) {
+  // Agent chats only: the console's PowerShell and the sign-in and install panes keep Enter as it is.
+  if (event.key === 'Enter' && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing &&
+      session.id && isChat(session)) {
+    // The keypress after this keydown would still send Enter (\r), so it is stopped too.
+    if (event.type === 'keydown') {
+      event.preventDefault();
+      // watchTurn and trackPrompt count it as typing, not as a submit.
+      session.newline = true;
+      try { session.term.input(newlineFor(session)); } finally { session.newline = false; }
+    }
+    return false;
+  }
   if (event.type !== 'keydown') return true;
   const key = event.key.toLowerCase();
   // Ctrl+C copies when text is selected; otherwise it goes to the agent as usual.
@@ -1024,7 +1047,10 @@ function watchTurn(session, data) {
   // phone's expect may not reach the dialog that follows (Remote.dialogInput).
   if (session.dialog) session.dialog.input = true;
   Remote.dialogInput(session.asked, session.seq);
-  if (data.includes('\r')) {
+  // Shift+Enter adds a line to the prompt (newlineFor): typing, also where it is ESC CR.
+  if (session.newline) {
+    session.typedAt ||= Date.now();
+  } else if (data.includes('\r')) {
     session.armed = Date.now();
     session.turnStartedAt = session.armed;
     session.busyStart = 0;
