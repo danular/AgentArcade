@@ -20,8 +20,11 @@ const Remote = (() => {
   const BOX = /[─-╿]/g;
   const BOX_LINE = /^[─-╿\s]*$/;
   const YES_NO = /\(y\/n\)|\[y\/n\]/i;
-  const CHECK = /^(\s*(?:[⎿└•]\s*)?)(☒|✔|✓|■|◼|\[[xX]\]|☐|□|◻|○|\[ \]) +(\S.*)$/;
-  const DONE_MARKS = ['☒', '✔', '✓', '■', '◼', '[x]'];
+  // Checklist markers. Done: ☒ ✔ ✓ √ [x]. In progress: ◼ ■. Open: ☐ ◻ □ ○ [ ]. Claude Code draws ✔ ◼ ◻, and in a
+  // Windows console without Unicode its fallbacks √ ■ □.
+  const CHECK = /^(\s*(?:[⎿└•]\s*)?)(☒|✔|✓|√|■|◼|\[[xX]\]|☐|□|◻|○|\[ \]) +(\S.*)$/;
+  const DONE_MARKS = ['☒', '✔', '✓', '√', '[x]'];
+  const ACTIVE_MARKS = ['■', '◼'];
   // Gemini CLI marks the selected option with ●, the others with ❯ › > ▶.
   const CHOICE = /^(\s*([❯›>▶●])?\s*)([1-9])[.)] +(\S.*)$/;
   const KEY_HINT = /\s*\((?:esc|enter|return|tab|space|shift\+[\w-]+|ctrl\+[\w-]+|alt\+[\w-]+|[a-z0-9])\)$/i;
@@ -75,7 +78,8 @@ const Remote = (() => {
       const line = unbox(raw);
       const match = line.match(CHECK);
       if (match) {
-        run.push({ text: squash(match[3]), done: DONE_MARKS.includes(match[2].toLowerCase()), column: line.length - match[3].length });
+        const mark = match[2].toLowerCase();
+        run.push({ text: squash(match[3]), done: DONE_MARKS.includes(mark), active: ACTIVE_MARKS.includes(mark), column: line.length - match[3].length });
         continue;
       }
       const last = run[run.length - 1];
@@ -87,7 +91,8 @@ const Remote = (() => {
     }
     finish();
     if (!best) return null;
-    const open = best.find(item => !item.done);
+    // current: the item in progress, else the first one not done.
+    const open = best.find(item => item.active) || best.find(item => !item.done);
     return {
       done: best.filter(item => item.done).length,
       total: best.length,
