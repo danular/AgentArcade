@@ -20,13 +20,13 @@ const THEME = {
   brightBlue: '#93c5fd', brightMagenta: '#d8b4fe', brightCyan: '#67e8f9', brightWhite: '#fafafa',
 };
 
-const BRAND_COLORS = { claude: '#d97757', codex: '#10a37f', gemini: '#4f8cff', copilot: '#a371f7', 'cursor-agent': '#7c8aa5' };
+const BRAND_COLORS = { claude: '#d97757', codex: '#10a37f', gemini: '#4f8cff', agy: '#3fb6c6', copilot: '#a371f7', 'cursor-agent': '#7c8aa5' };
 // Built-in agents show these letters (the same as on the website), never a vendor's logo. Other agents show the
 // first two letters of their name.
-const MONOGRAMS = { claude: 'CC', codex: 'CX', gemini: 'GM', copilot: 'CP', 'cursor-agent': 'CU' };
+const MONOGRAMS = { claude: 'CC', codex: 'CX', gemini: 'GM', agy: 'AG', copilot: 'CP', 'cursor-agent': 'CU' };
 
 // Names agents put in the terminal title when it says nothing about the chat itself.
-const GENERIC_TITLES = ['claude', 'claude code', 'codex', 'gemini', 'gemini cli', 'copilot', 'github copilot', 'github copilot cli', 'cursor', 'cursor agent', 'cursor-agent', 'agent'];
+const GENERIC_TITLES = ['claude', 'claude code', 'codex', 'gemini', 'gemini cli', 'antigravity', 'antigravity cli', 'agy', 'copilot', 'github copilot', 'github copilot cli', 'cursor', 'cursor agent', 'cursor-agent', 'agent'];
 
 const ICONS = {
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -1009,7 +1009,9 @@ const QUIET_MS = 5000;
 const MIN_WORK_MS = 4000;
 // A resize makes ConPTY repaint the pane; output this soon after one isn't the agent writing.
 const REPAINT_MS = 600;
-const APPROVAL = /do you want|would you like to|allow (this|command|execution)|apply this change|\(y\/n\)|\[y\/n\]/i;
+// The same check as APPROVAL in remote.js; keep both identical. "Yes, and run in sandbox" / "... without sandbox
+// restrictions" is the option Antigravity CLI's command approval always offers (antigravity.google/docs/cli/features).
+const APPROVAL = /do you want|would you like to|allow (this|command|execution)|apply this change|yes, and run (in|without) sandbox|\(y\/n\)|\[y\/n\]/i;
 // Focus and mouse reports that xterm.js sends for the agent; nobody typed them.
 const REPORTS = /^(?:\x1b\[[IO]|\x1b\[<\d+;\d+;\d+[Mm]|\x1b\[M[\s\S]{3})+$/;
 let notifyOn = localStorage.getItem('notifications') !== 'off';
@@ -1816,9 +1818,50 @@ async function confirmSignIn(account) {
   if (ok) openSession(account.key, 'login');
 }
 
+// What an agent's Install command needs first (Node.js, PowerShell 7, WinGet). C# looks (Prerequisites in Backend.cs)
+// and answers installCheck with { agent, needs: [{ text, url }] }. null when no answer came in time: the install pane
+// checks again before it runs anything.
+const installChecks = new Map();
+
+function installNeeds(agent) {
+  return new Promise(resolve => {
+    installChecks.get(agent.name)?.(null);
+    let timer = 0;
+    const done = needs => {
+      clearTimeout(timer);
+      if (installChecks.get(agent.name) === done) installChecks.delete(agent.name);
+      resolve(needs);
+    };
+    timer = setTimeout(() => done(null), 15000);
+    installChecks.set(agent.name, done);
+    send({ type: 'installCheck', agent: agent.name });
+  });
+}
+
+// Nothing is installed: what is missing, each with a button to the page that tells how to get it.
+async function showInstallNeeds(agent, needs) {
+  const site = url => {
+    try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
+  };
+  const several = needs.length > 1;
+  const ok = await modal({
+    title: `${agent.name} needs something first`,
+    body: needs.map((need, i) => `<p>${esc(need.text)}</p>` +
+        (several ? `<p><button class="tag-btn" data-need="${i}">Open ${esc(site(need.url))}</button></p>` : '')).join('') +
+      '<p class="muted">Nothing was installed.</p>',
+    confirm: several ? 'Close' : `Open ${site(needs[0].url)}`,
+    cancel: several ? null : 'Close',
+    opened: root => root.querySelectorAll('[data-need]').forEach(button =>
+      button.addEventListener('click', () => send({ type: 'openUrl', url: needs[Number(button.dataset.need)].url }))),
+  });
+  if (ok && !several) send({ type: 'openUrl', url: needs[0].url });
+}
+
 async function askInstall(agent) {
   if (!agent) return;
   if (!agent.install) return toast(`No install command is set for ${agent.name}. Use Edit agent list.`, 'error');
+  const needs = await installNeeds(agent);
+  if (needs?.length) return showInstallNeeds(agent, needs);
   const ok = await modal({
     title: `Install or update ${agent.name}?`,
     body: `<p>This runs in a new pane:</p><pre class="cmd">${esc(agent.install)}</pre><p class="muted">When it's done, the sidebar updates by itself.</p>`,
@@ -3034,6 +3077,9 @@ if (bridge) {
         }
         break;
       }
+      case 'installCheck':
+        installChecks.get(message.agent)?.(Array.isArray(message.needs) ? message.needs : []);
+        break;
       case 'newProjectProblem':
         newProjectChecked?.(message.name, message.problem);
         break;

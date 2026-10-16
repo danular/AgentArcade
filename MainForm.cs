@@ -39,6 +39,8 @@ sealed class MainForm : Form, IRemoteHost
     readonly AppSettings _settings = AppSettings.Load();
     readonly WebView2 _web = new() { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.FromArgb(12, 12, 14) };
     readonly Dictionary<string, Session> _sessions = new();
+    // Install panes whose prerequisites are being checked (StartInstall); closing the pane drops it. UI thread only.
+    readonly HashSet<string> _installChecks = new();
     readonly List<ChatRecord> _history = HistoryStore.Load();
     readonly System.Windows.Forms.Timer _flush = new() { Interval = 16 };
     // Tells the page every 5 s whether someone is at the PC (presence), so a pane left focused still alerts.
@@ -279,7 +281,13 @@ sealed class MainForm : Form, IRemoteHost
                     break;
                 case "start":
                     // A pane the page opens after the window began closing would start an agent nobody can see.
-                    if (!_remoteClosed) StartSession(id, Json.Str(m, "account"), Json.Str(m, "mode"), Json.Str(m, "workspace"), Json.Str(m, "chat"), Int(m, "cols"), Int(m, "rows"));
+                    if (_remoteClosed) break;
+                    if (Json.Str(m, "mode") == "install") StartInstall(id, Json.Str(m, "account"), Int(m, "cols"), Int(m, "rows"));
+                    else StartSession(id, Json.Str(m, "account"), Json.Str(m, "mode"), Json.Str(m, "workspace"), Json.Str(m, "chat"), Int(m, "cols"), Int(m, "rows"));
+                    break;
+                case "installCheck":
+                    var checkAgent = Json.Str(m, "agent");
+                    Run(() => InstallCheckAsync(checkAgent), "install check");
                     break;
                 case "renameChat":
                     RenameChat(Json.Str(m, "chat"), Json.Str(m, "title"), m.TryGetProperty("named", out var named) && named.ValueKind == JsonValueKind.True);
@@ -550,6 +558,43 @@ sealed class MainForm : Form, IRemoteHost
         }
     }
 
+    // The askInstall dialog asks first what the agent's Install command needs (Prerequisites).
+    async Task InstallCheckAsync(string agentName)
+    {
+        var agent = _agents.FirstOrDefault(item => item.Name == agentName);
+        var needs = agent == null ? new List<InstallNeed>() : await Prerequisites.CheckAsync(agent);
+        Post(new { type = "installCheck", agent = agentName, needs = needs.Select(need => new { text = need.Text, url = need.Url }) });
+    }
+
+    // An install pane runs its command only when what the command needs is there; otherwise the pane ends with the
+    // message and its link. The page asked already (installCheck), so this only catches what changed since.
+    void StartInstall(string id, string accountKey, int cols, int rows)
+    {
+        if (id.Length == 0 || _sessions.ContainsKey(id) || !_installChecks.Add(id)) return;
+        Run(async () =>
+        {
+            List<InstallNeed> needs;
+            try
+            {
+                var (agent, _) = FindAccount(accountKey) ?? throw new InvalidOperationException("That account no longer exists. Click refresh.");
+                needs = await Prerequisites.CheckAsync(agent);
+            }
+            catch (Exception ex)
+            {
+                if (_installChecks.Remove(id)) Post(new { type = "exit", session = id, code = -1, error = TextGuard.Redact(ex.Message) });
+                return;
+            }
+            // The pane was closed, the page reloaded or the window began closing meanwhile.
+            if (!_installChecks.Remove(id) || _remoteClosed) return;
+            if (needs.Count > 0)
+            {
+                Post(new { type = "exit", session = id, code = -1, error = Prerequisites.Text(needs) });
+                return;
+            }
+            StartSession(id, accountKey, "install", "", "", cols, rows);
+        }, "install");
+    }
+
     void SessionExited(string id, Session session, int code)
     {
         if (!_sessions.TryGetValue(id, out var current) || current != session) return;
@@ -566,6 +611,7 @@ sealed class MainForm : Form, IRemoteHost
 
     void Stop(string id)
     {
+        _installChecks.Remove(id);
         if (!_sessions.Remove(id, out var session)) return;
         session.Pty.Dispose();
         EndChat(session);
@@ -578,6 +624,7 @@ sealed class MainForm : Form, IRemoteHost
     {
         var stopped = _sessions.Values.ToList();
         _sessions.Clear();
+        _installChecks.Clear();
         foreach (var session in stopped)
         {
             session.Pty.Dispose();

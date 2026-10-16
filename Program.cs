@@ -176,6 +176,8 @@ static class SelfCheck
                 && geminiBuiltIn.LoginHint.Contains("Antigravity CLI", StringComparison.Ordinal),
             "the old built-in hint becomes the API key / Code Assist one; an edited hint is kept");
 
+        AgentCatalogueCheck.Run(Check, lines.Add);
+
         try
         {
             var ptyText = new System.Text.StringBuilder();
@@ -589,6 +591,149 @@ static class SelfCheck
 
     [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
     static extern bool AttachConsole(uint dwProcessId);
+}
+
+// The built-in agents on a clean PC: Antigravity CLI offered once, the vendors' own installers, finding a tool whose
+// installer didn't put it on PATH, and what an Install needs first.
+// Everything runs in temp folders with fake tools; nothing is installed and no agent starts.
+static class AgentCatalogueCheck
+{
+    public static void Run(Action<string, bool, string> check, Action<string> info)
+    {
+        var temp = Path.Combine(Path.GetTempPath(), "AgentArcade-catalogue-" + Environment.ProcessId);
+        try
+        {
+            Catalogue(check, Path.Combine(temp, "home"));
+            Known(check, temp);
+            Needs(check, info);
+        }
+        catch (Exception ex)
+        {
+            check("agent-catalogue", false, ex.Message);
+        }
+        finally
+        {
+            try { Directory.Delete(temp, true); } catch { /* temp folder */ }
+        }
+    }
+
+    // Antigravity CLI is a built-in with the commands from Google's docs, and reaches an older agents.json once; old
+    // built-in npm installs of Codex and Copilot become the official installers, edited ones stay.
+    static void Catalogue(Action<string, bool, string> check, string home)
+    {
+        var defaults = AgentStore.Defaults();
+        var agy = defaults.FirstOrDefault(agent => agent.Command == "agy");
+        var codex = defaults.First(agent => agent.Command == "codex");
+        var copilot = defaults.First(agent => agent.Command == "copilot");
+        var builtIn = agy != null && agy.Name == "Antigravity CLI" && agy.ResumeArgs == "--continue" && agy.Login.Length == 0
+            && agy.Install == "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://antigravity.google/cli/install.ps1 | iex\""
+            && agy.HomeVar.Length == 0 && agy.AccountCheck.Length == 0 && agy.LoginHint.Contains("Google OAuth", StringComparison.Ordinal)
+            && codex.Install.Contains("https://chatgpt.com/codex/install.ps1", StringComparison.Ordinal) && copilot.Install == "winget install GitHub.Copilot";
+        var migrated = AgentStore.RetiredInstalls.All(item => item.Value.All(old =>
+        {
+            var current = defaults.First(agent => agent.Command == item.Key);
+            var edited = old + " --foreground-scripts";
+            return AgentStore.CurrentInstall(new AgentDef { Command = item.Key, Install = old }, current) == current.Install
+                && AgentStore.CurrentInstall(new AgentDef { Command = item.Key, Install = edited }, current) == edited;
+        }));
+
+        // An agents.json from 1.4.0 (the five agents it offered), in its own data folder.
+        var before = Environment.GetEnvironmentVariable("AGENT_ARCADE_HOME");
+        bool offeredOnce;
+        try
+        {
+            Directory.CreateDirectory(home);
+            Environment.SetEnvironmentVariable("AGENT_ARCADE_HOME", home);
+            var old = AgentStore.Defaults().Where(agent => agent.Command != "agy").ToList();
+            foreach (var agent in old) agent.Install = AgentStore.RetiredInstalls.TryGetValue(agent.Command, out var retired) ? retired[0] : agent.Install;
+            File.WriteAllText(AgentStore.FilePath, JsonSerializer.Serialize(old, Json.Options));
+            File.WriteAllText(Path.Combine(home, "agents-offered.json"), JsonSerializer.Serialize(old.Select(agent => agent.Name), Json.Options));
+            var first = AgentStore.Load();
+            var again = AgentStore.Load();
+            // Deleted by the user after it was offered: it stays deleted.
+            File.WriteAllText(AgentStore.FilePath, JsonSerializer.Serialize(again.Where(agent => agent.Command != "agy"), Json.Options));
+            var deleted = AgentStore.Load();
+            offeredOnce = first.Count(agent => agent.Command == "agy") == 1 && again.Count(agent => agent.Command == "agy") == 1
+                && deleted.All(agent => agent.Command != "agy") && first.Count == old.Count + 1
+                && first.First(agent => agent.Command == "codex").Install == codex.Install && first.First(agent => agent.Command == "copilot").Install == copilot.Install;
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AGENT_ARCADE_HOME", before);
+        }
+        check("agent-catalogue", builtIn && migrated && offeredOnce,
+            "Antigravity CLI (agy) is built in and reaches an older agents.json once; Codex and Copilot use their official installers, "
+                + "an Install that is exactly an old built-in npm command follows them, an edited one stays");
+    }
+
+    // Claude Code, Codex, Copilot and Antigravity CLI are found where their installers put them even when that folder
+    // isn't on PATH, also for an agents.json entry without AltPath. A fake user folder stands in for the real one.
+    static void Known(Action<string, bool, string> check, string temp)
+    {
+        var env = new Dictionary<string, string> { ["USERPROFILE"] = Path.Combine(temp, "profile"), ["LOCALAPPDATA"] = Path.Combine(temp, "local") };
+        string Fake(params string[] parts)
+        {
+            var file = Path.Combine([temp, .. parts]);
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllBytes(file, []);
+            return file;
+        }
+        var claude = Fake("profile", ".local", "bin", "claude.exe");
+        var agy = Fake("local", "agy", "bin", "agy.exe");
+        var copilot = Fake("local", "Microsoft", "WinGet", "Links", "copilot.exe");
+        var found = Locator.FindKnown("claude", env) == claude && Locator.FindKnown("Claude.exe", env) == claude
+            && Locator.FindKnown("agy", env) == agy && Locator.FindKnown("copilot", env) == copilot;
+        var notThere = Locator.FindKnown("codex", env) == null && Locator.FindKnown("gemini", env) == null
+            && Locator.FindKnown(claude, env) == null && Locator.FindKnown("", env) == null;
+
+        // claude isn't on PATH (an empty one): the entry from an old agents.json still finds it.
+        var path = Environment.GetEnvironmentVariable("PATH");
+        string? viaAgent;
+        try
+        {
+            Environment.SetEnvironmentVariable("PATH", Path.Combine(temp, "empty"));
+            viaAgent = Locator.FindAgent(new AgentDef { Name = "Claude Code", Command = "claude" }, env);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", path);
+        }
+        check("locator-known", found && notThere && viaAgent == claude,
+            @"off PATH, claude is found in %USERPROFILE%\.local\bin, agy in %LOCALAPPDATA%\agy\bin and copilot in WinGet's links, keyed by command");
+    }
+
+    // What an Install needs first, with fake tool paths: npm and Node.js (22+ for Copilot, 20+ for Gemini), PowerShell 7
+    // for Copilot from npm, WinGet for a WinGet install. Then, as INFO, what this PC has.
+    static void Needs(Action<string, bool, string> check, Action<string> info)
+    {
+        var defaults = AgentStore.Defaults();
+        var gemini = defaults.First(agent => agent.Command == "gemini");
+        var copilot = defaults.First(agent => agent.Command == "copilot");
+        var claude = defaults.First(agent => agent.Command == "claude");
+        var copilotNpm = new AgentDef { Name = copilot.Name, Command = "copilot", Install = "npm install -g @github/copilot" };
+        var custom = new AgentDef { Name = "My agent", Command = "my-agent", Install = "npm install -g my-agent" };
+        var all = new Prerequisites.Found(@"C:\fake\npm.cmd", @"C:\fake\node.exe", "v22.11.0", @"C:\fake\pwsh.exe", @"C:\fake\winget.exe");
+        string Urls(AgentDef agent, Prerequisites.Found found) => string.Join(" ", Prerequisites.Missing(agent, found).Select(need => need.Url));
+        const string node = Prerequisites.NodeUrl, pwsh = Prerequisites.PowerShellUrl, winget = Prerequisites.WinGetUrl;
+        var passed = Urls(gemini, all) == "" && Urls(copilotNpm, all) == "" && Urls(copilot, all) == ""
+            && Urls(gemini, all with { Node = null }) == node && Urls(gemini, all with { Npm = null }) == node
+            && Urls(gemini, all with { NodeVersion = "v18.19.0" }) == node && Urls(gemini, all with { NodeVersion = "v20.0.0" }) == ""
+            && Urls(copilotNpm, all with { NodeVersion = "v20.10.0" }) == node && Urls(copilotNpm, all with { NodeVersion = "no answer" }) == node
+            && Urls(copilotNpm, all with { Pwsh = null }) == pwsh && Urls(copilotNpm, all with { Node = null, Pwsh = null }) == node + " " + pwsh
+            && Urls(copilot, all with { Node = null, Npm = null, Pwsh = null }) == "" && Urls(copilot, all with { WinGet = null }) == winget
+            && Urls(claude, new Prerequisites.Found(null, null, null, null, null)) == ""
+            && Urls(custom, all with { NodeVersion = "v10.0.0" }) == "" && Urls(custom, all with { Node = null }) == node
+            && Prerequisites.NodeMajorOf("v24.18.0") == 24 && Prerequisites.NodeMajorOf("garbage") == null
+            && Prerequisites.Kind("npm.cmd install -g x") == "npm" && Prerequisites.Kind("winget install X") == "winget" && Prerequisites.Kind("npmx install") == "";
+        check("install-prerequisites", passed,
+            "an npm install needs npm and Node.js (22+ for Copilot, 20+ for Gemini), Copilot from npm also PowerShell 7, a WinGet install WinGet; "
+                + "a missing one gives its nodejs.org, PowerShell or WinGet link instead of running");
+
+        var npmTool = Locator.FindOnPath("npm");
+        var nodeTool = Locator.FindOnPath("node");
+        info("INFO install-prerequisites — npm " + (npmTool == null ? "not found" : "found") + ", node " + (nodeTool == null ? "not found" : "found")
+            + ", PowerShell 7 " + (Locator.FindPwsh() == null ? "not found" : "found") + ", WinGet " + (Locator.FindOnPath("winget") == null ? "not found" : "found"));
+    }
 }
 
 // The Changes tab against hostile repositories, in a temp folder. Nothing here reaches the network: every path to

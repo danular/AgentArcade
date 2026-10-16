@@ -4,7 +4,7 @@
 // No DOM and no globals except Remote, so Node can test them.
 const Remote = (() => {
   // The same check as APPROVAL in app.js; keep both identical.
-  const APPROVAL = /do you want|would you like to|allow (this|command|execution)|apply this change|\(y\/n\)|\[y\/n\]/i;
+  const APPROVAL = /do you want|would you like to|allow (this|command|execution)|apply this change|yes, and run (in|without) sandbox|\(y\/n\)|\[y\/n\]/i;
   // An agent's own notification that asks for permission rather than saying it is done.
   const ASKS_OK = /needs your (permission|approval|ok|input)|^approval requested\b|wants to (run|edit|use|execute)|permission to use/i;
   // Working agents say how to stop them; "esc to cancel" also ends dialogs, so there it needs a timer (Gemini CLI's "12s").

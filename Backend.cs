@@ -187,7 +187,8 @@ static class AgentStore
             AltPath = @"%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe",
             Login = "login",
             LoginHint = "Choose \"Sign in with ChatGPT\" in the browser window that opens.",
-            Install = "npm install -g @openai/codex",
+            // OpenAI's Windows installer (github.com/openai/codex README); it needs no Node.js.
+            Install = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://chatgpt.com/codex/install.ps1 | iex\"",
             HomeVar = "CODEX_HOME",
             AccountCheck = "codex",
             ResumeArgs = "resume",
@@ -204,12 +205,23 @@ static class AgentStore
             AccountCheck = "gemini",
             ResumeArgs = "--resume",
         },
+        // Google's replacement for Gemini CLI with personal Google accounts (antigravity.google/docs/getting-started,
+        // install and resume pages). It has no login command or account-folder setting: it signs in when it starts.
+        new()
+        {
+            Name = "Antigravity CLI",
+            Command = "agy",
+            LoginHint = "Choose \"Google OAuth\" when Antigravity CLI starts and approve the sign-in in the browser. Personal Google accounts work. Type /logout inside it to sign out.",
+            Install = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://antigravity.google/cli/install.ps1 | iex\"",
+            ResumeArgs = "--continue",
+        },
         new()
         {
             Name = "GitHub Copilot CLI",
             Command = "copilot",
             LoginHint = "Type /login inside Copilot and follow the steps.",
-            Install = "npm install -g @github/copilot",
+            // GitHub's WinGet package (docs.github.com, Installing GitHub Copilot CLI); WinGet also brings PowerShell 7.
+            Install = "winget install GitHub.Copilot",
             ResumeArgs = "--resume",
         },
         new()
@@ -273,6 +285,7 @@ static class AgentStore
             agent.ImagesFolder ??= builtIn.ImagesFolder;
             agent.DefaultHome ??= builtIn.DefaultHome;
             agent.LoginHint = CurrentHint(agent, builtIn);
+            agent.Install = CurrentInstall(agent, builtIn);
         }
 
         List<string> offered;
@@ -319,6 +332,19 @@ static class AgentStore
         => RetiredHints.TryGetValue(builtIn.Command, out var retired) && retired.Contains(agent.LoginHint, StringComparer.Ordinal)
             ? builtIn.LoginHint
             : agent.LoginHint;
+
+    // Built-in install commands that were replaced by the vendor's own Windows installer. Like the hints: only an
+    // Install that is exactly an old built-in one changes; a command the user wrote stays.
+    public static readonly Dictionary<string, string[]> RetiredInstalls = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["codex"] = ["npm install -g @openai/codex"],
+        ["copilot"] = ["npm install -g @github/copilot"],
+    };
+
+    public static string CurrentInstall(AgentDef agent, AgentDef builtIn)
+        => RetiredInstalls.TryGetValue(builtIn.Command, out var retired) && retired.Contains(agent.Install, StringComparer.Ordinal)
+            ? builtIn.Install
+            : agent.Install;
 
     static void SaveOffered(IEnumerable<string> names)
         => File.WriteAllText(OfferedPath, JsonSerializer.Serialize(names.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), Json.Options));
@@ -692,7 +718,52 @@ static class Locator
         Environment.SetEnvironmentVariable("PATH", string.Join(';', parts));
     }
 
-    public static string? FindAgent(AgentDef agent) => FindOnPath(agent.Command) ?? FindAlt(agent.AltPath);
+    // env: values for %NAME% in the known folders, in place of this process's own (the self-check's fake folders).
+    public static string? FindAgent(AgentDef agent, IReadOnlyDictionary<string, string>? env = null)
+        => FindOnPath(agent.Command) ?? FindAlt(agent.AltPath) ?? FindKnown(agent.Command, env);
+
+    // Where each vendor's own Windows installer puts its tool, for when that folder isn't on PATH (yet). Keyed by
+    // command, so agents.json files from older versions find them too. Claude Code: its docs' uninstall steps; Codex:
+    // its install.ps1; GitHub Copilot CLI: WinGet's link folder for portable apps; Antigravity CLI: its docs and install.ps1.
+    static readonly Dictionary<string, string[]> Known = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["claude"] = [@"%USERPROFILE%\.local\bin\claude.exe"],
+        ["codex"] = [@"%LOCALAPPDATA%\Programs\OpenAI\Codex\bin\codex.exe"],
+        ["copilot"] = [@"%LOCALAPPDATA%\Microsoft\WinGet\Links\copilot.exe"],
+        ["agy"] = [@"%LOCALAPPDATA%\agy\bin\agy.exe"],
+    };
+
+    public static string? FindKnown(string command, IReadOnlyDictionary<string, string>? env = null)
+    {
+        if (string.IsNullOrWhiteSpace(command)) return null;
+        string name;
+        try
+        {
+            if (Path.IsPathRooted(command)) return null;
+            name = Path.GetFileNameWithoutExtension(command.Trim());
+        }
+        catch
+        {
+            return null;
+        }
+        if (!Known.TryGetValue(name, out var patterns)) return null;
+        foreach (var pattern in patterns)
+        {
+            var expanded = env == null
+                ? pattern
+                : Regex.Replace(pattern, "%([^%]+)%", match => env.TryGetValue(match.Groups[1].Value, out var value) ? value : match.Value);
+            if (FindAlt(expanded) is { } found) return found;
+        }
+        return null;
+    }
+
+    // PowerShell 7 (pwsh.exe): on PATH, or where its installer puts it.
+    public static string? FindPwsh()
+    {
+        if (FindOnPath("pwsh") is { } pwsh && pwsh.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return pwsh;
+        var programFiles = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "pwsh.exe");
+        return File.Exists(programFiles) ? programFiles : null;
+    }
 
     public static string? FindOnPath(string name)
     {
@@ -776,6 +847,89 @@ static class Locator
         }
         return false;
     }
+}
+
+// One thing an Install command needs that this PC doesn't have, and the page that tells how to get it.
+sealed record InstallNeed(string Text, string Url);
+
+// What an agent's Install command needs before it can run: npm and Node.js for an npm install, PowerShell 7 for
+// GitHub Copilot CLI from npm, WinGet for a WinGet install. A missing one shows a message instead of a failing install.
+static class Prerequisites
+{
+    public const string NodeUrl = "https://nodejs.org";
+    public const string PowerShellUrl = "https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows";
+    public const string WinGetUrl = "https://learn.microsoft.com/windows/package-manager/winget/";
+
+    // The oldest Node.js each npm package supports: GitHub's Copilot CLI docs (22), the engines field of
+    // @google/gemini-cli (20) and of @openai/codex (16).
+    static readonly Dictionary<string, int> NodeMajor = new(StringComparer.OrdinalIgnoreCase) { ["copilot"] = 22, ["gemini"] = 20, ["codex"] = 16 };
+
+    static readonly Regex Tool = new(@"^\s*(npm|winget)(?:\.cmd|\.exe)?(?:\s|$)", RegexOptions.IgnoreCase);
+
+    // The tools found on this PC (full paths or null) and the first line `node --version` printed.
+    public sealed record Found(string? Npm, string? Node, string? NodeVersion, string? Pwsh, string? WinGet);
+
+    // "npm", "winget" or "" for an install that needs neither.
+    public static string Kind(string install) => Tool.Match(install ?? "") is { Success: true } match ? match.Groups[1].Value.ToLowerInvariant() : "";
+
+    // Node.js's major version from "v22.11.0"; null when it can't be read.
+    public static int? NodeMajorOf(string? version)
+        => Regex.Match(version ?? "", @"^\s*v?(\d+)\.") is { Success: true } match && int.TryParse(match.Groups[1].Value, out var major) ? major : null;
+
+    public static List<InstallNeed> Missing(AgentDef agent, Found found)
+    {
+        var needs = new List<InstallNeed>();
+        var command = Path.GetFileNameWithoutExtension(agent.Command.Trim()).ToLowerInvariant();
+        switch (Kind(agent.Install))
+        {
+            case "npm":
+                var min = NodeMajor.GetValueOrDefault(command);
+                var newer = min > 0 ? " " + min + " or newer" : "";
+                if (found.Npm == null || found.Node == null)
+                {
+                    needs.Add(new(agent.Name + " installs with npm, which comes with Node.js" + newer + ". Install Node.js (the LTS version) from nodejs.org, then click Install again.", NodeUrl));
+                }
+                else if (min > 0 && NodeMajorOf(found.NodeVersion) is var major && (major ?? 0) < min)
+                {
+                    var has = major == null ? "this PC's Node.js didn't say its version" : "this PC has Node.js " + found.NodeVersion!.Trim();
+                    needs.Add(new(agent.Name + " needs Node.js" + newer + "; " + has + ". Update Node.js from nodejs.org, then click Install again.", NodeUrl));
+                }
+                if (command == "copilot" && found.Pwsh == null)
+                    needs.Add(new("GitHub Copilot CLI needs PowerShell 7 (pwsh.exe) on Windows. Install it from Microsoft, then click Install again.", PowerShellUrl));
+                break;
+            case "winget":
+                if (found.WinGet == null)
+                    needs.Add(new("This install uses WinGet, which comes with Windows 11's App Installer but isn't on this PC (Windows Sandbox has none). " +
+                        "Install App Installer, or change the Install command with Edit agent list.", WinGetUrl));
+                break;
+        }
+        return needs;
+    }
+
+    // Looks for the tools now, so ones installed while the app is open count. Node.js runs by its full path.
+    public static async Task<List<InstallNeed>> CheckAsync(AgentDef agent)
+    {
+        var kind = Kind(agent.Install);
+        if (kind.Length == 0) return new();
+        Locator.RefreshPath();
+        var node = kind == "npm" ? Locator.FindOnPath("node") : null;
+        string? version = null;
+        if (node != null)
+        {
+            try
+            {
+                var result = await Commands.RunAsync(node, ["--version"], 10000);
+                if (!result.TimedOut) version = result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+            }
+            catch
+            {
+                // A Node.js that doesn't start says no version.
+            }
+        }
+        return Missing(agent, new Found(Locator.FindOnPath("npm"), node, version, Locator.FindPwsh(), kind == "winget" ? Locator.FindOnPath("winget") : null));
+    }
+
+    public static string Text(IEnumerable<InstallNeed> needs) => string.Join(" ", needs.Select(need => need.Text + " (" + need.Url + ")"));
 }
 
 sealed record ToolStatus(AgentDef Agent, string? Path, string Version);
