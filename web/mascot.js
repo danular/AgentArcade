@@ -50,10 +50,10 @@
         stops([[0, '#2a17d0', .6], [.6, '#2a17d0', .28], [1, '#2a17d0', 0]]) + '</radialGradient>' +
       `<filter id="${id}g" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="1.6"/></filter>` +
       (live
-        ? `<radialGradient id="${id}h">` + stops([[0, 'currentColor', .6], [.55, 'currentColor', .22], [1, 'currentColor', 0]]) +
+        ? `<radialGradient id="${id}h">` + stops([[0, 'currentColor', .8], [.5, 'currentColor', .6], [.72, 'currentColor', .22], [1, 'currentColor', 0]]) +
             '</radialGradient>' +
           `<radialGradient id="${id}d" cx=".38" cy=".32" r=".75">` +
-            stops([[0, '#fff', .45], [.45, '#fff', 0], [1, '#000', .25]]) + '</radialGradient>'
+            stops([[0, '#fff', .28], [.45, '#fff', 0], [1, '#000', .22]]) + '</radialGradient>'
         : '') +
       '</defs>' +
       '<rect width="128" height="128" rx="28" fill="#0d0239"/>' +
