@@ -58,10 +58,10 @@
       <h2 id="first">Your first agents</h2>
       <ol>
         <li>Add a project folder in the sidebar with <b>+</b>, or make an empty one next to your current project with <b>New project</b>. Agents always start in the selected workspace.</li>
-        <li>Click <b>Install</b> next to any agent you don't have. It shows the vendor's install command, then runs it in a pane. Codex, GitHub Copilot CLI and Gemini CLI need <a href="https://nodejs.org">Node.js</a>.</li>
+        <li>Click <b>Install</b> next to any agent you don't have. It shows the vendor's install command, then runs it in a pane. Gemini CLI installs with npm and needs <a href="https://nodejs.org">Node.js</a> 20 or newer; GitHub Copilot CLI installs with WinGet; the others use their vendor's PowerShell installer. If something is missing, Install says what and links to it instead of running.</li>
         <li>Start an agent. The first time, it signs in through its own official login, in its own pane.</li>
       </ol>
-      <p><b>Gemini CLI</b> needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence. Google stopped serving Gemini CLI for personal Google sign-ins (free, Google AI Pro and Ultra) on 18 Jun 2026.</p>
+      <p><b>Gemini CLI</b> needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence. Google stopped serving Gemini CLI for personal Google sign-ins (free, Google AI Pro and Ultra) on 18 Jun 2026. With a personal Google account, use <b>Antigravity CLI</b>, Google's replacement: it is in the agent list, and it signs in with Google when it starts.</p>
       <p>To add another command-line agent, add it to <code>agents.json</code> in <code>%LOCALAPPDATA%\AgentArcade</code>.</p>
 
       <h2 id="panes">Panes and status dots</h2>

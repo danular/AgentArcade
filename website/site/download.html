@@ -84,12 +84,12 @@
       <p><b>4. The phone.</b> Uninstall Agent Arcade Remote on your phone.</p>
 
       <h2 id="agents">Get your agents</h2>
-      <p>Agent Arcade runs the official command-line agents. Click <b>Install</b> in the sidebar for any you don't have yet: it shows you the vendor's install command first, then runs it in a pane you can watch. Codex, GitHub Copilot CLI and Gemini CLI need <a href="https://nodejs.org">Node.js</a>; Cursor installs with its own PowerShell installer. Each agent then signs in through its own official login. Gemini CLI needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence: Google stopped serving it for personal Google sign-ins on 18 Jun 2026.</p>
+      <p>Agent Arcade runs the official command-line agents. Click <b>Install</b> in the sidebar for any you don't have yet: it shows you the vendor's install command first, then runs it in a pane you can watch. Gemini CLI installs with npm and needs <a href="https://nodejs.org">Node.js</a> 20 or newer; GitHub Copilot CLI installs with WinGet; Claude Code, Codex, Cursor and Antigravity CLI use their vendor's PowerShell installer. Each agent then signs in through its own official login. Gemini CLI needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence: Google stopped serving it for personal Google sign-ins on 18 Jun 2026.</p>
 
       <h2 id="phone">The Android app</h2>
       <p>Agent Arcade Remote lets you watch and drive your agents from your phone. It isn't on Google Play yet, so you install the APK yourself. The PC side is already in the zip above: <b>Phone</b> at the bottom of the sidebar. <a href="phone.html">Read how it works</a>.</p>
       <div class="ctas"><a class="btn btn-accent" href="https://github.com/danular/AgentArcade/releases/download/v1.4.0/AgentArcadeRemote.apk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>Download AgentArcadeRemote.apk</a><a class="btn btn-ghost" href="obtainium://app/%7B%22id%22%3A%22nl.danular.remote%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fdanular%2FAgentArcade%22%2C%22author%22%3A%22danular%22%2C%22name%22%3A%22Agent%20Arcade%20Remote%22%2C%22additionalSettings%22%3A%22%7B%5C%22apkFilterRegEx%5C%22%3A%5C%22%5EAgentArcadeRemote%5C%5C%5C%5C.apk%24%5C%22%2C%5C%22versionDetection%5C%22%3Afalse%7D%22%7D">Add to Obtainium</a></div>
-      <p class="muted small">v1.1.0 · 3.9 MB · Android 8.0 and up · free</p>
+      <p class="muted small">v1.1.1 · 3.9 MB · Android 8.0 and up · free</p>
       <ol class="steps">
         <li><div><b>Download it on your phone.</b> Open this page in your phone's browser and tap the download button.</div></li>
         <li><div><b>Open the downloaded file.</b> If Android asks, allow your browser to <i>install unknown apps</i>, then go back.</div></li>
@@ -100,7 +100,7 @@
       <p id="obtainium"><b>Updates with Obtainium.</b> Until Agent Arcade Remote is on Google Play, <a href="https://obtainium.imranr.dev">Obtainium</a> can keep it up to date: it checks this project's GitHub releases and offers the AgentArcadeRemote.apk of each new one. On a phone with Obtainium installed, tap <b>Add to Obtainium</b> and confirm the import. Every release carries the APK, so a release that only changed the PC app offers the same APK again; installing it changes nothing.</p>
       <p>To add it to Obtainium by hand instead, give Obtainium <code>https://github.com/danular/AgentArcade</code>, set <i>Filter APKs by regular expression</i> to <code>^AgentArcadeRemote\.apk$</code> so it takes only that file, and switch off <i>Reconcile version string with version detected from OS</i>, because a release's version is the PC app's.</p>
       <p><b>Coming from version 1.0?</b> Version 1.1 is a new app to Android (its app id changed to prepare for Google Play), so it can't install over 1.0. Uninstall the old Agent Arcade Remote first, install 1.1, and pair again: remove the old phone in the PC's Phone dialog, then scan a new code.</p>
-      <p>The SHA-256 of AgentArcadeRemote.apk v1.1.0, from the v1.4.0 release:</p>
+      <p>The SHA-256 of AgentArcadeRemote.apk v1.1.1, from the v1.4.0 release:</p>
       <div class="codeblock"><pre>7404755d42683a0dbbf384775c2aa41a929352e61e40dc6b2b3d93d1e0003b9a</pre></div>
       <p>Every version is signed with the same key, and Android refuses an update signed with another one. The SHA-256 of the signing certificate:</p>
       <div class="codeblock"><pre>01e68ee0fb88710fb42780eae6e5532e9982d21a7546e9a60e8114c064086dce</pre></div>
