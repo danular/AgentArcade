@@ -22,7 +22,7 @@ nav: download
         <li><div><b>Download the zip.</b> If Microsoft Edge says it isn't commonly downloaded, open the download's <b>⋯</b> menu, choose <b>Keep</b>, then <b>Show more</b> → <b>Keep anyway</b>.</div></li>
         <li><div><b>Extract it to a folder of your choice,</b> for example <code>%LOCALAPPDATA%\Programs\AgentArcade</code>. <code>AgentArcade.exe</code> is at the top of the zip. Keep the files together: the app needs the <code>web</code> folder next to it. No administrator rights needed.</div></li>
         <li><div><b>Start <code>AgentArcade.exe</code>.</b> Windows may warn you the first time; see <a href="#smartscreen">SmartScreen</a> below.</div></li>
-        <li><div><b>Add a project folder</b> in the sidebar and start an agent. A new install opens in your Documents folder until you add one.</div></li>
+        <li><div><b>Add a project folder</b> with the <b>+</b> next to <i>Projects</i> in the sidebar, and start an agent with <b>New agent</b>. A new install opens in your Documents folder until you add one.</div></li>
       </ol>
 
       <h2 id="verify">Check the file</h2>
@@ -40,7 +40,7 @@ nav: download
 
       <h2 id="update">Update</h2>
       <ol class="steps">
-        <li><div><b>Close Agent Arcade.</b> Its agents stop; History can resume their chats afterwards.</div></li>
+        <li><div><b>Close Agent Arcade.</b> Its agents stop; Recent in the sidebar can resume their chats afterwards.</div></li>
         <li><div><b>Extract the new zip over the old folder</b> (the one that holds <code>AgentArcade.exe</code>) and replace the files.</div></li>
         <li><div><b>Start <code>AgentArcade.exe</code>.</b> Settings, history and paired phones stay where they are, in <code>%LOCALAPPDATA%\AgentArcade</code>.</div></li>
       </ol>
@@ -54,10 +54,10 @@ nav: download
       <p><b>4. The phone.</b> Uninstall {{remote}} on your phone.</p>
 
       <h2 id="agents">Get your agents</h2>
-      <p>Agent Arcade runs the official command-line agents. Click <b>Install</b> in the sidebar for any you don't have yet: it shows you the vendor's install command first, then runs it in a pane you can watch. Gemini CLI installs with npm and needs <a href="https://nodejs.org">Node.js</a> 20 or newer; GitHub Copilot CLI installs with WinGet; Claude Code, Codex, Cursor and Antigravity CLI use their vendor's PowerShell installer. Each agent then signs in through its own official login. Gemini CLI needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence: Google stopped serving it for personal Google sign-ins on 18 Jun 2026.</p>
+      <p>Agent Arcade runs the official command-line agents. Open <b>Settings</b> (the gear at the bottom of the sidebar) → <b>Agents and accounts</b> and click <b>Install</b> for any you don't have yet: it shows you the vendor's install command first, then runs it in a pane you can watch. Gemini CLI installs with npm and needs <a href="https://nodejs.org">Node.js</a> 20 or newer; GitHub Copilot CLI installs with WinGet; Claude Code, Codex, Cursor and Antigravity CLI use their vendor's PowerShell installer. Each agent then signs in through its own official login. Gemini CLI needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence: Google stopped serving it for personal Google sign-ins on 18 Jun 2026.</p>
 
       <h2 id="phone">The Android app</h2>
-      <p>{{remote}} lets you watch and drive your agents from your phone. It isn't on Google Play yet, so you install the APK yourself. The PC side is already in the zip above: <b>Phone</b> at the bottom of the sidebar. <a href="phone.html">Read how it works</a>.</p>
+      <p>{{remote}} lets you watch and drive your agents from your phone. It isn't on Google Play yet, so you install the APK yourself. The PC side is already in the zip above: the phone button at the bottom of the sidebar (Settings → <b>Phone</b>). <a href="phone.html">Read how it works</a>.</p>
       <div class="ctas"><a class="btn btn-accent" href="{{apk}}">{{download_icon}}Download AgentArcadeRemote.apk</a><a class="btn btn-ghost" href="{{obtainium}}">Add to Obtainium</a></div>
       <p class="muted small">v{{apk_version}} · {{apk_size}} · Android 8.0 and up · free</p>
       <ol class="steps">
@@ -69,7 +69,7 @@ nav: download
       <p>To update, download the newest APK and install it over the old one. Your pairing stays.</p>
       <p id="obtainium"><b>Updates with Obtainium.</b> Until {{remote}} is on Google Play, <a href="https://obtainium.imranr.dev">Obtainium</a> can keep it up to date: it checks this project's GitHub releases and offers the AgentArcadeRemote.apk of each new one. On a phone with Obtainium installed, tap <b>Add to Obtainium</b> and confirm the import. Every release carries the APK, so a release that only changed the PC app offers the same APK again; installing it changes nothing.</p>
       <p>To add it to Obtainium by hand instead, give Obtainium <code>{{github}}</code>, set <i>Filter APKs by regular expression</i> to <code>{{apk_filter}}</code> so it takes only that file, and switch off <i>Reconcile version string with version detected from OS</i>, because a release's version is the PC app's.</p>
-      <p><b>Coming from version 1.0?</b> Version 1.1 is a new app to Android (its app id changed to prepare for Google Play), so it can't install over 1.0. Uninstall the old {{remote}} first, install 1.1, and pair again: remove the old phone in the PC's Phone dialog, then scan a new code.</p>
+      <p><b>Coming from version 1.0?</b> Version 1.1 is a new app to Android (its app id changed to prepare for Google Play), so it can't install over 1.0. Uninstall the old {{remote}} first, install 1.1, and pair again: remove the old phone in Settings → Phone on the PC, then scan a new code.</p>
       <p>The SHA-256 of AgentArcadeRemote.apk v{{apk_version}}, from the v{{version}} release:</p>
       <div class="codeblock"><pre>{{apk_sha256}}</pre></div>
       <p>Every version is signed with the same key, and Android refuses an update signed with another one. The SHA-256 of the signing certificate:</p>
