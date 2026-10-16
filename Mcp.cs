@@ -340,8 +340,8 @@ static class Mcp
                 continue;
             }
             if (!grouped || CopilotServer.Match(line) is not { Success: true } match) continue;
-            // Only status words are looked for after the name; anything else on the line is dropped.
-            var rest = match.Groups["rest"].Value;
+            // Only status words are looked for after the name (not inside a URL); anything else on the line is dropped.
+            var rest = Regex.Replace(match.Groups["rest"].Value, @"\S+://\S*", " ");
             var status = Regex.IsMatch(rest, @"\bdisabled\b", RegexOptions.IgnoreCase) ? Disabled
                 : Regex.IsMatch(rest, @"needs[- ]?auth|unauthori[sz]ed|not logged in|sign[- ]?in", RegexOptions.IgnoreCase) ? NeedsAuth
                 : Regex.IsMatch(rest, @"\b(disconnected|failed|error)\b", RegexOptions.IgnoreCase) ? Failed
@@ -445,6 +445,7 @@ static class McpCheck
             "  docs (local) - connected (sandboxed)",
             $"  notes (stdio) (disabled) --api-key {FakeKey}",
             "  linear (http) - needs-auth",
+            $"  wiki (http) https://wiki.example/signin?error=1&token={FakeToken} - connected",
             $"  flaky (stdio) - failed: spawn npx --api-key {FakeKey} ENOENT https://x.example/?token={FakeToken}",
             "",
             "Workspace servers:",
@@ -471,7 +472,7 @@ static class McpCheck
                 "stdio-server=connected, remote=failed, off-server=disabled, slow=unknown, blocked-one=disabled"),
             ("gemini-untrusted", Mcp.Listers["gemini"].Parse("", geminiUntrusted), "docs=disabled"),
             ("copilot", Mcp.Listers["copilot"].Parse(copilot, ""),
-                "docs=connected/user, notes=disabled/user, linear=needsAuth/user, flaky=failed/user, unity=failed/project, github-mcp-server=unknown"),
+                "docs=connected/user, notes=disabled/user, linear=needsAuth/user, wiki=connected/user, flaky=failed/user, unity=failed/project, github-mcp-server=unknown"),
             ("cursor", Mcp.Listers["cursor-agent"].Parse(cursor, ""),
                 "docs=connected, linear=needsAuth, slow=unknown, off=disabled, local-tools=unknown/project, broken=failed"),
         };
