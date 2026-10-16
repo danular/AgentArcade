@@ -62,6 +62,14 @@ sealed class AppSettings
     public DateTimeOffset? UpdateCheckedAt { get; set; }
     public string? UpdateTag { get; set; }
     public string? UpdateUrl { get; set; }
+    // Where New project makes its folder while the active workspace is Documents, the user folder or a OneDrive root
+    // (NewProject.Folder): %USERPROFILE%\source\repos, made with the first project. Only a new install gets it; older
+    // files have null and keep making new projects next to the current one.
+    public string? DefaultProjectsFolder { get; set; }
+    // The window as it was closed: its normal (not maximized) bounds in physical pixels, and whether it was maximized.
+    // Null until it was closed once; the window then opens at about 85% of the primary work area (WindowPlace).
+    public WindowBox? WindowBounds { get; set; }
+    public bool? WindowMaximized { get; set; }
 
     static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
@@ -81,11 +89,13 @@ sealed class AppSettings
     {
         // The second path holds the settings from before the app was renamed.
         var paths = Home == null ? new[] { FilePath, Path.Combine(LocalAppData, "ClaudeUnitySwitch", "settings.json") } : new[] { FilePath };
+        var found = false;
         foreach (var path in paths)
         {
             try
             {
                 if (!File.Exists(path)) continue;
+                found = true;
                 var loaded = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path));
                 if (loaded != null && !string.IsNullOrWhiteSpace(loaded.ProjectPath)) return loaded.WithActiveListed();
             }
@@ -94,7 +104,8 @@ sealed class AppSettings
                 // A broken settings file falls back to the default (the Documents folder).
             }
         }
-        return new AppSettings().WithActiveListed();
+        // No settings file at all: a new install, whose new projects go to %USERPROFILE%\source\repos.
+        return new AppSettings { DefaultProjectsFolder = found ? null : NewProject.DefaultFolder }.WithActiveListed();
     }
 
     AppSettings WithActiveListed()
@@ -124,6 +135,15 @@ sealed class AppSettings
         RemotePort = StoredPort() ?? RemotePort;
         File.WriteAllText(FilePath, JsonSerializer.Serialize(this, Json.Options));
     }
+}
+
+// AppSettings.WindowBounds: a rectangle in physical pixels (screen coordinates).
+sealed class WindowBox
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
 }
 
 // One "Run git here anyway" in the Changes tab: the project folder and GitCheck.Config of the config it was for.

@@ -75,6 +75,8 @@ const sessions = new Map();
 // agent that got the same id. They stay "s" and at most 9 digits, as Remote.cs accepts.
 let sessionCount = 100000 + crypto.getRandomValues(new Uint32Array(1))[0] % 799900000;
 let maxed = null;
+// Columns of panes in the grid now (renderPanes); the side panel leaves each of them room (setPanelWidth).
+let paneColumns = 1;
 let openMenu = null;
 let drag = null;
 let historyView = null;
@@ -287,7 +289,7 @@ function renderWorkspaces() {
     const shut = isFolded('ws:' + workspace.path);
     const children = list.length && !shut
       ? `<div class="ws-sessions">${list.map(session =>
-          `<button class="ws-session" data-session="${session.id}"><span class="${DOT_CLASS[session.dotStatus] || (session.running ? 'dot on' : 'dot off')}"></span>` +
+          `<button class="ws-session" data-session="${session.id}">${dotHtml(session.dotStatus || (session.running ? 'idle' : 'ended'))}` +
           `<span class="ellipsis">${esc(titleOf(session))}</span></button>`).join('')}</div>`
       : '';
     const fold = list.length
@@ -367,6 +369,10 @@ function renderPanes() {
   grid.hidden = count === 0;
   $('#empty').hidden = count !== 0;
   if (count === 0) renderEmpty();
+  if (cols !== paneColumns) {
+    paneColumns = cols;
+    setPanelWidth(localStorage.getItem('panelWidth'), false);
+  }
   for (const session of visible) scheduleFit(session);
 }
 
@@ -470,6 +476,11 @@ function autoTitleOf(line) {
 // the phone types through a paste.
 function trackPrompt(session, data) {
   if (!isChat(session) || session.customTitle || session.autoTitle || session.pasting) return;
+  // Shift+Enter: the next line of the same prompt.
+  if (session.newline) {
+    session.typed += ' ';
+    return;
+  }
   const text = data
     .replace(/\x1b\[200~([\s\S]*?)(?:\x1b\[201~|$)/g, (_, pasted) => session.phoneTyping ? pasted.replace(/[\r\n]+/g, ' ') : '')
     .replace(/\x1b(\[[0-9;?]*[ -/]*[@-~]|O.|.)/g, '');
@@ -612,7 +623,7 @@ function openSession(key, mode = 'start', chat = null, options = {}) {
   session.el.className = 'pane';
   session.el.dataset.session = id;
   session.el.innerHTML =
-    `<div class="pane-head"><span class="dot on"></span>${avatar(agent, 'sm')}` +
+    `<div class="pane-head">${dotHtml('idle')}${avatar(agent, 'sm')}` +
     '<span class="pane-title ellipsis"></span><span class="pane-sub ellipsis"></span>' +
     '<span class="pane-actions">' +
     `<button class="icon-btn small" data-act="menu" title="More">${icon('more', 15)}</button>` +
@@ -712,7 +723,25 @@ function openSession(key, mode = 'start', chat = null, options = {}) {
   return session;
 }
 
+// Shift+Enter adds a line to the prompt instead of sending it. Through ConPTY a line feed reaches Claude Code, Copilot
+// and Gemini as a new line, but Codex (which reads the console's key events) only takes Alt+Enter, ESC CR.
+const NEWLINE = { codex: '\x1b\r' };
+const newlineFor = session =>
+  NEWLINE[String(agentOf(accountOf(session.key))?.command || '').split(/[\\/]/).pop().replace(/\.\w+$/, '').toLowerCase()] || '\n';
+
 function handleKey(session, event) {
+  // Agent chats only: the console's PowerShell and the sign-in and install panes keep Enter as it is.
+  if (event.key === 'Enter' && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.isComposing &&
+      session.id && isChat(session)) {
+    // The keypress after this keydown would still send Enter (\r), so it is stopped too.
+    if (event.type === 'keydown') {
+      event.preventDefault();
+      // watchTurn and trackPrompt count it as typing, not as a submit.
+      session.newline = true;
+      try { session.term.input(newlineFor(session)); } finally { session.newline = false; }
+    }
+    return false;
+  }
   if (event.type !== 'keydown') return true;
   const key = event.key.toLowerCase();
   // Ctrl+C copies when text is selected; otherwise it goes to the agent as usual.
@@ -1026,7 +1055,10 @@ function watchTurn(session, data) {
   // phone's expect may not reach the dialog that follows (Remote.dialogInput).
   if (session.dialog) session.dialog.input = true;
   Remote.dialogInput(session.asked, session.seq);
-  if (data.includes('\r')) {
+  // Shift+Enter adds a line to the prompt (newlineFor): typing, also where it is ESC CR.
+  if (session.newline) {
+    session.typedAt ||= Date.now();
+  } else if (data.includes('\r')) {
     session.armed = Date.now();
     session.turnStartedAt = session.armed;
     session.busyStart = 0;
@@ -1071,8 +1103,28 @@ setInterval(() => {
 
 // ---------- status dots ----------
 
-// Orange: working. Red: needs you. Green: idle or done. Grey: ended. The phone uses the same statuses (paneStatus).
-const DOT_CLASS = { working: 'dot working', needsYou: 'dot needs', done: 'dot on', idle: 'dot on', ended: 'dot off' };
+// Each status has its own shape, not only its own colour, so red and green needn't be told apart: working is a
+// pulsing orange dot, needs you a red diamond, done (not looked at yet) a green ring, idle a green dot, ended a grey
+// dot. The words are the tooltip and what a screen reader says. The phone uses the same statuses (paneStatus).
+const DOTS = {
+  working: ['dot working', 'Working'],
+  needsYou: ['dot needs', 'Needs you'],
+  done: ['dot done', 'Done'],
+  idle: ['dot on', 'Idle'],
+  ended: ['dot off', 'Ended'],
+};
+
+function dotHtml(status) {
+  const [cls, label] = DOTS[status];
+  return `<span class="${cls}" role="img" title="${label}" aria-label="${label}"></span>`;
+}
+
+function setDot(dot, status) {
+  const [cls, label] = DOTS[status];
+  dot.className = cls;
+  dot.title = label;
+  dot.setAttribute('aria-label', label);
+}
 
 // Sets each pane's dot, and its dot in the sidebar, from paneStatus. The sidebar dot changes in place: redrawing the
 // sidebar every time a status changes could swallow a click that is halfway through.
@@ -1083,9 +1135,9 @@ function refreshDots() {
     noteDialog(session, screen, status);
     if (status === session.dotStatus) continue;
     session.dotStatus = status;
-    session.el.querySelector('.pane-head .dot').className = DOT_CLASS[status];
+    setDot(session.el.querySelector('.pane-head .dot'), status);
     const listed = document.querySelector(`#workspaces .ws-session[data-session="${CSS.escape(session.id)}"] .dot`);
-    if (listed) listed.className = DOT_CLASS[status];
+    if (listed) setDot(listed, status);
   }
 }
 
@@ -1346,15 +1398,18 @@ function panelWorkspaceChanged() {
   if (!panel.hidden) showPanelTab(panelTab);
 }
 
-// Dragged by its left edge. As a column it leaves the panes at least MIN_PANES px; when the window is too narrow for
-// that, it floats over the panes instead (panel-overlay), so they keep their width.
-const MIN_PANES = 360;
+// Dragged by its left edge. As a column it leaves every column of panes at least MIN_COLUMN px, so three panes side by
+// side need three times that; when the window is too narrow for that, it floats over the panes instead
+// (panel-overlay), so they keep their width.
+const MIN_COLUMN = 360;
 const MIN_PANEL = 280;
 
 function setPanelWidth(width, save = true) {
   const app = $('.app');
+  // The columns of panes with the grid's gaps (10) between them.
+  const panes = MIN_COLUMN * paneColumns + 10 * (paneColumns - 1);
   // The app's padding (20), the sidebar with its gap (282) and the panel's gap (10).
-  const room = window.innerWidth - 20 - (app.classList.contains('side-hidden') ? 0 : 282) - 10 - MIN_PANES;
+  const room = window.innerWidth - 20 - (app.classList.contains('side-hidden') ? 0 : 282) - 10 - panes;
   const overlay = room < MIN_PANEL;
   const wanted = Math.max(MIN_PANEL, Math.round(Number(width) || 480));
   const shown = Math.min(wanted, overlay ? window.innerWidth - 20 : room);
