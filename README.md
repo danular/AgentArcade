@@ -2,9 +2,44 @@
 
 # Agent Arcade
 
+**Every coding agent's own CLI, side by side on Windows, and one phone app that talks only to your PC.**
+
+[Website](https://danular.github.io/AgentArcade/) · [Download](https://danular.github.io/AgentArcade/download.html) · [Pricing](https://danular.github.io/AgentArcade/pricing.html)
+
+<!-- MEDIA SLOT, for Daan: the 20-second muted clip goes here, above the screenshots. Record it in a test copy with demo
+     accounts (no live pairing QR code, no real emails, paths or terminal text) and keep it as docs/media/hero.mp4. GitHub
+     plays a video inline only when it is uploaded through the README editor, so drag the file into this README on
+     github.com and keep the user-attachments link it inserts on its own line here. -->
+
+<p>
+  <img src="docs/media/panes.png" alt="Agent Arcade with four demo agents in a grid: two working (orange dots), one asking for permission (red), one idle (green)" width="49%">
+  <img src="docs/media/side-panel.png" alt="One agent pane asking for permission, next to the side panel's Changes tab with a git diff" width="49%">
+</p>
+
+<sub>Screenshots from a test copy, with stand-in demo agents and a made-up project.</sub>
+
 A Windows app that runs your AI coding agents side by side on one project: Claude Code, Codex (ChatGPT), GitHub Copilot CLI, Cursor and Gemini CLI (API key or Code Assist), each in its own pane inside the app.
 
 Free for personal use. Professional use needs Agent Arcade Pro (EUR 25 per user per month excl. VAT); see [LICENSING.md](LICENSING.md). Pro checkout isn't open yet, and the voice dictation app planned for Pro is still coming.
+
+## Known gaps
+
+- Windows 11 on x64 only. Windows 10 and Windows on ARM aren't tested, and there is no Mac or Linux version.
+- The phone app is Android only (8.0 or newer). There is no iPhone app.
+- No worktree isolation: agents in one project share its folder. Give them separate tasks, or open separate folders as separate workspaces.
+- Agents don't survive an app restart. Closing Agent Arcade stops them; History can resume their chats afterwards.
+- Status dots, alerts and phone approvals come from reading each agent's screen (approval prompts, "esc to interrupt" lines) and the notifications it sends. When a vendor changes its interface, a dot or an alert can be wrong until Agent Arcade catches up.
+- Not code-signed yet: SmartScreen warns on first start, and Smart App Control blocks it, until the code-signing certificate arrives.
+
+## How it differs (checked 16 Oct 2026)
+
+Agent Arcade runs each vendor's own CLI, unmodified, in a Windows terminal pane (ConPTY), and its Android app connects only to your PC, over your Wi-Fi or Tailscale. It reads the terminal and never signs in to anything itself, so it works the same with a subscription, an API key, Amazon Bedrock or Google Cloud, and with Codex, GitHub Copilot CLI, Cursor and Gemini CLI as well as Claude Code. Each line links the product's own page as read on 16 Oct 2026, and says where it is ahead.
+
+- **[Happy](https://github.com/slopus/happy)** has phone apps for iOS and Android, a web client and a desktop app for macOS, Windows and Linux, synced through its end-to-end encrypted relay server: ahead on iPhone, the browser and reaching you away from home without a VPN. Its original CLI wraps Claude Code and Codex, and its desktop app runs Happy's own agent runtime on your Claude, Codex and Grok subscriptions; Agent Arcade runs each vendor's CLI as it is, Copilot, Cursor and Gemini CLI included, with no Agent Arcade server in between.
+- **[Paseo](https://paseo.sh/)** has native iOS and Android apps, a desktop app for macOS, Windows and Linux, a web app, a git worktree per agent, voice, and an optional end-to-end encrypted relay, a direct connection on your network or your own tunnel such as Tailscale: ahead on iPhone, Mac and Linux, worktree isolation and setup away from home. It shows agents in its own interface, through its own integrations or ACP; Agent Arcade shows each CLI's own terminal screen, on the PC and on the phone.
+- **[Coucou](https://github.com/Louis-CFM/coucou)** lives in the Mac's notch (or the top of the screen on Windows and Linux) and watches agents that run in your own terminals, through their hooks, with an iPhone app in TestFlight beta on the Lock Screen and Dynamic Island, and an Android app by a contributor that talks to Coucou on Windows or Linux over your Wi-Fi: ahead on the Mac, the iPhone and fitting the terminal you already use. It watches agents and answers their approvals and questions; Agent Arcade runs the agents in its own panes, so the phone also reads the whole terminal, types to an agent, and starts, stops and resumes agents.
+- **[Warp](https://docs.warp.dev/agents/cli-agents/overview)** is a full terminal for macOS, Windows and Linux (x64 and ARM64) that recognises Claude Code, Codex, GitHub Copilot CLI, Cursor CLI, Gemini CLI and more, with a rich input editor and code review comments, and its [Remote Control](https://docs.warp.dev/agents/cli-agents/remote-control/) opens a session in any browser, an iPhone's included: ahead as a terminal and on platforms. That Remote Control uploads the session to Warp's cloud; Agent Arcade's phone app gets agent screens straight from your PC.
+- **[Claude Code Remote Control](https://code.claude.com/docs/en/remote-control)** is Anthropic's own, built into Claude Code, with the Claude app for iOS and Android, claude.ai/code in any browser, and a git worktree per session in server mode: ahead for Claude subscribers, with nothing extra to install. It needs a Pro, Max, Team or Enterprise plan (not an API key, Amazon Bedrock, Google Cloud or Microsoft Foundry), goes through Anthropic's servers, which store the session transcript, and covers Claude Code only; Agent Arcade also works for API-key, Bedrock and Google Cloud users, and with Codex, Copilot, Cursor and Gemini CLI.
 
 ## Download
 
@@ -102,6 +137,7 @@ To run a test build next to the installed app, set `AGENT_ARCADE_HOME` to an emp
 | `release.ps1` | Builds a GitHub release's two files from the committed code, the flat self-contained `AgentArcade-win-x64.zip` and the signed `AgentArcadeRemote.apk`, and prints their SHA-256 |
 | `SECURITY.md` | How to report a vulnerability (privately) |
 | `docs/claims-checklist.md` | Every public claim on the website and in this README, with the code or dated source that proves it |
+| `docs/media/` | The README's screenshots (from a test copy with demo agents) and `social-preview.png`, the 1280x640 image for the repository's social preview (rendered from `website/video/og.html`) |
 
 Settings, the agent list (`agents.json`), extra accounts, chat history (`history.json`), paired phones (`remote.json`), a log and the window's WebView2 data (`webview`) live in `%LOCALAPPDATA%\AgentArcade`.
 
