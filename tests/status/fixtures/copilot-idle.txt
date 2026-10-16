@@ -1,0 +1,6 @@
+● Added a retry option to the loader. It tries 3 times with a 500 ms pause.
+
+╭──────────────────────────────────────────────────────────────────────────╮
+│ >  Enter @ to mention files or / for commands                            │
+╰──────────────────────────────────────────────────────────────────────────╯
+ Ctrl+c Exit · Ctrl+r Expand recent

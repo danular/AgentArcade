@@ -1,0 +1,7 @@
+ Resume Session
+
+ > Add a retry option to the loader            2 minutes ago · 14 messages
+   Fix the flaky date test                     1 hour ago · 6 messages
+   Explain the build script                    yesterday · 3 messages
+
+ ↑↓ to navigate · Enter to select · Esc to cancel

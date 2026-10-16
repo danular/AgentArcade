@@ -78,9 +78,24 @@ This publishes the app to `%LOCALAPPDATA%\Programs\AgentArcade` and adds a Start
 
 `install-and-run.ps1` does it all in one go: it builds first (a build error leaves the open app alone), then closes the open app the way its close button does (with agents running, the app asks you first, and Cancel stops the script), installs, and starts the new version. Run it from a terminal outside Agent Arcade or with the Claude app's Run button, not from a pane inside Agent Arcade. `test-run.ps1` builds a test copy into `%TEMP%\AgentArcade-test-build` and starts it next to the installed app, with its own data in `%TEMP%\AgentArcade-test-home` (see below); it installs nothing.
 
-To try a change without installing: `dotnet run` (while the installed app is closed). To run the built-in checks: `AgentArcade.exe --self-check`, then read `%TEMP%\AgentArcade-selfcheck.txt`; with `--fixtures docs\phone-remote\fixtures` it also writes the Phone remote contract's example files there ([their README](docs/phone-remote/fixtures/README.md)). `node --test tests/remote.test.js` checks the page's alert rules (one alert per dialog).
+To try a change without installing: `dotnet run` (while the installed app is closed). To run the built-in checks: `AgentArcade.exe --self-check`, then read `%TEMP%\AgentArcade-selfcheck.txt`; with `--fixtures docs\phone-remote\fixtures` it also writes the Phone remote contract's example files there ([their README](docs/phone-remote/fixtures/README.md)). `node --test tests/remote.test.js` checks the page's alert rules (one alert per dialog), and `node --test tests/status/status.test.mjs` the golden screens below (the self-check runs them too when `node.exe` is on PATH).
 
 To run a test build next to the installed app, set `AGENT_ARCADE_HOME` to an empty folder first. That copy keeps its own settings, agents, history and paired phones there, and doesn't count as the same app. With `AGENT_ARCADE_REMOTE_LOOPBACK=1` its Phone remote listens on 127.0.0.1 only, so Windows doesn't show a firewall prompt for it; give it another `RemotePort` in its `settings.json`.
+
+## Tested with
+
+The status dots, needs-you alerts and phone approvals read each agent's screen (`web/remote.js`). `tests/status/fixtures` holds a synthetic screen per agent and state (approval, menu, task list, working, idle): hand-written to mirror each CLI's layout, never copied from a real session. `tests/status/status.test.mjs` checks what Agent Arcade reads from each one; CI runs it on every push and pull request. When a vendor changes its screen, update the fixture and the test shows what broke.
+
+| Agent | CLI version | Checked | Notes |
+| --- | --- | --- | --- |
+| Claude Code | 2.1.301 | 16 Oct 2026 | In a Windows console without Unicode its task list marks √ done, ■ in progress, □ open |
+| Codex | codex-cli 0.162.1 | 16 Oct 2026 | Pickers are numbered, so they read as choices |
+| GitHub Copilot CLI | 1.0.98 | 16 Oct 2026 | Approval options as in GitHub's docs. A working line with "Esc to cancel" but no timer isn't an activity line, so the dot goes orange from the output itself |
+| Cursor | 2026.09.28-64d2043 | 16 Oct 2026 | Layout best effort. Its approval (`→ Run (once) (y)`) and menus aren't read as dialogs yet: the pane turns amber through the quiet timer instead (a todo in the test) |
+| Antigravity CLI | not installed here | 16 Oct 2026 | Unverified: the approval fixture uses only what Google's docs show (the option "Yes, and run in sandbox" or "… without sandbox restrictions", which the approval check matches); the trust dialog follows Google's codelab |
+| Gemini CLI | 0.63.0 | 16 Oct 2026 | No fixtures yet |
+
+The versions are what each tool's own `--version` printed on the PC where the fixtures were written; no agent session was run for them.
 
 ## Files
 
@@ -96,6 +111,7 @@ To run a test build next to the installed app, set `AGENT_ARCADE_HOME` to an emp
 | `Update.cs` | The once-a-day update check: the newest release's tag from GitHub's releases API, compared with the running version |
 | `Backend.cs` | Settings, agent list, accounts, sign-in checks, chat history, Windows Terminal launcher, shared instructions |
 | `web/` | The interface (`index.html`, `app.css`, `app.js`, `icon.png`), `remote.js` (what the phone sees: pane status, approvals, plans and screens read from the terminals) and xterm.js in `web/vendor` (MIT licence) |
+| `tests/` | `remote.test.js` (the page's alert rules) and `status/` (golden screens: synthetic agent screens and what the status parsing must read from them); run with `node --test` |
 | `docs/phone-remote/` | The Android app's build plan and `REMOTE_API.md`, the contract between the PC and the phone |
 | `app.ico` | The app icon (the exe, window and taskbar) |
 | `website/` | The marketing website: `pages/` (content) → `python website/build.py` (reads the newest release's version, sizes and SHA-256 values from the GitHub releases API) → `site/` (static HTML, no build tools needed to host it). `video/` renders the 30-second film (`promo.html`, `render.mjs`) and the social image |

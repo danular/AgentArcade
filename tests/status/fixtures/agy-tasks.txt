@@ -1,0 +1,11 @@
+  ● Task list
+    • [x] Read the config loader
+    • [x] Add the retry option
+    • [ ] Write the tests
+    • [ ] Update the changelog
+
+⠙ Writing the tests
+
+╭──────────────────────────────────────────────────────────────────────────╮
+│ >                                                                        │
+╰──────────────────────────────────────────────────────────────────────────╯

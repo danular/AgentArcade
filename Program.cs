@@ -594,7 +594,7 @@ static class SelfCheck
 }
 
 // The built-in agents on a clean PC: Antigravity CLI offered once, the vendors' own installers, finding a tool whose
-// installer didn't put it on PATH, and what an Install needs first.
+// installer didn't put it on PATH, what an Install needs first, and the golden-screen status tests (tests/status).
 // Everything runs in temp folders with fake tools; nothing is installed and no agent starts.
 static class AgentCatalogueCheck
 {
@@ -615,6 +615,7 @@ static class AgentCatalogueCheck
         {
             try { Directory.Delete(temp, true); } catch { /* temp folder */ }
         }
+        StatusTests(check, info);
     }
 
     // Antigravity CLI is a built-in with the commands from Google's docs, and reaches an older agents.json once; old
@@ -733,6 +734,45 @@ static class AgentCatalogueCheck
         var nodeTool = Locator.FindOnPath("node");
         info("INFO install-prerequisites — npm " + (npmTool == null ? "not found" : "found") + ", node " + (nodeTool == null ? "not found" : "found")
             + ", PowerShell 7 " + (Locator.FindPwsh() == null ? "not found" : "found") + ", WinGet " + (Locator.FindOnPath("winget") == null ? "not found" : "found"));
+    }
+
+    // tests/status through node.exe when it is on PATH (Node.js 20 or newer); INFO when it isn't. Only test names and
+    // counts are reported; the fixtures are synthetic.
+    static void StatusTests(Action<string, bool, string> check, Action<string> info)
+    {
+        var tests = Path.Combine(AppContext.BaseDirectory, "tests", "status", "status.test.mjs");
+        if (Locator.FindOnPath("node") is not { } node || !node.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            info("INFO status-fixtures — node.exe isn't on PATH, so the golden-screen status tests didn't run");
+            return;
+        }
+        if (!File.Exists(tests))
+        {
+            check("status-fixtures", false, "tests/status isn't next to the app");
+            return;
+        }
+        try
+        {
+            var version = Commands.RunAsync(node, ["--version"], 10000).GetAwaiter().GetResult().Stdout.Trim();
+            if ((Prerequisites.NodeMajorOf(version) ?? 0) < 20)
+            {
+                info("INFO status-fixtures — Node.js " + version + " is older than 20, so the golden-screen status tests didn't run");
+                return;
+            }
+            var result = Commands.RunAsync(node, ["--test", "--test-reporter=tap", tests], 120000).GetAwaiter().GetResult();
+            int Count(string name) => Regex.Match(result.Stdout, @"^# " + name + @" (\d+)\s*$", RegexOptions.Multiline) is { Success: true } match ? int.Parse(match.Groups[1].Value) : -1;
+            var (pass, fail, todo) = (Count("pass"), Count("fail"), Count("todo"));
+            var failed = Regex.Matches(result.Stdout, @"^\s*not ok \d+ - (.+?)\s*$", RegexOptions.Multiline)
+                .Select(match => match.Groups[1].Value).Where(name => !name.Contains("# TODO", StringComparison.Ordinal)).Take(5).ToList();
+            check("status-fixtures", !result.TimedOut && result.ExitCode == 0 && pass > 0 && fail == 0,
+                result.TimedOut ? "no answer from node --test within 120 s"
+                    : pass + " passed, " + fail + " failed, " + todo + " todo with Node.js " + version + " (tests/status: Claude Code, Codex, Copilot, Cursor and Antigravity CLI screens)"
+                        + (failed.Count > 0 ? "; failing: " + string.Join("; ", failed) : ""));
+        }
+        catch (Exception ex)
+        {
+            check("status-fixtures", false, ex.Message);
+        }
     }
 }
 

@@ -1,0 +1,10 @@
+› Add a retry option to the config loader
+
+• Explored
+  └ Read config.js
+
+• Working (38s • esc to interrupt)
+
+› Ask Codex to do anything
+
+  ? for shortcuts                                              90% context left

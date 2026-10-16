@@ -1,0 +1,10 @@
+  ● I'll run the unit tests to check the change.
+
+  Run command
+  $ npm test
+
+  > Yes
+    Yes, and run in sandbox
+    No
+
+  ↑/↓ Navigate · enter Confirm

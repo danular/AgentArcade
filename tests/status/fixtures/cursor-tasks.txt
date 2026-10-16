@@ -1,0 +1,12 @@
+  To-dos
+  ☒ Read the config loader
+  ☒ Add the retry option
+  ☐ Write the tests
+  ☐ Update the changelog
+
+  ⬡ Writing the tests
+
+ ┌──────────────────────────────────────────────────────────────────────┐
+ │ →                                                                    │
+ └──────────────────────────────────────────────────────────────────────┘
+  ctrl+c to stop

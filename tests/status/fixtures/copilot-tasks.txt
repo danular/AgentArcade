@@ -1,0 +1,12 @@
+● Update todo list
+  └ [x] Read the config loader
+    [x] Add the retry option
+    [ ] Write the tests
+    [ ] Update the changelog
+
+◎ Thinking (Esc to cancel)
+
+╭──────────────────────────────────────────────────────────────────────────╮
+│ >                                                                        │
+╰──────────────────────────────────────────────────────────────────────────╯
+ Ctrl+c Exit · Ctrl+r Expand recent

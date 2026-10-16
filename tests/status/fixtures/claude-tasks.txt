@@ -1,0 +1,12 @@
+● Update Todos
+  ⎿  √ Read the config loader
+     √ Add the retry option
+     ■ Write the tests
+     □ Update the changelog
+
+* Writing the tests… (42s · ↓ 1.8k tokens · esc to interrupt)
+
+────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ accept edits on (shift+tab to cycle)

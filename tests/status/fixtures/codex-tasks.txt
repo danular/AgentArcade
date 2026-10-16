@@ -1,0 +1,11 @@
+• Updated Plan
+  └ ✔ Read the config loader
+    ✔ Add the retry option
+    □ Write the tests
+    □ Update the changelog
+
+• Working (1m 05s • esc to interrupt)
+
+› Ask Codex to do anything
+
+  ? for shortcuts                                              82% context left

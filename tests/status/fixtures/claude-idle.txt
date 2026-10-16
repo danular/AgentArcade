@@ -1,0 +1,9 @@
+> Add a retry option to the config loader
+
+● Added a retry option to the loader: it tries 3 times with a 500 ms pause.
+  The tests pass.
+
+────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────
+  ? for shortcuts

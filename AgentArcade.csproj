@@ -26,6 +26,8 @@
   <ItemGroup>
     <!-- The window is a local web page (web/index.html) shown in WebView2. -->
     <Content Include="web\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- The golden-screen status tests (tests/status). The self-check runs them with node.exe when it is on PATH. -->
+    <Content Include="tests\status\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- The WebView2 package always references its WPF control, which clashes with Windows Forms. Only the WinForms control is used. -->
   <Target Name="DropWebView2Wpf" BeforeTargets="ResolveAssemblyReferences">

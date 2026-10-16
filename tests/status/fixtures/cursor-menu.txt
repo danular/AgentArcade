@@ -1,0 +1,7 @@
+  Select a model
+
+   → Auto
+     Model one
+     Model two
+
+  ↑/↓ to navigate · enter to select · esc to cancel

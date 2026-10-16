@@ -1,0 +1,9 @@
+› /approvals
+
+  Select Approval Mode
+
+› 1. Read Only       Codex can read files. Edits and commands need your OK.
+  2. Auto (current)  Codex can read and edit files and run commands in the workspace.
+  3. Full Access     Codex can edit files outside the workspace and use the network.
+
+  Press enter to confirm or esc to go back

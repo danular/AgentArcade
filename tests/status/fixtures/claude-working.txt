@@ -1,0 +1,13 @@
+> Add a retry option to the config loader
+
+● I'll read the loader first.
+
+● Read(config.js)
+  ⎿  Read 120 lines
+
+* Pondering… (12s · ↑ 640 tokens · esc to interrupt)
+
+────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────
+  ? for shortcuts

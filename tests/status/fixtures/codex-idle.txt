@@ -1,0 +1,7 @@
+› Add a retry option to the config loader
+
+• Added a retry option to the loader. It tries 3 times with a 500 ms pause, and the tests pass.
+
+› Ask Codex to do anything
+
+  ? for shortcuts                                              88% context left

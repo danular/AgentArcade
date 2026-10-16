@@ -1,0 +1,11 @@
+ ┌──────────────────────────────────────────────────────────────────────┐
+ │ $ npm test                                                           │
+ └──────────────────────────────────────────────────────────────────────┘
+  Waiting for approval...
+
+  Run this command?
+  Not in allowlist: npm test
+   → Run (once) (y)
+     Skip (esc or n)
+     Add Shell(npm) to allowlist? (tab)
+     Auto-run everything (shift+tab)
