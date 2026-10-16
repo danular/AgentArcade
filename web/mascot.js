@@ -91,7 +91,8 @@
     (size ? `width="${size}" height="${size}"` : 'width="100%" height="100%"') +
     ' aria-hidden="true" focusable="false">' + art(id, true) + '</svg>';
 
-  // The states, and the stillness switch (.still, or the system's reduced motion).
+  // The states, and the stillness switch (.still, or the system's reduced motion). The working pulse steps instead of
+  // easing, like the status dots in app.css: an endless smooth animation redraws the whole window every frame.
   const CSS = `
 .aa-mascot { display: block; overflow: visible; }
 .aa-mascot .m-hop { transform-box: view-box; transform-origin: 64px 112px; }
@@ -104,8 +105,8 @@
 .aa-mascot[data-state="working"] .m-halo, .aa-mascot[data-state="needs"] .m-halo { display: inline; }
 .aa-mascot[data-state="needs"] .m-happy { display: none; }
 .aa-mascot[data-state="needs"] .m-wide { display: inline; }
-.aa-mascot[data-state="working"] .m-ant { animation: aam-pulse 1.3s ease-in-out infinite; }
-.aa-mascot[data-state="working"] .m-halo { animation: aam-glow 1.3s ease-in-out infinite; }
+.aa-mascot[data-state="working"] .m-ant { animation: aam-pulse 1.3s steps(3, jump-none) infinite; }
+.aa-mascot[data-state="working"] .m-halo { animation: aam-glow 1.3s steps(3, jump-none) infinite; }
 .aa-mascot.still .m-look { transform: none !important; transition: none; }
 .aa-mascot.still, .aa-mascot.still * { animation: none !important; }
 @keyframes aam-pulse { 50% { opacity: .45; } }

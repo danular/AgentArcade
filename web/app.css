@@ -294,10 +294,12 @@ input[type="range"] { padding: 0; accent-color: var(--accent); border: 0; box-sh
 .dot.on { background: var(--green); box-shadow: 0 0 0 3px rgba(62, 207, 127, .15); }
 .dot.off { background: #4a4a54; }
 .dot.idle { background: #6b6b78; }
-.dot.wait { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
+/* Animations that never end step instead of easing (tests/animations.test.mjs): a smooth one makes WebView2 draw the
+   whole window at the screen's refresh rate, about 13% of a laptop GPU for one dot; three steps draw ~5 frames a second. */
+.dot.wait { background: var(--amber); animation: pulse 1.2s steps(3, jump-none) infinite; }
 /* Pane status (DOTS in app.js), told apart by shape as well as colour: a pulsing orange dot while working, a red
    diamond when it needs you, a green ring when it is done and nobody looked yet, a green dot when idle. */
-.dot.working { background: var(--orange); box-shadow: 0 0 0 3px rgba(240, 138, 60, .18); animation: pulse 1.2s ease-in-out infinite; }
+.dot.working { background: var(--orange); box-shadow: 0 0 0 3px rgba(240, 138, 60, .18); animation: pulse 1.2s steps(3, jump-none) infinite; }
 .dot.needs { border-radius: 1px; background: var(--red); box-shadow: 0 0 0 2px rgba(242, 107, 107, .3); transform: rotate(45deg); }
 .dot.done { background: transparent; box-shadow: inset 0 0 0 2px var(--green), 0 0 0 3px rgba(62, 207, 127, .15); }
 @keyframes pulse { 50% { opacity: .35; } }
