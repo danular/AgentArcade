@@ -50,7 +50,9 @@ Agent Arcade Remote 1.0 and 1.1.0-beta.1 follow contract 1.0.
 
 ## 1. Turning it on and pairing
 
-1. On the PC: sidebar → **Phone** → switch on **Phone remote**. The PC starts listening on port `47821` (`RemotePort` in `settings.json`) and shows a QR code.
+The PC's **Phone dialog** in this document is the Phone tab of its Settings window (the phone button at the bottom of the sidebar opens it).
+
+1. On the PC: the phone button at the bottom of the sidebar (Settings → **Phone**) → switch on **Phone remote**. The PC starts listening on port `47821` (`RemotePort` in `settings.json`) and shows a QR code.
 2. On the phone: **Scan QR code** (or **Paste pairing link**, or open the link). The QR code holds the pairing link:
 
 ```
@@ -385,11 +387,11 @@ Close codes: `1000` replaced by a newer connection from the same phone (only an 
 
 - `workspace` is the project the PC shows right now.
 - `run` (1.1, feature `run`) is the current start of Agent Arcade's page: see [run](#run).
-- `projectsFolder` is where a new project goes (see new project): the folder that holds `workspace`, or when that has none or is missing, the folder of the first listed workspace that has one. `null` when no workspace has one. On a PC set up from 1.4.1 on, a workspace that is the Documents folder, the user folder or a OneDrive root gives `%USERPROFILE%\source\repos` instead (such as `C:\Users\Ana\source\repos`), which may not exist yet: the PC makes it with the first new project. A PC older than this field leaves it out, and the phone then offers no New project.
+- `projectsFolder` is where a new project goes (see new project): a folder the user picked for new projects in Settings on the PC, while it exists; else the folder that holds `workspace`, or when that has none or is missing, the folder of the first listed workspace that has one. `null` when no workspace has one. On a PC set up from 1.4.1 on, a workspace that is the Documents folder, the user folder or a OneDrive root gives `%USERPROFILE%\source\repos` instead (such as `C:\Users\Ana\source\repos`), which may not exist yet: the PC makes it with the first new project. A PC older than this field leaves it out, and the phone then offers no New project.
 - `color` is the agent's brand color by command (`claude #d97757`, `codex #10a37f`, `gemini #4f8cff`, `copilot #a371f7`, `cursor-agent #7c8aa5`) or `null`. When `null` the phone uses `hsl(hash % 360, 55%, 58%)` with `hash = (hash * 31 + charCode) >>> 0` over the agent name, like the desktop.
 - `signedIn` is `true`, `false` or `null` (still checking or unknown).
 - `hosts` lists the addresses the PC listens on now, in the same order and format as `hosts` in the pairing link. An address in `100.64.0.0/10` is the PC's Tailscale address, which also works away from home; the others are on the PC's local network.
-- `power` tells whether the PC may go to sleep, which would stop the agents and cut the phone off. The phone only shows it; the setting is changed on the PC (Phone dialog → Keep this PC awake). A PC older than this field leaves it out, and the phone then shows nothing about sleep.
+- `power` tells whether the PC may go to sleep, which would stop the agents and cut the phone off. The phone only shows it; the setting is changed on the PC (Settings → General → Keep this PC awake). A PC older than this field leaves it out, and the phone then shows nothing about sleep.
 
 | Field | Meaning |
 | --- | --- |
