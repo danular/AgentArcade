@@ -524,6 +524,9 @@ sealed class MainForm : Form, IRemoteHost
                     Commands.StartVisible(Path.Combine(Environment.SystemDirectory, "notepad.exe"), "\"" + AgentStore.FilePath + "\"", AppSettings.Folder);
                     Toast("Opened agents.json. Save it, then click Check accounts again in Settings. Delete the file to get the default list back.");
                     break;
+                case "mcpList":
+                    ListMcp();
+                    break;
             }
         }
         catch (Exception ex)
@@ -1244,6 +1247,16 @@ sealed class MainForm : Form, IRemoteHost
         if (!Directory.Exists(_settings.ProjectPath)) throw new InvalidOperationException("The project folder doesn't exist.");
         Terminal.Start(agent.Name + " (" + account.Name + ")", _settings.ProjectPath, exe, agent.Args, AccountStore.EnvFor(agent, account));
         Toast(agent.Name + " (" + account.Name + ") opened in Windows Terminal.");
+    }
+
+    // Settings → MCP servers: each installed agent's own list command (Mcp.cs), every account in the selected project,
+    // off the UI thread. The answer holds only server names, scopes and statuses; nothing of the lists is logged.
+    void ListMcp()
+    {
+        var agents = _agents.Count > 0 ? _agents.ToList() : AgentStore.Load();
+        var accounts = _agents.Count > 0 ? _accounts.ToList() : AccountStore.All(agents);
+        var folder = _settings.ProjectPath;
+        Run(async () => Post((await Mcp.ListAsync(agents, accounts, folder)).Message()), "MCP list");
     }
 
     // ---------- accounts ----------
