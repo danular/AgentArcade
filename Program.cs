@@ -1274,6 +1274,21 @@ static class RemoteSelfCheck
                         && screen.GetProperty("screen").GetProperty("lines").GetArrayLength() == 4 && screen.GetProperty("screen").GetProperty("from").GetInt32() == 96,
                     "the WebSocket opens with the token, compressed per message; hello, then history; a watched pane's screen arrives cut to its lines");
 
+                // A new run (the page started again) ends every watch: a pane of the new run with an old id reaches
+                // nobody, and the phone's next watch is the only one.
+                server.ForgetWatches();
+                var forgotten = server.Watches().Count == 0;
+                await live.SendAsync(Encoding.UTF8.GetBytes("{\"type\":\"watch\",\"id\":\"s2\",\"lines\":4}"), WebSocketMessageType.Text, true, cancel.Token);
+                for (var i = 0; i < 100 && !host.Refreshed.Contains("s2"); i++) await Task.Delay(20);
+                server.Screen(ScreenFor("s1"));
+                server.Screen(ScreenFor("s2"));
+                var next = await Receive(live, cancel.Token);
+                check(
+                    "remote-run-watches",
+                    forgotten && Json.Str(next, "type") == "screen" && Json.Str(next.GetProperty("screen"), "id") == "s2"
+                        && server.Watches().Select(watch => watch.Id).SequenceEqual(["s2"]),
+                    "a new run ends the phones' watches, so a pane of the new run that gets a watched pane's old id sends its screen to nobody");
+
                 await Connect(newer, port, fingerprint, token, cancel.Token);
                 await Receive(newer, cancel.Token);
                 await Receive(newer, cancel.Token);

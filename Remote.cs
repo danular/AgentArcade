@@ -1472,6 +1472,18 @@ sealed class RemoteServer
         lock (_lock) _screens.Clear();
     }
 
+    // A new run (REMOTE_API.md, run): the watched panes went with the old page, and a pane of the new run may get one of
+    // their ids. Every watch ends with them; a phone watches again when it shows a pane of the new run. Kept, they would
+    // send that pane to a phone that didn't open it, and fill the phone's 8 watches over a few page starts.
+    public void ForgetWatches()
+    {
+        lock (_lock)
+        {
+            foreach (var socket in _sockets) socket.Watches.Clear();
+            _screens.Clear();
+        }
+    }
+
     async Task TellWhenExpiredAsync(int number)
     {
         await Task.Delay(PairingCodes.Lifetime + TimeSpan.FromSeconds(1));

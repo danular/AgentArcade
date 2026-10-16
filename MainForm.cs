@@ -1366,8 +1366,8 @@ sealed class MainForm : Form, IRemoteHost
         PostRemoteStatus();
     }
 
-    // A fresh page has no panes, and it doesn't know yet what the phones watch. It is a new run: the phones get a state
-    // with it before any Session of it (the page sends those only after remoteStatus).
+    // A fresh page has no panes. It is a new run: the phones get a state with it before any Session of it (the page sends
+    // those only after remoteStatus), and their watches end with the old panes (REMOTE_API.md, run).
     void RemotePageReady()
     {
         _pageReady = true;
@@ -1375,7 +1375,7 @@ sealed class MainForm : Form, IRemoteHost
         foreach (var id in _summaries.Keys.ToList()) _remote.Closed(id);
         _summaries.Clear();
         _questions.Clear();
-        _remote.ForgetScreens();
+        _remote.ForgetWatches();
         // The Phone dialog went with the old page, and its pairing code with it.
         _remote.Pairing.Clear();
         _run = RemoteModel.NewRun();
