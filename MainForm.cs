@@ -85,7 +85,10 @@ sealed class MainForm : Form, IRemoteHost
         Text = AppName;
         // The exe carries app.ico (ApplicationIcon); the title bar and taskbar use the same one.
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-        MinimumSize = new Size(960, 620);
+        // Small enough for half a portrait screen: the page lays itself out for tall and narrow windows (web/layout.js).
+        // In the window's own DPI, so it is the same size on the page at any display scaling.
+        MinimumSize = LogicalToDeviceUnits(SmallestPage);
+        DpiChanged += (_, e) => MinimumSize = new Size(SmallestPage.Width * e.DeviceDpiNew / 96, SmallestPage.Height * e.DeviceDpiNew / 96);
         PlaceWindow();
         BackColor = Color.FromArgb(12, 12, 14);
         Controls.Add(_web);
@@ -100,6 +103,9 @@ sealed class MainForm : Form, IRemoteHost
         Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
         _remote = new RemoteServer(this, Path.Combine(AppSettings.Folder, "remote.json"));
     }
+
+    // The smallest window, in CSS pixels of the page (96 DPI).
+    static readonly Size SmallestPage = new(600, 480);
 
     // Opens the window where it was closed (WindowPlace keeps it on a screen that is there now), maximized if it was;
     // the first time at about 85% of the primary work area. Screens are in physical pixels (per-monitor DPI aware).

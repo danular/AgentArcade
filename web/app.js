@@ -81,8 +81,13 @@ const sessions = new Map();
 // agent that got the same id. They stay "s" and at most 9 digits, as Remote.cs accepts.
 let sessionCount = 100000 + crypto.getRandomValues(new Uint32Array(1))[0] % 799900000;
 let maxed = null;
-// Columns of panes in the grid now (renderPanes); the side panel leaves each of them room (setPanelWidth).
+// Columns of panes in the grid now (layoutGrid); the side panel leaves each of them room (setPanelWidth).
 let paneColumns = 1;
+// The window's shape (web/layout.js, applyWindowShape): a portrait window stacks its panes and docks the side panel
+// under them; a narrow one makes the sidebar a drawer, open or not.
+let portraitMode = Layout.portrait(innerWidth, innerHeight);
+let drawerMode = Layout.drawer(innerWidth);
+let drawerOpen = false;
 let openMenu = null;
 let drag = null;
 let historyView = null;
@@ -183,6 +188,8 @@ function menu(anchor, items) {
     button.addEventListener('click', event => {
       event.stopPropagation();
       closeMenu();
+      // A choice in a menu from the sidebar drawer closes the drawer too.
+      if (anchor.closest?.('.sidebar')) setDrawer(false);
       item.run();
     });
     element.append(button);
@@ -356,21 +363,31 @@ function renderPanes() {
     updatePaneSub(session);
   }
   const count = maxed ? 1 : visible.length;
-  const cols = count <= 1 ? 1 : count === 2 || count === 4 ? 2 : 3;
-  const rows = Math.max(1, Math.ceil(count / cols));
   const grid = $('#grid');
-  grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
-  grid.style.gridTemplateRows = `repeat(${rows}, minmax(${rows > 2 ? 260 : 0}px, 1fr))`;
   // Home hides the grid without taking the terminals out of the page; they refit when it shows again.
   grid.hidden = home || count === 0;
   $('#empty').hidden = home || count !== 0;
   $('#home').hidden = !home;
   if (!home && count === 0) renderEmpty();
+  layoutGrid(count);
+  if (!home) for (const session of visible) scheduleFit(session);
+}
+
+// The grid's columns and rows for count panes (Layout.paneGrid). Landscape always gets the same grid; a portrait
+// stage may fit another number of columns after the window or the docked side panel changes size, so those run it too.
+let gridCount = 0;
+
+function layoutGrid(count = gridCount) {
+  gridCount = count;
+  const stage = $('.stage');
+  const { cols, rows } = Layout.paneGrid(count, stage.clientWidth, stage.clientHeight, portraitMode);
+  const grid = $('#grid');
+  grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+  grid.style.gridTemplateRows = `repeat(${rows}, minmax(${rows > 2 ? (portraitMode ? 160 : 260) : 0}px, 1fr))`;
   if (cols !== paneColumns) {
     paneColumns = cols;
-    setPanelWidth(localStorage.getItem('panelWidth'), false);
+    fitPanel();
   }
-  if (!home) for (const session of visible) scheduleFit(session);
 }
 
 // A project without panes: its agents as cards, its recent chats and the handoff tip.
@@ -1617,15 +1634,62 @@ function imageListArrived(message) {
 
 // The button left of the project name hides the sidebar, so the panes get the whole width. Survives restarts.
 // The panes refit through their ResizeObserver; there is no animation, so each agent gets one resize, not dozens.
+// In a narrow window (drawerMode) the sidebar is a drawer over the page instead: the button opens it, and picking
+// something in it, Esc or a click beside it closes it. That never resizes the panes, and the saved choice stays for
+// wider windows.
 function setSidebar(hidden) {
-  $('.app').classList.toggle('side-hidden', hidden);
+  localStorage.setItem('sidebar', hidden ? 'hidden' : 'shown');
+  showSidebar();
+}
+
+function setDrawer(open) {
+  if (drawerOpen === (drawerMode && open)) return;
+  drawerOpen = drawerMode && open;
+  showSidebar();
+}
+
+function showSidebar() {
+  const app = $('.app');
+  const hidden = drawerMode ? !drawerOpen : localStorage.getItem('sidebar') === 'hidden';
+  app.classList.toggle('side-hidden', !drawerMode && hidden);
+  app.classList.toggle('drawer-open', drawerMode && drawerOpen);
+  // A closed drawer is out of reach for Tab and screen readers too.
+  $('.sidebar').inert = drawerMode && !drawerOpen;
+  $('#drawer-backdrop').hidden = !(drawerMode && drawerOpen);
   const button = $('#toggle-sidebar');
   button.title = hidden ? 'Show the sidebar' : 'Hide the sidebar';
   button.setAttribute('aria-label', button.title);
   button.setAttribute('aria-pressed', String(hidden));
-  localStorage.setItem('sidebar', hidden ? 'hidden' : 'shown');
   fitTopbar();
 }
+
+// ---------- window shape ----------
+
+// Found again whenever the window changes size: a monitor turned on its side, a window snapped to half a screen.
+// app.css lays out .portrait and .drawer; this sets the classes and what depends on sizes (the panel, the grid).
+function applyWindowShape() {
+  const portrait = Layout.portrait(innerWidth, innerHeight, portraitMode);
+  const drawer = Layout.drawer(innerWidth);
+  const app = $('.app');
+  app.classList.toggle('portrait', portrait);
+  app.classList.toggle('drawer', drawer);
+  if (drawer !== drawerMode) {
+    drawerMode = drawer;
+    drawerOpen = false;
+    showSidebar();
+  }
+  portraitMode = portrait;
+  fitPanel();
+  layoutGrid();
+}
+
+let shapeFrame = 0;
+window.addEventListener('resize', () => {
+  if (!shapeFrame) shapeFrame = requestAnimationFrame(() => {
+    shapeFrame = 0;
+    applyWindowShape();
+  });
+});
 
 // The top bar's buttons drop their labels when they would leave the project name too little room (side panel
 // open, narrow window). Runs on every resize of the bar, and right after the panel or sidebar is shown or hidden.
@@ -1654,6 +1718,8 @@ function setPanel(open) {
   button.setAttribute('aria-pressed', String(open));
   localStorage.setItem('panel', open ? 'open' : 'closed');
   fitTopbar();
+  // Docked under the panes (portrait), the panel takes height from the grid.
+  layoutGrid();
   if (open) showPanelTab(panelTab);
 }
 
@@ -1700,8 +1766,8 @@ function setPanelWidth(width, save = true) {
   const app = $('.app');
   // The columns of panes with the grid's gaps (8) between them, and the grid's padding (16).
   const panes = MIN_COLUMN * paneColumns + 8 * (paneColumns - 1) + 16;
-  // The sidebar (SIDEBAR_WIDTH) when it shows.
-  const room = window.innerWidth - (app.classList.contains('side-hidden') ? 0 : SIDEBAR_WIDTH) - panes;
+  // The sidebar (SIDEBAR_WIDTH) when it takes a column: not hidden, and not a drawer over the page.
+  const room = window.innerWidth - (drawerMode || app.classList.contains('side-hidden') ? 0 : SIDEBAR_WIDTH) - panes;
   const overlay = room < MIN_PANEL;
   const wanted = Math.max(MIN_PANEL, Math.round(Number(width) || 480));
   const shown = Math.min(wanted, overlay ? window.innerWidth - 20 : room);
@@ -1711,21 +1777,46 @@ function setPanelWidth(width, save = true) {
   fitTopbar();
 }
 
+// Portrait: the panel docks under the panes and is dragged by its top edge, between MIN_PANEL_HEIGHT and what leaves
+// the panes MIN_STAGE px under the top bar (52 px). It starts at 40% of the window.
+const MIN_PANEL_HEIGHT = 180;
+const MIN_STAGE = 240;
+
+function setPanelHeight(height, save = true) {
+  const app = $('.app');
+  app.classList.remove('panel-overlay');
+  const most = Math.max(MIN_PANEL_HEIGHT, window.innerHeight - 52 - MIN_STAGE);
+  const shown = Math.min(most, Math.max(MIN_PANEL_HEIGHT, Math.round(Number(height) || window.innerHeight * 0.4)));
+  app.style.setProperty('--panel-height', shown + 'px');
+  if (save) localStorage.setItem('panelHeight', String(shown));
+  fitTopbar();
+}
+
+// The panel's size for the window's shape: a width beside the panes, or a height under them.
+function fitPanel() {
+  if (portraitMode) setPanelHeight(localStorage.getItem('panelHeight'), false);
+  else setPanelWidth(localStorage.getItem('panelWidth'), false);
+}
+
 $('#panel-resize').addEventListener('pointerdown', event => {
   event.preventDefault();
   const handle = event.currentTarget;
   handle.setPointerCapture(event.pointerId);
+  const rows = portraitMode;
   document.body.classList.add('resizing-panel');
-  const right = panel.getBoundingClientRect().right;
-  const move = moveEvent => setPanelWidth(right - moveEvent.clientX, false);
+  document.body.classList.toggle('resizing-rows', rows);
+  const box = panel.getBoundingClientRect();
+  const move = moveEvent => rows ? setPanelHeight(box.bottom - moveEvent.clientY, false) : setPanelWidth(box.right - moveEvent.clientX, false);
   handle.addEventListener('pointermove', move);
   handle.addEventListener('lostpointercapture', () => {
     handle.removeEventListener('pointermove', move);
-    document.body.classList.remove('resizing-panel');
-    setPanelWidth(panel.getBoundingClientRect().width);
+    document.body.classList.remove('resizing-panel', 'resizing-rows');
+    const now = panel.getBoundingClientRect();
+    if (rows) setPanelHeight(now.height);
+    else setPanelWidth(now.width);
+    layoutGrid();
   }, { once: true });
 });
-window.addEventListener('resize', () => setPanelWidth(localStorage.getItem('panelWidth'), false));
 
 // ---------- Preview ----------
 
@@ -3874,10 +3965,28 @@ $('#images-refresh').addEventListener('click', () => {
 });
 $('#toggle-sidebar').innerHTML = icon('sidebar', 16);
 $('#toggle-sidebar').addEventListener('click', () => {
+  if (drawerMode) return setDrawer(!drawerOpen);
   setSidebar(!$('.app').classList.contains('side-hidden'));
-  setPanelWidth(localStorage.getItem('panelWidth'), false);
+  fitPanel();
 });
+applyWindowShape();
 setSidebar(localStorage.getItem('sidebar') === 'hidden');
+
+// The drawer closes on a click beside it, on Esc, and when something in it is picked. Buttons that open a menu keep
+// it open until the menu's choice (menu()); so do the mascot, the chat search and "Show more".
+$('#drawer-backdrop').addEventListener('click', () => setDrawer(false));
+$('.sidebar').addEventListener('click', event => {
+  if (!drawerOpen || !event.target.closest('button')) return;
+  if (event.target.closest('[aria-haspopup="menu"], [data-workspace-menu], [data-chat-menu], [data-recent-more], #search-recent, .mascot-slot')) return;
+  setDrawer(false);
+});
+// In the capture phase, so a menu open over the drawer or the chat search's own Esc comes first.
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || !drawerOpen || openMenu || settingsView || document.querySelector('.modal')) return;
+  if (event.target.closest?.('.recent-search, .xterm')) return;
+  setDrawer(false);
+  $('#toggle-sidebar').focus();
+}, true);
 
 $('#toggle-panel').innerHTML = icon('panel', 16);
 $('#panel-close').innerHTML = icon('close', 14);
