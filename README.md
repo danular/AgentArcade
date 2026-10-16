@@ -146,9 +146,10 @@ The versions are what each tool's own `--version` printed on the PC where the fi
 | `Remote.cs` | Phone remote: the HTTPS and WebSocket server, its certificate, paired phones and pairing codes |
 | `Power.cs` | Keeps Windows from sleeping on its own while agents run (a power request), reads the battery and lid settings, and whether someone is at the PC (time since the last input, for alerts) |
 | `Update.cs` | The once-a-day update check: the newest release's tag from GitHub's releases API, compared with the running version |
+| `Mcp.cs` | Settings → MCP servers: runs each installed agent's own MCP list command (`claude mcp list`, `codex mcp list --json`, `gemini mcp list`, `copilot mcp list`, `cursor-agent mcp list`) per account in the selected project, 20 s each, and keeps only each server's name, scope and status; `web/mcp.js` draws the table |
 | `Backend.cs` | Settings, agent list, accounts, sign-in checks, chat history, Windows Terminal launcher, shared instructions |
 | `web/` | The interface (`index.html`, `app.css`, `app.js`, `icon.png`), `remote.js` (what the phone sees: pane status, approvals, plans and screens read from the terminals) and xterm.js in `web/vendor` (MIT licence) |
-| `tests/` | `remote.test.js` (the page's alert rules) and `status/` (golden screens: synthetic agent screens and what the status parsing must read from them); run with `node --test` |
+| `tests/` | `remote.test.js` (the page's alert rules), `mcp.test.js` (the MCP servers table) and `status/` (golden screens: synthetic agent screens and what the status parsing must read from them); run with `node --test` |
 | `docs/phone-remote/` | The Android app's build plan and `REMOTE_API.md`, the contract between the PC and the phone |
 | `app.ico` | The app icon (the exe, window and taskbar) |
 | `website/` | The marketing website: `pages/` (content) → `python website/build.py` (reads the newest release's version, sizes and SHA-256 values from the GitHub releases API) → `site/` (static HTML, no build tools needed to host it). `video/` renders the 30-second film (`promo.html`, `render.mjs`) and the social image |
