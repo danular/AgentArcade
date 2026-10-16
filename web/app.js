@@ -75,6 +75,8 @@ const sessions = new Map();
 // agent that got the same id. They stay "s" and at most 9 digits, as Remote.cs accepts.
 let sessionCount = 100000 + crypto.getRandomValues(new Uint32Array(1))[0] % 799900000;
 let maxed = null;
+// Columns of panes in the grid now (renderPanes); the side panel leaves each of them room (setPanelWidth).
+let paneColumns = 1;
 let openMenu = null;
 let drag = null;
 let historyView = null;
@@ -367,6 +369,10 @@ function renderPanes() {
   grid.hidden = count === 0;
   $('#empty').hidden = count !== 0;
   if (count === 0) renderEmpty();
+  if (cols !== paneColumns) {
+    paneColumns = cols;
+    setPanelWidth(localStorage.getItem('panelWidth'), false);
+  }
   for (const session of visible) scheduleFit(session);
 }
 
@@ -1390,15 +1396,18 @@ function panelWorkspaceChanged() {
   if (!panel.hidden) showPanelTab(panelTab);
 }
 
-// Dragged by its left edge. As a column it leaves the panes at least MIN_PANES px; when the window is too narrow for
-// that, it floats over the panes instead (panel-overlay), so they keep their width.
-const MIN_PANES = 360;
+// Dragged by its left edge. As a column it leaves every column of panes at least MIN_COLUMN px, so three panes side by
+// side need three times that; when the window is too narrow for that, it floats over the panes instead
+// (panel-overlay), so they keep their width.
+const MIN_COLUMN = 360;
 const MIN_PANEL = 280;
 
 function setPanelWidth(width, save = true) {
   const app = $('.app');
+  // The columns of panes with the grid's gaps (10) between them.
+  const panes = MIN_COLUMN * paneColumns + 10 * (paneColumns - 1);
   // The app's padding (20), the sidebar with its gap (282) and the panel's gap (10).
-  const room = window.innerWidth - 20 - (app.classList.contains('side-hidden') ? 0 : 282) - 10 - MIN_PANES;
+  const room = window.innerWidth - 20 - (app.classList.contains('side-hidden') ? 0 : 282) - 10 - panes;
   const overlay = room < MIN_PANEL;
   const wanted = Math.max(MIN_PANEL, Math.round(Number(width) || 480));
   const shown = Math.min(wanted, overlay ? window.innerWidth - 20 : room);
