@@ -59,7 +59,7 @@ SITE = {
     'remote': 'Agent Arcade Remote',
     'github': f'https://github.com/{REPO}',
     # The releases API has no field for the APK's own version, so it is typed here; change it with a new APK.
-    'apk_version': '1.1.1',
+    'apk_version': '1.1.2',
     # SHA-256 of the APK's signing certificate. It is the same for every version: Android refuses an update signed
     # with another key.
     'apk_cert': '01e68ee0fb88710fb42780eae6e5532e9982d21a7546e9a60e8114c064086dce',
