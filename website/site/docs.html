@@ -46,7 +46,7 @@
     <nav class="toc" aria-label="On this page"><a href="#install">Install</a><a href="#update">Update</a><a href="#first">First agents</a><a href="#layout">Home and Settings</a><a href="#panes">Panes and dots</a><a href="#side">Side panel</a><a href="#accounts">Extra accounts</a><a href="#history">Recent and handoff</a><a href="#phone">Phone remote</a><a href="#tailscale">Away from home</a><a href="#awake">Keep-awake</a><a href="#trouble">Troubleshooting</a></nav>
     <div class="prose">
       <h2 id="install" style="margin-top:0">Install</h2>
-      <p><a href="download.html">Download the zip</a> and extract it to a folder of your choice, for example <code>%LOCALAPPDATA%\Programs\AgentArcade</code>. <code>AgentArcade.exe</code> is at the top of the zip; start it. If SmartScreen warns you, click <b>More info</b> → <b>Run anyway</b>. The <a href="download.html#install">download page</a> shows how to check the file, what Smart App Control does, and how to <a href="download.html#uninstall">uninstall</a>.</p>
+      <p><a href="download.html">Download the zip</a> and extract it to a folder of your choice, for example <code>%LOCALAPPDATA%\Programs\AgentArcade</code>. <code>AgentArcade.exe</code> is at the top of the zip; start it, and from then on it is in your Start menu. If SmartScreen warns you, click <b>More info</b> → <b>Run anyway</b>. The <a href="download.html#install">download page</a> shows how to check the file, what Smart App Control does, and how to <a href="download.html#uninstall">uninstall</a>.</p>
 
       <h2 id="update">Update</h2>
       <ol>
@@ -57,11 +57,12 @@
 
       <h2 id="first">Your first agents</h2>
       <ol>
-        <li>Add a project folder with the <b>+</b> next to <i>Projects</i> in the sidebar, or make an empty one with <b>New project</b>. Agents always start in the selected project.</li>
+        <li>Add a project folder with the <b>+</b> next to <i>Projects</i> in the sidebar, or make an empty one with <b>New project</b>. Agents start in the selected project, or without one: <b>New agent → Start without a project</b> runs them in <b>Chats</b>, a folder Agent Arcade makes in <code>%USERPROFILE%\AgentArcade</code> the first time.</li>
         <li>Open <b>Settings</b> (the gear at the bottom of the sidebar) → <b>Agents and accounts</b> and click <b>Install</b> for any agent you don't have. It shows the vendor's install command, then runs it in a pane. Gemini CLI installs with npm and needs <a href="https://nodejs.org">Node.js</a> 20 or newer; GitHub Copilot CLI installs with WinGet; the others use their vendor's PowerShell installer. If something is missing, Install says what and links to it instead of running.</li>
         <li>Start an agent: <b>New agent</b> in the sidebar or the top bar (<span class="kbd">Ctrl</span> <span class="kbd">N</span>), or one click on a project's card on Home. The first time, it signs in through its own official login, in its own pane.</li>
       </ol>
       <p><b>Gemini CLI</b> needs a Gemini API key or a Gemini Code Assist Standard or Enterprise licence. Google stopped serving Gemini CLI for personal Google sign-ins (free, Google AI Pro and Ultra) on 18 Jun 2026. With a personal Google account, use <b>Antigravity CLI</b>, Google's replacement: it is in the agent list, and it signs in with Google when it starts.</p>
+      <p><b>Codex (Ollama)</b> is Codex on a model that <a href="https://ollama.com">Ollama</a> runs on your PC: no sign-in and no usage limit. Keep Ollama running; without a model set, Codex downloads gpt-oss:20b (about 14 GB) the first time. The README's <i>Local models</i> section has the details.</p>
       <p>To add another command-line agent, add it to <code>agents.json</code> in <code>%LOCALAPPDATA%\AgentArcade</code>.</p>
 
       <h2 id="layout">Home, the sidebar and Settings</h2>
@@ -69,7 +70,9 @@
         <li><b>Home</b> is the start screen: a card per project with its git branch and changed files, the agents running there with their status, a 10-day activity line, its last chats and one-click starts. Whatever needs you is listed on top; <b>Open</b> shows that pane.</li>
         <li>The <b>sidebar</b> has New agent, Home, your projects with a status dot per running agent, and <b>Recent</b>: your chats across projects, newest first. Its footer says what needs you and what works, with the phone button and the gear for <b>Settings</b> (<span class="kbd">Ctrl</span> <span class="kbd">,</span>).</li>
         <li>A project's <b>top bar</b> shows its git branch and changed files (click it for the Changes tab), <b>New agent</b> and a <b>⋯</b> menu: Open folder, Images, Shared instructions, Open in Windows Terminal, Open in Unity for a Unity project, and the project's chat history.</li>
-        <li><b>Settings</b> has General (text size, notifications, keep-awake, where new projects go, the update check, mascot animations), Agents and accounts, Phone, Shared instructions, MCP servers, and About with your version.</li>
+        <li><b>Settings</b> has General (text size, notifications, keep-awake, where new projects go, the update check, mascot animations), Agents and accounts, Phone, Shared instructions, MCP servers, and About with your version and where your data lives (<b>Open folder</b>).</li>
+        <li><b>New sessions start with</b> (Settings → Agents and accounts, <b>Change…</b> next to an agent) sets a default permission mode, model and effort per agent, as the agent's own options, for new and resumed chats and the ones your phone starts.</li>
+        <li>The <b>⋯</b> menus show a letter next to each item: press it to pick that item. Arrow keys and Enter work too. Right-click a chat in Recent or History, or a project in the sidebar, for the same menu.</li>
         <li><b>MCP servers</b> lists each installed agent's MCP servers, from the agent's own list command in the selected project: only each server's name, scope and status, never its command line, keys or environment. Claude Code, Gemini CLI and Cursor check a server by connecting to it, so a check starts those servers briefly.</li>
       </ul>
 
@@ -84,13 +87,14 @@
       </ul>
 
       <h2 id="side">The side panel</h2>
-      <p>The button at the right end of the top bar opens it. <b>Preview</b> shows a local address such as <code>localhost:5173</code> or a page in the project. <b>Images</b> lists the project's images; drag one onto a pane. <b>Changes</b> shows what git sees changed, with diffs; the git chip next to the project name opens it too. <b>Console</b> is PowerShell in the project folder.</p>
+      <p>The button at the right end of the top bar opens it. <b>Preview</b> shows a local address such as <code>localhost:5173</code> or a page in the project; the <b>×</b> next to the address clears it. <b>Images</b> lists the project's images: click one to view it, right-click it to open it in its app, show it in its folder or copy its path, or drag it onto a pane; <b>Show more</b> goes past the newest 300. <b>Changes</b> shows what git sees changed, with diffs and the lines added and removed per file; the git chip next to the project name opens it too. <b>Console</b> is PowerShell in the project folder.</p>
 
       <h2 id="accounts">Extra accounts</h2>
-      <p>A second Claude Code, Codex or Gemini CLI account gets its own folder (Settings → Agents and accounts → <b>Add account…</b>), and that tab shows which email each account uses. You sign in to each one through the tool's own login. Agent Arcade never reads, copies or swaps login tokens, and never switches accounts by itself.</p>
+      <p>A second Claude Code, Codex or Gemini CLI account gets its own folder (Settings → Agents and accounts → <b>Add account…</b>), and that tab shows which email each account uses. You sign in to each one through the tool's own login. Agent Arcade never reads, copies or swaps login tokens, and never switches accounts by itself. When two accounts of one agent use the same login, both say <b>Same login as</b> the other: that is one subscription in two folders.</p>
+      <p>A Claude Code account's ⋯ menu has <b>Also open in the Claude app</b>: its new and resumed chats then start with Claude Code's own Remote Control, so you can follow them in the Claude app on an iPhone. Those chats go through Anthropic's servers, it needs a Claude Pro, Max, Team or Enterprise plan, and it covers Claude Code only. It is off until you turn it on.</p>
 
       <h2 id="history">Recent and handoff</h2>
-      <p><b>Recent</b> in the sidebar lists your chats across projects, newest first; click one to continue it, and the magnifier searches them. <b>Chat history</b> in a project's ⋯ menu lists every chat per project. Continuing a chat: Claude Code reopens exactly that chat; the other agents open their own resume list. A pane's ⋯ menu pastes a "save progress" prompt (it writes <code>HANDOFF.md</code>) and a "continue" prompt, so the next agent can pick up where the last one stopped.</p>
+      <p><b>Recent</b> in the sidebar lists your chats across projects, newest first; click one to continue it, and the magnifier searches them. <b>Chat history</b> in a project's ⋯ menu lists every chat per project. Continuing a chat: Claude Code reopens exactly that chat, and so does Codex once you sent the chat a message; the other agents open their own resume list. A pane's ⋯ menu pastes a "save progress" prompt (it writes <code>HANDOFF.md</code>) and a "continue" prompt, so the next agent can pick up where the last one stopped.</p>
 
       <h2 id="phone">Pair your phone</h2>
       <p>First install the Android app: <a href="download.html#phone">download the APK</a> on your phone. It isn't on Google Play yet.</p>
