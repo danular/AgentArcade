@@ -61,6 +61,8 @@ sealed class MainForm : Form, IRemoteHost
     readonly Dictionary<string, ToolStatus> _lastTools = new();
     Dictionary<string, AccountInfo>? _infos;
     int _refreshId;
+    // Tools CheckTool is checking again right now.
+    readonly HashSet<AgentDef> _toolChecks = new();
     // Phone remote. The page builds each pane's summary and screen; this side passes them on to the phones.
     readonly RemoteServer _remote;
     readonly OrderedDictionary<string, JsonElement> _summaries = new();
@@ -172,6 +174,7 @@ sealed class MainForm : Form, IRemoteHost
     protected override async void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
+        CheckStartMenu();
         try
         {
             // A minimized or covered window must keep its timers: the page parses agent output, spots
@@ -382,8 +385,11 @@ sealed class MainForm : Form, IRemoteHost
                 case "revealImage":
                     RevealImage(Json.Str(m, "url"));
                     break;
+                case "launchImage":
+                    LaunchImage(Json.Str(m, "url"));
+                    break;
                 case "listImages":
-                    ListImages(Json.Str(m, "workspace"), Int(m, "seq"));
+                    ListImages(Json.Str(m, "workspace"), Int(m, "seq"), ImagesLimit(Int(m, "limit")));
                     break;
                 case "listDocs":
                     ListDocs(Json.Str(m, "workspace"));
@@ -392,7 +398,7 @@ sealed class MainForm : Form, IRemoteHost
                     PreviewFile(Json.Str(m, "workspace"), Json.Str(m, "path"));
                     break;
                 case "gitChanges":
-                    GitStatus(Json.Str(m, "workspace"), Int(m, "seq"));
+                    GitStatus(Json.Str(m, "workspace"), Int(m, "seq"), m.TryGetProperty("counts", out var lineCounts) && lineCounts.ValueKind == JsonValueKind.True);
                     break;
                 case "gitDiff":
                     GitDiff(Json.Str(m, "workspace"), Json.Str(m, "path"), Json.Str(m, "from"),
@@ -431,6 +437,12 @@ sealed class MainForm : Form, IRemoteHost
                 case "removeAccount":
                     var removeKey = Json.Str(m, "account");
                     Run(() => RemoveAccountAsync(removeKey), "remove account");
+                    break;
+                case "agentSetup":
+                    SetAgentSetup(Json.Str(m, "agent"), Json.Str(m, "permission"), Json.Str(m, "model"), Json.Str(m, "effort"));
+                    break;
+                case "remoteControl":
+                    SetRemoteControl(Json.Str(m, "account"), m.TryGetProperty("on", out var claudeApp) && claudeApp.ValueKind == JsonValueKind.True);
                     break;
                 case "addWorkspace":
                     AddWorkspace();
@@ -542,6 +554,9 @@ sealed class MainForm : Form, IRemoteHost
                 case "mcpList":
                     ListMcp();
                     break;
+                case "openDataFolder":
+                    OpenDataFolder();
+                    break;
             }
         }
         catch (Exception ex)
@@ -565,11 +580,13 @@ sealed class MainForm : Form, IRemoteHost
                 if (_sessions.Values.Any(item => item.Chat == chat)) throw new InvalidOperationException("That chat is already open.");
                 accountKey = chat.AccountKey;
                 workspace = chat.Workspace;
+                LearnChatId(chat);
             }
             var (agent, account) = FindAccount(accountKey) ?? throw new InvalidOperationException("That account no longer exists. Click Check accounts again in Settings.");
             string commandLine;
             string directory;
             Dictionary<string, string?> env;
+            string? exe = null;
             if (mode == "install")
             {
                 if (string.IsNullOrWhiteSpace(agent.Install)) throw new InvalidOperationException("No install command is set for " + agent.Name + ".");
@@ -580,10 +597,16 @@ sealed class MainForm : Form, IRemoteHost
             else
             {
                 if (!Directory.Exists(workspace)) throw new InvalidOperationException("The project folder doesn't exist: " + workspace);
-                var exe = Locator.FindAgent(agent) ?? throw new InvalidOperationException(agent.Name + " isn't installed yet. Use Install / update first.");
+                // PATH is read again for every pane: an install pane whose installer then starts the agent ("Start Codex
+                // now?") doesn't exit, so the refresh after an install doesn't come.
+                Locator.RefreshPath();
+                exe = Locator.FindAgent(agent) ?? throw new InvalidOperationException(agent.Name + " isn't installed yet. Use Install / update first.");
                 string args;
+                // New sessions start with (Settings): new and resumed chats, also the ones a phone starts; not sign-in.
+                // ChatArgs puts them before Remote Control, which must stay last.
+                var setup = AgentSetup.Args(agent, AgentSetup.Stored(_settings.AgentSetups, agent));
                 if (mode == "login") args = agent.Login.Length > 0 ? agent.Login : agent.Args;
-                else if (chat != null) args = ChatArgs.Resume(agent, chat) ?? throw new InvalidOperationException(agent.Name + " can't continue an earlier chat. Start a new one.");
+                else if (chat != null) args = ChatArgs.Resume(agent, chat, account, setup) ?? throw new InvalidOperationException(agent.Name + " can't continue an earlier chat. Start a new one.");
                 else
                 {
                     var now = DateTimeOffset.Now;
@@ -592,7 +615,7 @@ sealed class MainForm : Form, IRemoteHost
                         Id = Guid.NewGuid().ToString(), Agent = agent.Name, Account = account.Name, Workspace = workspace,
                         Started = now, LastActive = now,
                     };
-                    args = ChatArgs.New(agent, chat);
+                    args = ChatArgs.New(agent, chat, account, setup);
                 }
                 commandLine = CommandLine(exe, args, workspace);
                 directory = workspace;
@@ -605,6 +628,8 @@ sealed class MainForm : Form, IRemoteHost
             _sessions[id] = session;
             UpdateAwake();
             if (chat != null) WatchImages(session, agent, account);
+            // The agent's own resume list, or a sign-in pane that runs the agent itself, may begin a chat this app can't tell apart.
+            if (chat == null ? mode == "login" && agent.Login.Length == 0 : mode == "resume" && chat.ChatId.Length == 0) NoteOtherStart(agent, account);
             if (chat != null)
             {
                 if (!_history.Contains(chat)) _history.Add(chat);
@@ -619,7 +644,8 @@ sealed class MainForm : Form, IRemoteHost
             };
             pty.Exited += code => OnUi(() => SessionExited(id, session, code));
             pty.Begin();
-            Log("Started " + mode + " for " + accountKey + " in " + directory);
+            Log("Started " + mode + " for " + accountKey + " in " + directory + (exe == null ? "" : " with " + exe));
+            if (exe != null) CheckTool(agent, exe);
         }
         catch (Exception ex)
         {
@@ -779,7 +805,40 @@ sealed class MainForm : Form, IRemoteHost
             updateCheck = _settings.UpdateCheck,
             update = newer ? new { version = UpdateCheck.Shown(tag!), url = UpdateCheck.PageFor(_settings.UpdateUrl) } : null,
             mascotAnimations = _settings.MascotAnimations != false,
+            // Settings → About: where settings, history and paired phones live, apart from the app's folder (moved by
+            // AGENT_ARCADE_HOME), and the copy the Start menu starts when that is another one.
+            dataFolder = AppSettings.Folder,
+            dataFolderSet = AppSettings.Home != null,
+            startMenuCopy = _startMenuCopy,
         });
+    }
+
+    // ---------- Start menu and data folder ----------
+
+    // The folder of another copy that Agent Arcade in the Start menu starts (StartMenu), or null.
+    string? _startMenuCopy;
+
+    // Off the UI thread: the shortcut's old target may sit on a drive that is slow to answer. Only the log hears of it;
+    // the app works the same without the shortcut.
+    async void CheckStartMenu()
+    {
+        var (outcome, target) = await Task.Run(StartMenu.AtStart);
+        if (outcome == StartMenu.Outcome.Made) Log("added Agent Arcade to the Start menu");
+        else if (outcome == StartMenu.Outcome.Repointed) Log("the Start menu's Agent Arcade started a copy that is gone; it starts this one now");
+        else if (outcome == StartMenu.Outcome.Failed) Log("couldn't add Agent Arcade to the Start menu: " + target);
+        else if (outcome == StartMenu.Outcome.Other && StartMenu.CopyFolder(target) is { } folder)
+        {
+            Log("the Start menu's Agent Arcade starts the copy in " + folder + "; left as it is");
+            _startMenuCopy = folder;
+            if (_pageReady) PostAppInfo();
+        }
+    }
+
+    // Settings → About → Open folder. The page names no path: it is always this copy's data folder.
+    static void OpenDataFolder()
+    {
+        Directory.CreateDirectory(AppSettings.Folder);
+        Commands.StartVisible(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"), "\"" + AppSettings.Folder + "\"", AppSettings.Folder);
     }
 
     // At most once a day, off the UI thread. Failures stay silent: no toast, and the log says only that it failed.
@@ -919,8 +978,9 @@ sealed class MainForm : Form, IRemoteHost
 
     // The side panel's Images tab: the newest images in one of the sidebar's projects, and in the image folders of
     // its agents that lie outside it (Codex's generated_images). Only a listed project and folders this side chose
-    // are scanned. seq comes back, so the page keeps only the answer to its newest request.
-    void ListImages(string workspace, int seq)
+    // are scanned. seq comes back, so the page keeps only the answer to its newest request. limit: how many of the
+    // newest, already clamped by ImagesLimit.
+    void ListImages(string workspace, int seq, int limit)
     {
         Run(async () =>
         {
@@ -935,7 +995,7 @@ sealed class MainForm : Form, IRemoteHost
                     .Where(path => !ProjectFiles.IsInside(folder, path))
                     .Distinct(StringComparer.OrdinalIgnoreCase));
             }
-            var (found, total) = folders.Count > 0 ? await Task.Run(() => ProjectFiles.Newest(folders, ImageServer.IsImage, 300)) : ([], 0);
+            var (found, total) = folders.Count > 0 ? await Task.Run(() => ProjectFiles.Newest(folders, ImageServer.IsImage, limit)) : ([], 0);
             // time: an image written again under the same name gets a fresh thumbnail.
             Post(new
             {
@@ -944,6 +1004,14 @@ sealed class MainForm : Form, IRemoteHost
             });
         }, "list images");
     }
+
+    // The Images tab lists the ImagesStep newest images, and each Show more asks for ImagesStep more, up to ImagesMost
+    // (web/app.js IMAGES_STEP and IMAGES_MOST). Whatever the page sends, the limit is a whole step in that range; a
+    // missing one is the first step.
+    public const int ImagesStep = 300;
+    public const int ImagesMost = 3000;
+
+    public static int ImagesLimit(int asked) => Math.Clamp(asked / ImagesStep * ImagesStep, ImagesStep, ImagesMost);
 
     // One of the sidebar's projects as a full path, if it still exists; null for any other folder the page names.
     string? ListedProject(string workspace)
@@ -994,8 +1062,9 @@ sealed class MainForm : Form, IRemoteHost
     }
 
     // The Changes tab: what git sees changed in the project. Errors (no repository, no git) are shown in the tab.
-    // seq comes back, so the page keeps only the answer to its newest request.
-    void GitStatus(string workspace, int seq)
+    // seq comes back, so the page keeps only the answer to its newest request. counts: the tab's own list, with the lines
+    // added and removed per file (the top bar's chip asks without them).
+    void GitStatus(string workspace, int seq, bool counts)
     {
         Run(async () =>
         {
@@ -1008,8 +1077,8 @@ sealed class MainForm : Form, IRemoteHost
             var trusted = TrustedGitConfig(folder);
             try
             {
-                var (branch, files, total) = await Task.Run(() => GitChanges.Status(folder, trusted));
-                Post(new { type = "changes", workspace, seq, branch, total, files = files.Select(file => new { path = file.Path, from = file.From, status = file.Status }).ToList() });
+                var (branch, files, total) = await Task.Run(() => GitChanges.Status(folder, trusted, counts));
+                Post(new { type = "changes", workspace, seq, branch, total, files = files.Select(file => new { path = file.Path, from = file.From, status = file.Status, added = file.Added, removed = file.Removed }).ToList() });
             }
             catch (GitTrustNeeded ex)
             {
@@ -1146,14 +1215,60 @@ sealed class MainForm : Form, IRemoteHost
             "/select,\"" + path + "\"", Path.GetDirectoryName(path)!);
     }
 
+    // The Images tab's Open in the default app: explorer.exe opens the image with the program a double-click would.
+    // Like RevealImage, only for an image this side served; the extension check keeps anything else from running.
+    void LaunchImage(string url)
+    {
+        var path = _images.PathOf(url);
+        if (path == null || !ImageServer.IsImage(path) || !File.Exists(path)) return;
+        Commands.StartVisible(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe"),
+            "\"" + path + "\"", Path.GetDirectoryName(path)!);
+    }
+
     // ---------- chat history ----------
 
     void EndChat(Session session)
     {
         if (session.Chat == null) return;
+        LearnChatId(session.Chat);
         session.Chat.Ended = session.Chat.LastActive = DateTimeOffset.Now;
         SaveHistory();
     }
+
+    // Starts of an agent with chat files (SessionFiles) that may begin a chat this app doesn't know of. A new chat that
+    // starts close to one of them stays unmatched. Kept until the app closes; the newest 200.
+    readonly List<(string Folder, DateTimeOffset At)> _otherStarts = new();
+
+    void NoteOtherStart(AgentDef agent, AgentAccount account)
+    {
+        if (SessionFiles.FolderFor(agent, account) is not { } folder) return;
+        _otherStarts.Add((folder, DateTimeOffset.Now));
+        if (_otherStarts.Count > 200) _otherStarts.RemoveAt(0);
+    }
+
+    // Codex can't be given a new chat's id, so it is learned from the name of the chat's file (SessionFiles) when its
+    // pane ends, or before it is resumed (after a crash, or a chat from an older version). Only file names are listed;
+    // the id is kept in history.json and never logged. Without a safe match the chat keeps the agent's own resume list.
+    void LearnChatId(ChatRecord chat)
+    {
+        if (chat.ChatId.Length > 0 || SessionsFolderOf(chat.AccountKey) is not { } folder) return;
+        try
+        {
+            var others = _history.Where(item => item != chat && (item.Started - chat.Started).Duration() < SessionFiles.Apart
+                    && string.Equals(SessionsFolderOf(item.AccountKey), folder, StringComparison.OrdinalIgnoreCase))
+                .Select(item => item.Started)
+                .Concat(_otherStarts.Where(item => item.Folder.Equals(folder, StringComparison.OrdinalIgnoreCase)).Select(item => item.At))
+                .ToList();
+            var taken = _history.Select(item => item.ChatId).Where(id => id.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            chat.ChatId = SessionFiles.Match(chat.Started, others, SessionFiles.Names(folder, chat.Started), taken) ?? "";
+        }
+        catch (Exception ex)
+        {
+            Log("chat id lookup failed: " + ex.Message);
+        }
+    }
+
+    string? SessionsFolderOf(string accountKey) => FindAccount(accountKey) is { } found ? SessionFiles.FolderFor(found.Agent, found.Account) : null;
 
     void RenameChat(string chatId, string title, bool named)
     {
@@ -1258,9 +1373,11 @@ sealed class MainForm : Form, IRemoteHost
     void OpenExternal(string accountKey)
     {
         var (agent, account) = FindAccount(accountKey) ?? throw new InvalidOperationException("That account no longer exists.");
+        Locator.RefreshPath();
         var exe = Locator.FindAgent(agent) ?? throw new InvalidOperationException(agent.Name + " isn't installed yet.");
         if (!Directory.Exists(_settings.ProjectPath)) throw new InvalidOperationException("The project folder doesn't exist.");
-        Terminal.Start(agent.Name + " (" + account.Name + ")", _settings.ProjectPath, exe, agent.Args, AccountStore.EnvFor(agent, account));
+        Terminal.Start(agent.Name + " (" + account.Name + ")", _settings.ProjectPath, exe, AgentSetup.Add(agent.Args, agent, _settings.AgentSetups), AccountStore.EnvFor(agent, account));
+        NoteOtherStart(agent, account);
         Toast(agent.Name + " (" + account.Name + ") opened in Windows Terminal.");
     }
 
@@ -1271,6 +1388,7 @@ sealed class MainForm : Form, IRemoteHost
         var agents = _agents.Count > 0 ? _agents.ToList() : AgentStore.Load();
         var accounts = _agents.Count > 0 ? _accounts.ToList() : AccountStore.All(agents);
         var folder = _settings.ProjectPath;
+        Locator.RefreshPath();
         Run(async () => Post((await Mcp.ListAsync(agents, accounts, folder)).Message()), "MCP list");
     }
 
@@ -1305,6 +1423,36 @@ sealed class MainForm : Form, IRemoteHost
         PostState();
     }
 
+    // A pane can start another or a newer exe than the one Settings shows, for example after an install whose pane still
+    // runs the agent. Then that tool and its accounts are checked again, so Settings shows the version that runs.
+    void CheckTool(AgentDef agent, string exe)
+    {
+        if (_tools == null || !_tools.TryGetValue(agent, out var tool)) return;
+        if (tool.Is(exe) || !_toolChecks.Add(agent)) return;
+        var id = _refreshId;
+        Run(async () =>
+        {
+            try
+            {
+                var fresh = await Probe.ToolAsync(agent);
+                if (id != _refreshId || _tools == null || !_tools.ContainsKey(agent)) return;
+                _tools[agent] = fresh;
+                _lastTools[agent.Name] = fresh;
+                PostState();
+
+                var infos = await Task.WhenAll(_accounts.Where(account => account.Agent == agent.Name)
+                    .Select(async account => (Key: Key(account), Info: await Probe.AccountAsync(agent, account, fresh.Path))));
+                if (id != _refreshId || _infos == null) return;
+                foreach (var (key, info) in infos) _infos[key] = info;
+                PostState();
+            }
+            finally
+            {
+                _toolChecks.Remove(agent);
+            }
+        }, "tool check");
+    }
+
     async Task AddAccountAsync(string agentName, string name)
     {
         var agent = _agents.FirstOrDefault(item => item.Name == agentName) ?? throw new InvalidOperationException("Unknown agent.");
@@ -1335,6 +1483,33 @@ sealed class MainForm : Form, IRemoteHost
             Toast("Couldn't delete everything in " + account.Home + ": " + ex.Message, "error");
         }
         await RefreshAsync();
+    }
+
+    // Settings → Agents and accounts → New sessions start with: checked against what the agent's CLI takes, kept per agent
+    // in settings.json. Panes that already run keep theirs.
+    void SetAgentSetup(string agentName, string permission, string model, string effort)
+    {
+        var agent = _agents.FirstOrDefault(item => item.Name == agentName) ?? throw new InvalidOperationException("Unknown agent.");
+        var choice = AgentSetup.Check(agent, permission, model, effort);
+        var setups = _settings.AgentSetups ?? new();
+        foreach (var name in setups.Keys.Where(name => name.Equals(agent.Name, StringComparison.OrdinalIgnoreCase)).ToList()) setups.Remove(name);
+        if (!choice.IsEmpty) setups[agent.Name] = choice;
+        _settings.AgentSetups = setups.Count > 0 ? setups : null;
+        _settings.Save();
+        PostState();
+    }
+
+    // Claude Code's Remote Control for an account's new and resumed chats (ChatArgs), so they also open in the Claude app.
+    // Chats that already run keep how they started.
+    void SetRemoteControl(string accountKey, bool on)
+    {
+        var (agent, account) = FindAccount(accountKey) ?? throw new InvalidOperationException("That account no longer exists.");
+        if (string.IsNullOrWhiteSpace(agent.RemoteControlArgs)) throw new InvalidOperationException(agent.Name + " can't open its chats in the Claude app.");
+        AccountStore.SetRemoteControl(account, on);
+        Log("Remote Control " + (on ? "on" : "off") + " for " + accountKey);
+        PostState();
+        var who = agent.Name + " (" + account.Name + ")";
+        Toast("New and resumed chats of " + who + (on ? " also open in the Claude app." : " no longer open in the Claude app."));
     }
 
     (AgentDef Agent, AgentAccount Account)? FindAccount(string key)
@@ -1420,6 +1595,7 @@ sealed class MainForm : Form, IRemoteHost
     void RestoreWorkspace(string path)
     {
         if (path.Length == 0) return;
+        if (NoProject.Is(path)) path = OpenChats();
         if (!Directory.Exists(path)) throw new InvalidOperationException("The folder no longer exists: " + path);
         if (!_settings.Projects.Contains(path, StringComparer.OrdinalIgnoreCase)) _settings.Projects.Add(path);
         _settings.ProjectPath = _settings.Projects.First(item => item.Equals(path, StringComparison.OrdinalIgnoreCase));
@@ -1429,14 +1605,25 @@ sealed class MainForm : Form, IRemoteHost
 
     void SelectWorkspace(string path)
     {
+        // Start without a project picks Chats before it starts the agent; the first time, that makes it.
+        if (NoProject.Is(path)) path = OpenChats();
         if (!_settings.Projects.Contains(path, StringComparer.OrdinalIgnoreCase)) return;
         _settings.ProjectPath = path;
         _settings.Save();
         PostState();
     }
 
+    // Chats (NoProject), made and listed first when it isn't yet, and made again when its folder was deleted. Only the
+    // PC's own clicks come here: a phone starts in Chats once it is listed, and never makes it.
+    string OpenChats()
+    {
+        Directory.CreateDirectory(NoProject.Folder);
+        return NoProject.Listed(_settings.Projects);
+    }
+
     void RemoveWorkspace(string path)
     {
+        if (NoProject.Is(path)) throw new InvalidOperationException("Chats stays in the sidebar: agents you start without a project work there.");
         if (_settings.Projects.Count <= 1) throw new InvalidOperationException("Keep at least one workspace. Add another one first.");
         foreach (var id in _sessions.Where(item => item.Value.Workspace.Equals(path, StringComparison.OrdinalIgnoreCase)).Select(item => item.Key).ToList())
         {
@@ -1907,6 +2094,8 @@ sealed class MainForm : Form, IRemoteHost
             // picked it in Settings.
             projectsFolder = ProjectsFolder(),
             projectsFolderChosen = NewProject.Chosen(_settings.NewProjectsFolder) != null,
+            // Start without a project: the Chats folder, also before it is made and listed.
+            chatsFolder = NoProject.Folder,
             agents = _agents.Select(agent =>
             {
                 ToolStatus? tool = null;
@@ -1921,6 +2110,11 @@ sealed class MainForm : Form, IRemoteHost
                     multi = agent.HomeVar.Length > 0,
                     loginHint = agent.LoginHint,
                     install = agent.Install,
+                    // New sessions start with: what the agent's CLI takes (null: nothing), and what is chosen.
+                    setupOptions = AgentSetup.PageOptions(agent),
+                    setup = AgentSetup.PageSetup(agent, AgentSetup.Stored(_settings.AgentSetups, agent)),
+                    // Its accounts can open their chats in the Claude app (Remote Control).
+                    remoteControl = !string.IsNullOrWhiteSpace(agent.RemoteControlArgs),
                 };
             }),
             accounts = _accounts.Select(account =>
@@ -1938,6 +2132,8 @@ sealed class MainForm : Form, IRemoteHost
                     email = info?.Email ?? "",
                     plan = info?.Plan ?? "",
                     note = info?.Note ?? "",
+                    // This account's new and resumed chats also open in the Claude app.
+                    remoteControl = account.RemoteControl == true,
                 };
             }),
         });

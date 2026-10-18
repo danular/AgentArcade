@@ -28,12 +28,12 @@ if (-not (Test-Path (Join-Path $publish 'AgentArcade.exe'))) {
 New-Item -ItemType Directory -Force $target | Out-Null
 Copy-Item (Join-Path $publish '*') $target -Recurse -Force
 
+# Always pointed at this install: a copy from the zip that ran earlier may have made the shortcut for its own folder,
+# and the app leaves a shortcut alone while the copy it starts is still there.
 $shortcut = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Agent Arcade.lnk'
-if (-not (Test-Path $shortcut)) {
-    $link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
-    $link.TargetPath = $exe
-    $link.WorkingDirectory = $target
-    $link.Save()
-}
+$link = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcut)
+$link.TargetPath = $exe
+$link.WorkingDirectory = $target
+$link.Save()
 
 Write-Host "Installed in $target"

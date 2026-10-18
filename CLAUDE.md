@@ -15,7 +15,7 @@
 - Account emails come from the tools themselves: `claude auth status --json`, Codex `app-server` `account/read`, Gemini `.gemini/google_accounts.json` (emails only), Cursor `cursor-agent status`.
 - Start Windows programs by full path (`Environment.SystemDirectory`, the Windows folder), never by bare name.
 - Message types between `web/app.js` and `MainForm.OnMessage` must match on both sides.
-- Chat history (`history.json`) stores only titles, folders, times and the chat id this app chose (Claude `--session-id`); never chat contents.
+- Chat history (`history.json`) stores only titles, folders, times and the chat id: the one this app chose (Claude `--session-id`) or the one learned from the name of the tool's own session file (Codex `sessions\YYYY\MM\DD\rollout-<time>-<id>.jsonl`; list file names only, never open or read the file); never chat contents.
 - A built-in agent added to `AgentStore.Defaults` reaches existing `agents.json` files once, through `agents-offered.json`. New `AgentDef` fields should be nullable so a missing value can take the built-in one.
 - The page must not reload while agents run: a reload sends `ready`, which stops every session.
 - Phone remote (`Remote.cs`, `web/remote.js`): the contract with the Android app is `docs/phone-remote/REMOTE_API.md`. Change that file first, then both sides together; never rename or drop a field the phone reads.

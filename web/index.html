@@ -76,6 +76,7 @@
           <input id="preview-address" list="preview-docs" spellcheck="false" autocomplete="off"
             placeholder="localhost:5173, or a page in the project like index.html">
           <datalist id="preview-docs"></datalist>
+          <button type="button" class="icon-btn small" id="preview-clear" title="Clear: show nothing" aria-label="Clear the preview"></button>
           <button type="button" class="icon-btn small" id="preview-reload" title="Reload" aria-label="Reload"></button>
           <button type="button" class="icon-btn small" id="preview-external" title="Open in your browser" aria-label="Open in your browser"></button>
         </form>
@@ -92,7 +93,7 @@
       </section>
       <section class="panel-view" data-view="images" hidden>
         <div class="panel-bar">
-          <span class="images-tip ellipsis">Drag an image onto a pane to paste its path into that agent's prompt.</span>
+          <span class="images-tip ellipsis" title="Click an image to view it, right-click it for more. Drag it onto a pane to paste its path into that agent's prompt.">Click to view, right-click for more, drag onto a pane to paste its path.</span>
           <span class="images-count" id="images-count"></span>
           <button type="button" class="icon-btn small" id="images-refresh" title="Look again" aria-label="Look again"></button>
         </div>
@@ -128,6 +129,7 @@
   <script src="mcp.js"></script>
   <script src="layout.js"></script>
   <script src="home.js"></script>
+  <script src="accounts.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

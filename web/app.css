@@ -244,7 +244,7 @@ input[type="range"] { padding: 0; accent-color: var(--accent); border: 0; box-sh
   border-radius: 7px;
   color: var(--muted);
 }
-.icon-btn:hover { background: var(--hover); color: var(--text); }
+.icon-btn:hover, .icon-btn[aria-expanded="true"] { background: var(--hover); color: var(--text); }
 .icon-btn.small { width: 24px; height: 24px; }
 
 .tag-warn { font-size: 10.5px; color: var(--amber); }
@@ -270,7 +270,12 @@ input[type="range"] { padding: 0; accent-color: var(--accent); border: 0; box-sh
   border-radius: 6px;
   opacity: 0;
 }
-.ws-row:hover .row-more, .chat-row:hover .row-more, .row-more:focus-visible { opacity: 1; }
+.ws-row:hover .row-more, .chat-row:hover .row-more, .row-more:focus-visible, .row-more[aria-expanded="true"] { opacity: 1; }
+/* While a row's menu is open, focus is in the menu: the row stays lit as if hovered. */
+.ws-row:not(.active):has(> [aria-expanded="true"]), .chat-row:has(> [aria-expanded="true"]), .hist-row:has(> [aria-expanded="true"]) {
+  color: var(--text);
+  background: var(--hover);
+}
 .row-more:hover { color: var(--text); background: var(--border-2); }
 
 .agent-name { font-weight: 600; }
@@ -297,6 +302,7 @@ input[type="range"] { padding: 0; accent-color: var(--accent); border: 0; box-sh
   border-radius: 5px;
 }
 .acc-sub { color: var(--muted); font-size: 12px; }
+.acc-same { color: var(--amber); font-size: 12px; }
 
 .avatar {
   --c: #888;
@@ -432,7 +438,7 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   pointer-events: none;
 }
 .pane-actions { display: flex; flex: none; gap: 1px; margin-left: auto; opacity: .7; }
-.pane:hover .pane-actions, .pane:focus-within .pane-actions { opacity: 1; }
+.pane:hover .pane-actions, .pane:focus-within .pane-actions, .pane-actions:has([aria-expanded="true"]) { opacity: 1; }
 .pane-body { position: relative; flex: 1; min-height: 0; }
 .term { position: absolute; inset: 0; z-index: 0; }
 .term .xterm { height: 100%; padding: 10px 2px 6px 12px; }
@@ -508,6 +514,9 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   overflow-y: auto;
 }
 .images-grid .panel-empty { grid-column: 1 / -1; padding: 16px 6px; color: var(--muted); }
+.images-grid .images-more { grid-column: 1 / -1; justify-self: center; margin: 4px 0 8px; }
+/* The viewer (.image-view) opens over the tab, not over the panel's tabs. */
+.panel-view[data-view="images"] { position: relative; }
 .images-tip { flex: 1; color: var(--faint); font-size: 12px; }
 .images-count { flex: none; color: var(--faint); font: 11px var(--mono); }
 .image-tile {
@@ -519,10 +528,9 @@ body.dragging, body.dragging * { cursor: grabbing !important; }
   background: #1c1c22;
   border: 1px solid var(--border-2);
   border-radius: 8px;
-  cursor: grab;
+  cursor: pointer;
 }
-.image-tile:hover { border-color: var(--accent); }
-.image-tile:active { cursor: grabbing; }
+.image-tile:hover, .image-tile:focus-visible { border-color: var(--accent); outline: none; }
 .image-tile img { display: block; flex: none; width: 100%; height: 72px; object-fit: cover; pointer-events: none; }
 .image-tile figcaption { padding: 4px 6px; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -579,6 +587,10 @@ body.resizing-panel iframe { pointer-events: none; }
 .change-status.renamed, .change-status.copied { color: #8fb4ff; }
 .change-name { flex: none; max-width: 60%; }
 .change-dir { flex: 1; color: var(--faint); }
+/* Lines added and removed: right-aligned in a row (the folder takes the space between), and after the bar's file count. */
+.change-lines { flex: none; font: 11px var(--mono); white-space: nowrap; }
+.lines-add { color: var(--green); }
+.lines-del { color: var(--red); }
 .changes-diff { flex: 1; min-height: 0; overflow: auto; background: var(--term); }
 .changes-diff .panel-empty { color: var(--muted); }
 .diff-lines { display: inline-block; min-width: 100%; padding: 8px 0; font: 12px/1.5 var(--mono); white-space: pre; }
@@ -789,6 +801,9 @@ body.resizing-panel iframe { pointer-events: none; }
 .acc-row.disabled { opacity: .55; }
 .acc-row .count.live { margin-left: 2px; }
 .add-cell { text-align: right; white-space: nowrap; }
+/* Agents and accounts → New sessions start with. */
+.settings-sub { margin: 10px 0 -6px; font-size: 14px; font-weight: 600; }
+.setup-risk { color: var(--amber); font-size: 12.5px; }
 .settings-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .settings-card { display: grid; gap: 8px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; }
 .settings-card p { margin: 0; }
@@ -798,6 +813,8 @@ body.resizing-panel iframe { pointer-events: none; }
 .about-mascot { display: grid; place-items: center; width: 120px; height: 120px; }
 .about-mascot .mascot.static { border-radius: 28px; }
 .about-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.about-data { display: grid; justify-items: center; gap: 8px; max-width: 460px; margin-top: 6px; color: var(--muted); font-size: 12.5px; }
+.about-data p { margin: 0; }
 
 /* ---------- chat history ---------- */
 
@@ -875,7 +892,8 @@ body.resizing-panel iframe { pointer-events: none; }
   /* Above dialogs, because the history dialog opens menus too. */
   z-index: 65;
   min-width: 230px;
-  max-width: 340px;
+  /* Room for the letters on the right (.menu-item kbd) next to the longest sub-lines. */
+  max-width: 370px;
   padding: 5px;
   background: #19191e;
   border: 1px solid var(--border-2);
@@ -888,6 +906,11 @@ body.resizing-panel iframe { pointer-events: none; }
 .menu-item.danger, .menu-item.danger .ic { color: var(--red); }
 .menu-label { display: flex; flex-direction: column; min-width: 0; }
 .menu-sub { overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+/* Focus is in an open menu (its keys work there): the item the keys are on looks hovered, the menu itself shows no ring. */
+.menu:focus-visible { outline: none; }
+.menu-item:focus-visible { background: var(--hover); outline: none; }
+.menu-item kbd { flex: none; margin-left: auto; padding-left: 14px; color: var(--faint); font: 11px var(--mono); }
+.menu-item.danger kbd { color: inherit; opacity: .7; }
 .menu-sep { height: 1px; margin: 5px 4px; background: var(--border); }
 .menu-title { padding: 6px 9px 4px; color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; }
 

@@ -386,8 +386,9 @@ Close codes: `1000` replaced by a newer connection from the same phone (only an 
 ```
 
 - `workspace` is the project the PC shows right now.
+- `workspaces` are the sidebar's projects, in its order. Once someone used **Start without a project** on the PC, the first one is its Chats folder (`%USERPROFILE%\AgentArcade\Chats`, `name` `"Chats"`), where agents that belong to no project work. To the phone it is an ordinary workspace with the same fields: it can start agents there like anywhere else. Only the PC makes and lists it.
 - `run` (1.1, feature `run`) is the current start of Agent Arcade's page: see [run](#run).
-- `projectsFolder` is where a new project goes (see new project): a folder the user picked for new projects in Settings on the PC, while it exists; else the folder that holds `workspace`, or when that has none or is missing, the folder of the first listed workspace that has one. `null` when no workspace has one. On a PC set up from 1.4.1 on, a workspace that is the Documents folder, the user folder or a OneDrive root gives `%USERPROFILE%\source\repos` instead (such as `C:\Users\Ana\source\repos`), which may not exist yet: the PC makes it with the first new project. A PC older than this field leaves it out, and the phone then offers no New project.
+- `projectsFolder` is where a new project goes (see new project): a folder the user picked for new projects in Settings on the PC, while it exists; else the folder that holds `workspace`, or when that has none or is missing, the folder of the first listed workspace that has one. `null` when no workspace has one. On a PC set up from 1.4.1 on, a workspace that is the Documents folder, the user folder or a OneDrive root gives `%USERPROFILE%\source\repos` instead (such as `C:\Users\Ana\source\repos`), which may not exist yet: the PC makes it with the first new project. New projects never go next to the Chats folder (see `workspaces`): on a PC set up from 1.4.1 on it counts like the Documents folder, and on an older one the next listed workspace decides. A PC older than this field leaves it out, and the phone then offers no New project.
 - `color` is the agent's brand color by command (`claude #d97757`, `codex #10a37f`, `gemini #4f8cff`, `copilot #a371f7`, `cursor-agent #7c8aa5`) or `null`. When `null` the phone uses `hsl(hash % 360, 55%, 58%)` with `hash = (hash * 31 + charCode) >>> 0` over the agent name, like the desktop.
 - `signedIn` is `true`, `false` or `null` (still checking or unknown).
 - `hosts` lists the addresses the PC listens on now, in the same order and format as `hosts` in the pairing link. An address in `100.64.0.0/10` is the PC's Tailscale address, which also works away from home; the others are on the PC's local network.
@@ -541,7 +542,7 @@ The end of one pane's terminal, as lines of styled text. The PC resolves colors 
 }
 ```
 
-`session` is the id of the pane that has this chat open, when `open` is true. `resume` is `exact` (Claude Code reopens exactly this chat), `agent` (the agent opens its own resume list) or `none`.
+`session` is the id of the pane that has this chat open, when `open` is true. `resume` is `exact` (the agent reopens exactly this chat: Claude Code, and Codex once the PC knows the chat's id), `agent` (the agent opens its own resume list) or `none`.
 
 ### Attention
 

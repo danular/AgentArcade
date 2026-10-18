@@ -14,6 +14,23 @@ nav: changelog
 <section style="padding-bottom:96px">
   <div class="wrap">
     <article class="release">
+      <div><span class="v">1.7.0</span><time datetime="2026-10-18">18 Oct 2026</time></div>
+      <div class="prose">
+        <ul>
+          <li><b>Start without a project:</b> <b>New agent → Start without a project</b> runs an agent in <b>Chats</b>, a folder Agent Arcade makes in <code>%USERPROFILE%\AgentArcade</code> the first time. Recent, History and your phone treat it like a project.</li>
+          <li><b>New sessions start with:</b> a default permission mode, model and effort per agent (Settings → Agents and accounts → <b>Change…</b>), passed as the agent's own options, also for chats your phone starts. No more switching each new Codex pane to Full Access by hand.</li>
+          <li><b>Codex chats resume exactly:</b> opening a stopped Codex chat from Recent reopens that chat instead of Codex's list of all its sessions, once you sent the chat a message. Agent Arcade takes the chat's id from the name of Codex's session file and never reads the file.</li>
+          <li><b>Side panel:</b> Preview has a <b>×</b> that clears it. Images opens an image when you click it, has a right-click menu (open in its app, show in folder, copy path) and <b>Show more</b> past the newest 300. Changes shows the lines added and removed per file and in total, and removed lines that start with <code>--</code> are red instead of grey.</li>
+          <li><b>Menus with keys:</b> every ⋯ menu shows a letter per item; press it to pick that item. The arrow keys and Enter work too, and right-clicking a chat in Recent or History, or a project in the sidebar, opens its menu.</li>
+          <li><b>In the Start menu:</b> the first start adds Agent Arcade to the Start menu, so Windows search finds the app instead of its files. Settings → About shows where your data lives, with <b>Open folder</b>; deleting the app's folder keeps it.</li>
+          <li><b>Also open in the Claude app:</b> an opt-in per Claude Code account that starts its chats with Claude Code's own Remote Control, so you can follow them in the Claude app on an iPhone. Those chats go through Anthropic's servers.</li>
+          <li><b>Codex (Ollama):</b> a built-in agent that runs Codex on a model Ollama runs on your PC, with no sign-in and no usage limit. Settings says whether Ollama is running.</li>
+          <li><b>Accounts:</b> two accounts of one agent that use the same login say <b>Same login as</b> the other, and <b>Add account</b> suggests the next free name.</li>
+          <li>After <b>Install / update</b>, new panes start the version that was just installed, without <b>Check accounts again</b>. The Changes tab also refuses a repository whose <code>diff.orderFile</code> points to another computer.</li>
+        </ul>
+      </div>
+    </article>
+    <article class="release">
       <div><span class="v">1.6.0</span><time datetime="2026-10-16">16 Oct 2026</time></div>
       <div class="prose">
         <ul>

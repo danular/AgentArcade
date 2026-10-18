@@ -727,7 +727,9 @@ static partial class NewProject
             {
                 if (path.Length == 0) continue;
                 var full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
-                if (fallback != null && IsHome(full)) return Path.TrimEndingDirectorySeparator(Path.GetFullPath(fallback));
+                if (fallback != null && (IsHome(full) || NoProject.Is(full))) return Path.TrimEndingDirectorySeparator(Path.GetFullPath(fallback));
+                // Chats isn't a project: new projects never go next to it.
+                if (NoProject.Is(full)) continue;
                 var parent = Path.GetDirectoryName(full);
                 if (parent != null && Directory.Exists(parent)) return parent;
             }
@@ -814,6 +816,39 @@ static partial class NewProject
     }
 
     static RemoteReply Made(string path) => new(201, JsonSerializer.SerializeToElement(new { workspace = path }, RemoteModel.Wire));
+}
+
+// Start without a project (the New agent menu and Home): such agents work in one folder of their own, Chats, which the
+// app makes the first time and then lists first among the workspaces, where it stays. So Recent, History, the side
+// panel and the phone treat it like any project; its folder's name is the name they show. It sits in the user folder:
+// not in AppSettings.Folder, which holds the extra accounts' sign-in folders and goes when you uninstall; not in
+// Documents, which OneDrive often syncs; and not the user folder itself, which an agent would see whole and whose trust
+// Claude Code keeps for one session only.
+static class NoProject
+{
+    public static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AgentArcade", "Chats");
+
+    // Whether path is the Chats folder, in any spelling.
+    public static bool Is(string? path)
+    {
+        try
+        {
+            return !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path)
+                && string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)), Folder, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException or System.Security.SecurityException)
+        {
+            return false;
+        }
+    }
+
+    // Lists Chats first in projects unless it is listed already; the listed spelling.
+    public static string Listed(List<string> projects)
+    {
+        if (projects.FirstOrDefault(Is) is { } listed) return listed;
+        projects.Insert(0, Folder);
+        return Folder;
+    }
 }
 
 // The JSON the phone gets, and the checks on what it sends.

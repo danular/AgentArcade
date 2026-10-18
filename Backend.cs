@@ -94,11 +94,14 @@ sealed class AppSettings
     // Settings → General, "New projects go to": a folder the user picked. Null (older files, or Automatic) keeps
     // NewProject.Folder's own rule; a picked folder that is gone counts as null.
     public string? NewProjectsFolder { get; set; }
+    // Settings → Agents and accounts, "New sessions start with": per agent name, its permission mode, model and effort
+    // (AgentSetup). Null in older files: every agent starts with its own settings.
+    public Dictionary<string, AgentSetupChoice>? AgentSetups { get; set; }
 
     static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
 
     // AGENT_ARCADE_HOME moves all data to another folder, so a test build can run next to the installed app.
-    static string? Home => Environment.GetEnvironmentVariable("AGENT_ARCADE_HOME") is { Length: > 0 } home ? Path.GetFullPath(home) : null;
+    public static string? Home => Environment.GetEnvironmentVariable("AGENT_ARCADE_HOME") is { Length: > 0 } home ? Path.GetFullPath(home) : null;
 
     public static string Folder => Home ?? Path.Combine(LocalAppData, "AgentArcade");
 
@@ -183,7 +186,8 @@ sealed class AgentDef
 {
     public string Name { get; set; } = "";
     public string Command { get; set; } = "";
-    // Where to look when Command isn't on PATH. One "*" folder is allowed; the newest match wins.
+    // Where to look when Command isn't on PATH or in the vendor installer's own folder (Locator.Known). One "*"
+    // folder is allowed; the newest match wins.
     public string AltPath { get; set; } = "";
     public string Args { get; set; } = "";
     public string Login { get; set; } = "";
@@ -191,7 +195,7 @@ sealed class AgentDef
     public string Install { get; set; } = "";
     // The tool's own setting for "keep my files in this folder". Extra accounts need it.
     public string HomeVar { get; set; } = "";
-    // How to ask the tool which account is signed in: claude, codex, gemini, cursor or empty.
+    // How to ask the tool which account is signed in: claude, codex, gemini, cursor or empty; ollama asks whether Ollama runs.
     public string AccountCheck { get; set; } = "";
     // Chat history. {id} is the chat's id. NewChatArgs gives a new chat that id, so ResumeChatArgs can
     // open exactly that chat later; ResumeArgs opens the tool's own "resume" (its latest chat or a list).
@@ -203,6 +207,14 @@ sealed class AgentDef
     // folder for the main account. Missing (null) takes the built-in value; "" turns it off.
     public string? ImagesFolder { get; set; }
     public string? DefaultHome { get; set; }
+    // Where the tool keeps its chats, inside its home folder, when it can't be given a new chat's id (NewChatArgs): the
+    // id is then learned from the name of the chat's file there (SessionFiles, Codex's names). Null takes the built-in
+    // value; "" turns it off.
+    public string? SessionsFolder { get; set; }
+    // Claude Code's own Remote Control, so a chat also shows in the Claude app: added to the new and resumed chats of an
+    // account that opted in (AgentAccount.RemoteControl), never to a sign-in. {project} is the project folder's name.
+    // Missing (null) takes the built-in value; "" means the agent has none.
+    public string? RemoteControlArgs { get; set; }
 }
 
 static class AgentStore
@@ -223,6 +235,8 @@ static class AgentStore
             NewChatArgs = "--session-id {id}",
             ResumeChatArgs = "--resume {id}",
             ResumeArgs = "--resume",
+            // `claude --help`: --remote-control [name] takes an optional name, so it goes last, where nothing follows it.
+            RemoteControlArgs = "--remote-control-session-name-prefix {project} --remote-control",
         },
         new()
         {
@@ -235,9 +249,12 @@ static class AgentStore
             Install = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://chatgpt.com/codex/install.ps1 | iex\"",
             HomeVar = "CODEX_HOME",
             AccountCheck = "codex",
+            // Codex has no setting for a new chat's id; SessionsFolder learns it.
+            ResumeChatArgs = "resume {id}",
             ResumeArgs = "resume",
             ImagesFolder = "generated_images",
             DefaultHome = @"%USERPROFILE%\.codex",
+            SessionsFolder = "sessions",
         },
         new()
         {
@@ -278,6 +295,26 @@ static class AgentStore
             Install = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm 'https://cursor.com/install?win32=true' | iex\"",
             AccountCheck = "cursor",
             ResumeArgs = "--resume",
+        },
+        // Codex with a model that Ollama runs on this PC (--oss and --local-provider in `codex --help`): no account and no
+        // usage limit. It shares Codex's own folder, so Codex's resume list holds the chats of both. Without -m in Args,
+        // Codex uses gpt-oss:20b and pulls it into Ollama on the first start. The account check asks whether Ollama runs.
+        new()
+        {
+            Name = "Codex (Ollama)",
+            Command = "codex",
+            AltPath = @"%LOCALAPPDATA%\OpenAI\Codex\bin\*\codex.exe",
+            Args = "--oss --local-provider ollama",
+            LoginHint = "No sign-in: Codex uses a model that Ollama runs on this PC. Install Ollama from ollama.com and keep it running. " +
+                "Without -m in Args, Codex uses gpt-oss:20b and downloads it (about 14 GB) when Ollama doesn't have it yet.",
+            Install = "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://chatgpt.com/codex/install.ps1 | iex\"",
+            AccountCheck = "ollama",
+            // Its chats are in Codex's own sessions folder, so their ids are learned the same way (SessionFiles), and a
+            // Codex chat and a Codex (Ollama) chat that start close together leave each other unmatched.
+            ResumeChatArgs = "resume {id}",
+            ResumeArgs = "resume",
+            DefaultHome = @"%USERPROFILE%\.codex",
+            SessionsFolder = "sessions",
         },
     ];
 
@@ -321,13 +358,18 @@ static class AgentStore
         var defaults = Defaults();
         foreach (var agent in agents)
         {
-            var builtIn = defaults.FirstOrDefault(item => item.Command.Equals(agent.Command, StringComparison.OrdinalIgnoreCase));
+            // Codex and Codex (Ollama) share a command, so the built-in with the same name as well comes first.
+            var builtIn = defaults.FirstOrDefault(item => item.Command.Equals(agent.Command, StringComparison.OrdinalIgnoreCase) &&
+                                                          item.Name.Equals(agent.Name, StringComparison.OrdinalIgnoreCase))
+                          ?? defaults.FirstOrDefault(item => item.Command.Equals(agent.Command, StringComparison.OrdinalIgnoreCase));
             if (builtIn == null) continue;
             agent.NewChatArgs ??= builtIn.NewChatArgs;
             agent.ResumeChatArgs ??= builtIn.ResumeChatArgs;
             agent.ResumeArgs ??= builtIn.ResumeArgs;
             agent.ImagesFolder ??= builtIn.ImagesFolder;
             agent.DefaultHome ??= builtIn.DefaultHome;
+            agent.SessionsFolder ??= builtIn.SessionsFolder;
+            agent.RemoteControlArgs ??= builtIn.RemoteControlArgs;
             agent.LoginHint = CurrentHint(agent, builtIn);
             agent.Install = CurrentInstall(agent, builtIn);
         }
@@ -345,8 +387,7 @@ static class AgentStore
         }
         var added = defaults.Where(builtIn =>
             !offered.Contains(builtIn.Name, StringComparer.OrdinalIgnoreCase) &&
-            !agents.Any(agent => agent.Name.Equals(builtIn.Name, StringComparison.OrdinalIgnoreCase) ||
-                                 agent.Command.Equals(builtIn.Command, StringComparison.OrdinalIgnoreCase))).ToList();
+            !agents.Any(agent => agent.Name.Equals(builtIn.Name, StringComparison.OrdinalIgnoreCase) || SameTool(agent, builtIn))).ToList();
         if (added.Count == 0 && File.Exists(OfferedPath)) return agents;
         try
         {
@@ -363,6 +404,12 @@ static class AgentStore
         }
         return agents;
     }
+
+    // An agent the user already has under another name. A built-in with its own Args (Codex (Ollama)) is that only with
+    // the same Args too, so having Codex doesn't hide it.
+    static bool SameTool(AgentDef agent, AgentDef builtIn)
+        => agent.Command.Equals(builtIn.Command, StringComparison.OrdinalIgnoreCase) &&
+           (builtIn.Args.Length == 0 || (agent.Args ?? "").Trim().Equals(builtIn.Args, StringComparison.OrdinalIgnoreCase));
 
     // Built-in sign-in hints that stopped being true. agents.json keeps a copy of every hint, so one that is exactly an
     // old built-in hint shows the current built-in one instead; a hint the user wrote stays.
@@ -404,7 +451,8 @@ sealed class ChatRecord
     public string Title { get; set; } = "";
     // True when the user typed the title; then it is never replaced by one the agent suggests.
     public bool Named { get; set; }
-    // The agent's own id for this chat, when this app chose it (so it can be resumed exactly).
+    // The agent's own id for this chat, when this app chose it or learned it from the name of the agent's chat file
+    // (SessionFiles), so it can be resumed exactly.
     public string ChatId { get; set; } = "";
     public DateTimeOffset Started { get; set; }
     public DateTimeOffset LastActive { get; set; }
@@ -477,22 +525,43 @@ static class ChatArgs
     static string Join(string first, string second)
         => string.IsNullOrWhiteSpace(first) ? second.Trim() : string.IsNullOrWhiteSpace(second) ? first.Trim() : first.Trim() + " " + second.Trim();
 
-    // The arguments for a new chat. When the agent lets this app pick the chat's id, it is remembered.
-    public static string New(AgentDef agent, ChatRecord chat)
+    // The arguments for a new chat. When the agent lets this app pick the chat's id, it is remembered. setup: the options
+    // of New sessions start with (AgentSetup.Args); they go before Remote Control, which must stay last.
+    public static string New(AgentDef agent, ChatRecord chat, AgentAccount? account = null, string setup = "")
     {
         var extra = agent.NewChatArgs ?? "";
-        if (!extra.Contains("{id}", StringComparison.Ordinal)) return Join(agent.Args, extra);
-        chat.ChatId = chat.Id;
-        return Join(agent.Args, extra.Replace("{id}", chat.Id, StringComparison.Ordinal));
+        if (extra.Contains("{id}", StringComparison.Ordinal))
+        {
+            chat.ChatId = chat.Id;
+            extra = extra.Replace("{id}", chat.Id, StringComparison.Ordinal);
+        }
+        return Join(Join(Join(agent.Args, extra), setup), RemoteControl(agent, account, chat));
     }
 
-    // Null when the agent can't continue a chat.
-    public static string? Resume(AgentDef agent, ChatRecord chat) => Kind(agent, chat) switch
+    // Null when the agent can't continue a chat. setup as in New: after Codex's resume subcommand, before Remote Control.
+    public static string? Resume(AgentDef agent, ChatRecord chat, AgentAccount? account = null, string setup = "") => Kind(agent, chat) switch
     {
-        "exact" => Join(agent.Args, agent.ResumeChatArgs!.Replace("{id}", chat.ChatId, StringComparison.Ordinal)),
-        "agent" => Join(agent.Args, agent.ResumeArgs!),
+        "exact" => Join(Join(Join(agent.Args, agent.ResumeChatArgs!.Replace("{id}", chat.ChatId, StringComparison.Ordinal)), setup), RemoteControl(agent, account, chat)),
+        "agent" => Join(Join(Join(agent.Args, agent.ResumeArgs!), setup), RemoteControl(agent, account, chat)),
         _ => null,
     };
+
+    // Claude Code's Remote Control, last on the line, for an account that opted in: the chat also shows in the Claude app.
+    static string RemoteControl(AgentDef agent, AgentAccount? account, ChatRecord chat)
+        => account?.RemoteControl == true && !string.IsNullOrWhiteSpace(agent.RemoteControlArgs)
+            ? agent.RemoteControlArgs.Replace("{project}", SessionPrefix(chat.Workspace), StringComparison.Ordinal)
+            : "";
+
+    // The project folder's name, for Remote Control's session names (project-graceful-unicorn until the first message).
+    // Only letters, digits, '.', '_' and '-', so it needs no quotes on the command line or in cmd (an npm shim), and it
+    // never starts with '-', which would read as an option.
+    public static string SessionPrefix(string workspace)
+    {
+        var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(workspace.Trim()));
+        var safe = Regex.Replace(name, @"[^\p{L}\p{N}._-]+", "-").Trim('-', '.');
+        if (safe.Length > 40) safe = safe[..40].TrimEnd('-', '.');
+        return safe.Length > 0 ? safe : "AgentArcade";
+    }
 
     // exact: this very chat; agent: the agent's own resume, which may pick its latest chat or ask; "": none.
     public static string Kind(AgentDef? agent, ChatRecord chat)
@@ -503,12 +572,239 @@ static class ChatArgs
     }
 }
 
+// Codex can't be given a new chat's id, so it is learned afterwards from the name of the file Codex keeps the chat in:
+// <home>\sessions\YYYY\MM\DD\rollout-<local time>-<id>.jsonl (.jsonl.zst once Codex compresses it). Only the names are
+// listed; no file is opened. Codex makes the file at the chat's first message, but the name carries the time the chat
+// began, seconds after its pane started: the id is a version 7 UUID, whose first 48 bits are that time in milliseconds.
+static class SessionFiles
+{
+    // A chat belongs to the pane that started at most this long before it began.
+    public static readonly TimeSpan Window = TimeSpan.FromSeconds(30);
+    // Another start of the same account this close leaves both unmatched: a slow start could swap their chats.
+    public static readonly TimeSpan Apart = TimeSpan.FromSeconds(60);
+    // The name's own time has whole seconds.
+    static readonly TimeSpan Slack = TimeSpan.FromSeconds(1);
+
+    static readonly Regex Name = new(
+        @"^rollout-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})-([0-9a-f]{8}-[0-9a-f]{4}-([0-9a-f])[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl(\.zst)?\z",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // The folder with an account's chat files, or null when the agent has none.
+    public static string? FolderFor(AgentDef agent, AgentAccount account)
+    {
+        if (string.IsNullOrWhiteSpace(agent.SessionsFolder)) return null;
+        var home = account.IsMain ? Environment.ExpandEnvironmentVariables(agent.DefaultHome ?? "") : account.Home;
+        return home.Length > 0 && Path.IsPathFullyQualified(home) ? Path.GetFullPath(Path.Combine(home, agent.SessionsFolder)) : null;
+    }
+
+    // The chat's id and when it began, from a file name; null for any other name. An id that isn't a version 7 UUID
+    // (older Codex) takes the time in the name.
+    public static (string Id, DateTimeOffset Began)? Parse(string name)
+    {
+        var match = Name.Match(name);
+        if (!match.Success) return null;
+        var id = match.Groups[2].Value.ToLowerInvariant();
+        try
+        {
+            if (match.Groups[3].Value == "7") return (id, DateTimeOffset.FromUnixTimeMilliseconds(Convert.ToInt64(id[..8] + id[9..13], 16)));
+            return DateTime.TryParseExact(match.Groups[1].Value, "yyyy-MM-dd'T'HH-mm-ss", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeLocal, out var local)
+                ? (id, new DateTimeOffset(local))
+                : null;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            // A time past what a date can hold: not a name Codex made.
+            return null;
+        }
+    }
+
+    // The id of the first chat that began within Window after a pane started: chats the agent starts by itself during a
+    // turn (helpers, reviews) begin later. Null when there is none, when two began at once, when another start of the
+    // same account (others) is within Apart of this one, or when another chat already has that id (taken).
+    public static string? Match(DateTimeOffset started, IEnumerable<DateTimeOffset> others, IEnumerable<string> names, ISet<string> taken)
+    {
+        if (others.Any(other => (other - started).Duration() < Apart)) return null;
+        var first = names.Select(Parse).Where(file => file != null).Select(file => file!.Value)
+            .Where(file => file.Began >= started - Slack && file.Began <= started + Window)
+            .DistinctBy(file => file.Id)
+            .OrderBy(file => file.Began)
+            .Take(2)
+            .ToList();
+        if (first.Count == 0 || (first.Count == 2 && first[1].Began == first[0].Began)) return null;
+        return taken.Contains(first[0].Id) ? null : first[0].Id;
+    }
+
+    // The file names in the date folders around a start (the day before and after too); nothing is opened.
+    public static List<string> Names(string folder, DateTimeOffset started)
+    {
+        var names = new List<string>();
+        var day = started.ToLocalTime().Date;
+        for (var offset = -1; offset <= 1; offset++)
+        {
+            var date = day.AddDays(offset);
+            var dated = Path.Combine(folder, date.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture),
+                date.ToString("MM", System.Globalization.CultureInfo.InvariantCulture), date.ToString("dd", System.Globalization.CultureInfo.InvariantCulture));
+            if (Directory.Exists(dated)) names.AddRange(Directory.EnumerateFiles(dated, "rollout-*").Select(Path.GetFileName).OfType<string>());
+        }
+        return names;
+    }
+}
+
+// One agent's "New sessions start with" in settings.json. Null is the agent's own setting.
+sealed class AgentSetupChoice
+{
+    public string? Permission { get; set; }
+    public string? Model { get; set; }
+    public string? Effort { get; set; }
+
+    [JsonIgnore] public bool IsEmpty => Permission == null && Model == null && Effort == null;
+}
+
+// What Settings → Agents and accounts → New sessions start with may set, as each agent's own command-line options. Only
+// options its own --help lists are offered, checked on 18 Oct 2026 with claude 2.1.302, codex-cli 0.162.1 (also `codex
+// resume --help`), gemini 0.63.0, GitHub Copilot CLI 1.0.98 and cursor-agent 2026.10.14; Antigravity CLI wasn't installed
+// to check, so it gets none. Codex has no effort option: its -c sets the config key model_reasoning_effort, which its
+// config schema has, to one of the levels `codex debug models` lists for every model. Keyed by command, like Locator.Known.
+// The command line is plain text that sometimes runs through cmd /c, so a choice is one from these lists and a model name
+// only letters, digits and . _ : / - (never a leading -, which would read as another option).
+static class AgentSetup
+{
+    // Risky: the agent then edits files and runs commands without asking.
+    public sealed record Permission(string Id, string Label, string Args, bool Risky = false);
+
+    // Model: the option the name follows. Effort: the option with {0} for the level, and the levels; null and none
+    // when the agent has no such option.
+    public sealed record Options(Permission[] Permissions, string? Model, string? ModelHint, string? Effort, string[] Efforts);
+
+    static readonly Dictionary<string, Options> ByCommand = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["claude"] = new(
+            [
+                new("acceptEdits", "Accept edits", "--permission-mode acceptEdits"),
+                new("plan", "Plan mode", "--permission-mode plan"),
+                new("auto", "Auto mode", "--permission-mode auto"),
+                new("bypassPermissions", "Bypass permissions", "--permission-mode bypassPermissions", true),
+            ],
+            "--model", "An alias such as opus or sonnet, or a full model name.", "--effort {0}", ["low", "medium", "high", "xhigh", "max"]),
+        // The four presets of Codex's own /permissions, each as the sandbox and approval policy it sets.
+        ["codex"] = new(
+            [
+                new("ask", "Ask for approval", "--sandbox workspace-write --ask-for-approval on-request"),
+                new("approve-for-me", "Approve for me", "--approve-for-me"),
+                new("full-access", "Full Access", "--sandbox danger-full-access --ask-for-approval never", true),
+                new("read-only", "Read Only", "--sandbox read-only --ask-for-approval on-request"),
+            ],
+            "--model", null, "-c model_reasoning_effort={0}", ["low", "medium", "high", "xhigh", "max"]),
+        ["gemini"] = new(
+            [
+                new("auto_edit", "Auto-approve edits", "--approval-mode auto_edit"),
+                new("plan", "Plan (read-only)", "--approval-mode plan"),
+                new("yolo", "YOLO (auto-approve all tools)", "--approval-mode yolo", true),
+            ],
+            "--model", null, null, []),
+        ["copilot"] = new(
+            [
+                new("plan", "Plan mode", "--mode plan"),
+                new("allow-all-tools", "Allow all tools", "--allow-all-tools", true),
+                new("allow-all", "Allow all (tools, paths and URLs)", "--allow-all", true),
+            ],
+            "--model", "A model name, or auto to let Copilot pick.", "--reasoning-effort {0}", ["none", "minimal", "low", "medium", "high", "xhigh", "max"]),
+        ["cursor-agent"] = new(
+            [
+                new("plan", "Plan mode", "--mode plan"),
+                new("auto-review", "Auto-review", "--auto-review"),
+                new("force", "Run everything", "--force", true),
+            ],
+            "--model", "For example gpt-5 or sonnet-4-thinking.", null, []),
+    };
+
+    // \z, not $: $ also matches before a final line break.
+    static readonly Regex ModelName = new(@"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}\z", RegexOptions.Compiled);
+
+    // Null when nothing can be set for this agent.
+    public static Options? For(AgentDef agent) => ByCommand.GetValueOrDefault(Path.GetFileNameWithoutExtension(agent.Command.Trim()));
+
+    // settings.json keys the choices by agent name.
+    public static AgentSetupChoice? Stored(IReadOnlyDictionary<string, AgentSetupChoice>? setups, AgentDef agent)
+        => setups?.FirstOrDefault(pair => pair.Key.Equals(agent.Name, StringComparison.OrdinalIgnoreCase)).Value;
+
+    // The parts of a stored choice this agent takes; the rest is left out (settings.json can be edited by hand).
+    public static AgentSetupChoice Usable(AgentDef agent, AgentSetupChoice? choice)
+    {
+        var options = For(agent);
+        if (options == null || choice == null) return new();
+        return new AgentSetupChoice
+        {
+            Permission = options.Permissions.Any(item => item.Id == choice.Permission) ? choice.Permission : null,
+            Model = options.Model != null && choice.Model != null && ModelName.IsMatch(choice.Model) ? choice.Model : null,
+            Effort = options.Effort != null && options.Efforts.Contains(choice.Effort, StringComparer.Ordinal) ? choice.Effort : null,
+        };
+    }
+
+    // A choice from the page; anything this agent doesn't take is refused with a message.
+    public static AgentSetupChoice Check(AgentDef agent, string permission, string model, string effort)
+    {
+        static string? Set(string value) => string.IsNullOrEmpty(value) ? null : value;
+        var asked = new AgentSetupChoice { Permission = Set(permission), Model = Set(model.Trim()), Effort = Set(effort) };
+        var used = Usable(agent, asked);
+        if (used.Permission != asked.Permission) throw new InvalidOperationException(agent.Name + " has no permission mode called " + asked.Permission + " here.");
+        if (used.Model != asked.Model)
+            throw new InvalidOperationException(For(agent)?.Model == null
+                ? agent.Name + " can't be given a model here."
+                : "A model name has only letters, digits and . _ : / -, starts with a letter or digit, and is at most 100 characters.");
+        if (used.Effort != asked.Effort) throw new InvalidOperationException(agent.Name + " has no effort level called " + asked.Effort + " here.");
+        return used;
+    }
+
+    // The options a stored choice adds to the command line: permission mode, model, effort.
+    public static string Args(AgentDef agent, AgentSetupChoice? choice)
+    {
+        var options = For(agent);
+        var used = Usable(agent, choice);
+        if (options == null) return "";
+        var parts = new List<string>();
+        if (options.Permissions.FirstOrDefault(item => item.Id == used.Permission) is { } permission) parts.Add(permission.Args);
+        if (used.Model != null) parts.Add(options.Model + " " + used.Model);
+        if (used.Effort != null) parts.Add(options.Effort!.Replace("{0}", used.Effort, StringComparison.Ordinal));
+        return string.Join(' ', parts);
+    }
+
+    // A chat's arguments with the agent's setup after them: after Codex's resume subcommand, whose own --help lists these
+    // options too. The other agents' resume is an option, which a following option doesn't fill.
+    public static string Add(string args, AgentDef agent, IReadOnlyDictionary<string, AgentSetupChoice>? setups)
+    {
+        var extra = Args(agent, Stored(setups, agent));
+        return extra.Length == 0 ? args : string.IsNullOrWhiteSpace(args) ? extra : args.Trim() + " " + extra;
+    }
+
+    // state.agents[].setupOptions for the page; null when nothing can be set.
+    public static object? PageOptions(AgentDef agent) => For(agent) is not { } options ? null : new
+    {
+        permissions = options.Permissions.Select(item => new { id = item.Id, label = item.Label, args = item.Args, risky = item.Risky }),
+        model = options.Model,
+        modelHint = options.ModelHint,
+        effort = options.Effort,
+        efforts = options.Efforts,
+    };
+
+    // state.agents[].setup: the stored choice as it is used, and the options it adds.
+    public static object PageSetup(AgentDef agent, AgentSetupChoice? stored)
+    {
+        var used = Usable(agent, stored);
+        return new { permission = used.Permission ?? "", model = used.Model ?? "", effort = used.Effort ?? "", args = Args(agent, used) };
+    }
+}
+
 sealed class AgentAccount
 {
     public string Agent { get; set; } = "";
     public string Name { get; set; } = "";
     // Empty for the main account, which uses the tool's normal folder.
     public string Home { get; set; } = "";
+    // True when this account's new and resumed chats also open in the Claude app (AgentDef.RemoteControlArgs). Off is
+    // missing (null), which is also what accounts.json from before had.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? RemoteControl { get; set; }
 
     [JsonIgnore] public bool IsMain => Home.Length == 0;
 
@@ -527,13 +823,14 @@ static class AccountStore
 
     public static List<AgentAccount> All(IReadOnlyList<AgentDef> agents)
     {
-        var extra = LoadExtra();
+        var stored = LoadStored();
         var all = new List<AgentAccount>();
         foreach (var agent in agents)
         {
-            all.Add(new AgentAccount { Agent = agent.Name, Name = "main" });
+            var main = stored.FirstOrDefault(account => account.IsMain && account.Agent == agent.Name);
+            all.Add(new AgentAccount { Agent = agent.Name, Name = "main", RemoteControl = main?.RemoteControl });
             if (agent.HomeVar.Length > 0)
-                all.AddRange(extra.Where(account => account.Agent == agent.Name));
+                all.AddRange(stored.Where(account => !account.IsMain && account.Agent == agent.Name));
         }
         return all;
     }
@@ -542,26 +839,44 @@ static class AccountStore
     {
         if (agent.HomeVar.Length == 0) throw new InvalidOperationException(agent.Name + " can only use one account.");
         if (!ValidName(name)) throw new ArgumentException("Use a short name with letters, digits, dot, _ or -.");
-        var extra = LoadExtra();
+        var stored = LoadStored();
         if (name.Equals("main", StringComparison.OrdinalIgnoreCase) ||
-            extra.Any(account => account.Agent == agent.Name && account.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            stored.Any(account => !account.IsMain && account.Agent == agent.Name && account.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException(agent.Name + " already has an account called " + name + ".");
 
         var slug = Regex.Replace(Path.GetFileNameWithoutExtension(agent.Command).ToLowerInvariant(), "[^a-z0-9]", "");
         var home = Path.Combine(AccountsFolder, slug + "-" + name);
         Directory.CreateDirectory(home);
         var added = new AgentAccount { Agent = agent.Name, Name = name, Home = home };
-        extra.Add(added);
-        Save(extra);
+        stored.Add(added);
+        Save(stored);
         return added;
+    }
+
+    // Settings → an account's ⋯ → Also open in the Claude app. The main account is in accounts.json only while it has
+    // this on, as a record without Home (older versions skip those); off is stored as nothing.
+    public static void SetRemoteControl(AgentAccount account, bool on)
+    {
+        var stored = LoadStored();
+        var record = stored.FirstOrDefault(item => item.IsMain == account.IsMain && item.Agent == account.Agent && item.Name == account.Name);
+        if (record == null)
+        {
+            if (!account.IsMain) throw new InvalidOperationException("That account no longer exists.");
+            record = new AgentAccount { Agent = account.Agent, Name = "main" };
+            stored.Add(record);
+        }
+        record.RemoteControl = on ? true : null;
+        stored.RemoveAll(item => item.IsMain && item.RemoteControl == null);
+        Save(stored);
+        account.RemoteControl = record.RemoteControl;
     }
 
     public static void Remove(AgentAccount account)
     {
         if (account.IsMain) return;
-        var extra = LoadExtra();
-        extra.RemoveAll(item => item.Agent == account.Agent && item.Name == account.Name);
-        Save(extra);
+        var stored = LoadStored();
+        stored.RemoveAll(item => !item.IsMain && item.Agent == account.Agent && item.Name == account.Name);
+        Save(stored);
 
         // Only a folder this app created is deleted; a tool's normal folder is never touched.
         var full = Path.GetFullPath(account.Home);
@@ -590,13 +905,14 @@ static class AccountStore
 
     static readonly Regex SessionMarker = new("^(CLAUDECODE|CLAUDE_CODE_|CODEX_|GEMINI_CLI|COPILOT_)", RegexOptions.IgnoreCase);
 
-    static List<AgentAccount> LoadExtra()
+    // The extra accounts, and a main account's record while it has Remote Control on (SetRemoteControl).
+    static List<AgentAccount> LoadStored()
     {
         try
         {
             if (!File.Exists(FilePath)) return new();
             return JsonSerializer.Deserialize<List<AgentAccount>>(File.ReadAllText(FilePath), Json.Options)?
-                .Where(account => account.Home.Length > 0 && account.Agent.Length > 0)
+                .Where(account => account.Agent.Length > 0 && (account.Home.Length > 0 || account.Name == "main"))
                 .ToList() ?? new();
         }
         catch
@@ -763,9 +1079,22 @@ static class Locator
         Environment.SetEnvironmentVariable("PATH", string.Join(';', parts));
     }
 
-    // env: values for %NAME% in the known folders, in place of this process's own (the self-check's fake folders).
+    // PATH first, then the vendor installer's folder, then AltPath. So a Codex installed with Install / update wins
+    // over the older one inside the Codex desktop app (its AltPath) even before PATH is read again.
+    // env: values for %NAME% in the folders, in place of this process's own (the self-check's fake folders).
     public static string? FindAgent(AgentDef agent, IReadOnlyDictionary<string, string>? env = null)
-        => FindOnPath(agent.Command) ?? FindAlt(agent.AltPath) ?? FindKnown(agent.Command, env);
+        => FindOnPath(agent.Command) ?? FindKnown(agent.Command, env) ?? FindAlt(Expand(agent.AltPath, env));
+
+    static string Expand(string pattern, IReadOnlyDictionary<string, string>? env)
+        => env == null ? pattern : Regex.Replace(pattern, "%([^%]+)%", match => env.TryGetValue(match.Groups[1].Value, out var value) ? value : match.Value);
+
+    // When a file was last written (UTC), or DateTime.MinValue when that can't be read. An update in place keeps the
+    // path, so this tells that the tool changed.
+    public static DateTime WriteTime(string path)
+    {
+        try { return File.GetLastWriteTimeUtc(path); }
+        catch { return DateTime.MinValue; }
+    }
 
     // Where each vendor's own Windows installer puts its tool, for when that folder isn't on PATH (yet). Keyed by
     // command, so agents.json files from older versions find them too. Claude Code: its docs' uninstall steps; Codex:
@@ -794,10 +1123,7 @@ static class Locator
         if (!Known.TryGetValue(name, out var patterns)) return null;
         foreach (var pattern in patterns)
         {
-            var expanded = env == null
-                ? pattern
-                : Regex.Replace(pattern, "%([^%]+)%", match => env.TryGetValue(match.Groups[1].Value, out var value) ? value : match.Value);
-            if (FindAlt(expanded) is { } found) return found;
+            if (FindAlt(Expand(pattern, env)) is { } found) return found;
         }
         return null;
     }
@@ -977,7 +1303,12 @@ static class Prerequisites
     public static string Text(IEnumerable<InstallNeed> needs) => string.Join(" ", needs.Select(need => need.Text + " (" + need.Url + ")"));
 }
 
-sealed record ToolStatus(AgentDef Agent, string? Path, string Version);
+// Written: when the file at Path was last written as it was checked (Locator.WriteTime).
+sealed record ToolStatus(AgentDef Agent, string? Path, string Version, DateTime Written = default)
+{
+    // Whether exe is the file this status was checked on, unchanged since.
+    public bool Is(string exe) => string.Equals(Path, exe, StringComparison.OrdinalIgnoreCase) && Written == Locator.WriteTime(exe);
+}
 
 // SignedIn is null when the tool can't tell; Note then says why.
 sealed record AccountInfo(bool? SignedIn, string Email = "", string Plan = "", string Note = "")
@@ -997,17 +1328,18 @@ static class Probe
     {
         var path = Locator.FindAgent(agent);
         if (path == null) return new ToolStatus(agent, null, "");
+        var written = Locator.WriteTime(path);
         try
         {
             var result = await Commands.RunAsync(path, ["--version"], 20000);
             var first = (result.Stdout + "\n" + result.Stderr)
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .FirstOrDefault() ?? "";
-            return new ToolStatus(agent, path, result.TimedOut ? "no answer" : TextGuard.Redact(first));
+            return new ToolStatus(agent, path, result.TimedOut ? "no answer" : TextGuard.Redact(first), written);
         }
         catch (Exception ex)
         {
-            return new ToolStatus(agent, path, TextGuard.Redact(ex.Message));
+            return new ToolStatus(agent, path, TextGuard.Redact(ex.Message), written);
         }
     }
 
@@ -1024,6 +1356,7 @@ static class Probe
                 "codex" => await CodexAsync(exe, env),
                 "gemini" => Gemini(account),
                 "cursor" => await CursorAsync(exe, env),
+                "ollama" => await OllamaAsync(),
                 _ => new AccountInfo(null, Note: "check inside the agent"),
             };
         }
@@ -1119,6 +1452,53 @@ static class Probe
         using var doc = JsonDocument.Parse(File.ReadAllText(file));
         var email = Json.Str(doc.RootElement, "active");
         return email.Length == 0 ? new AccountInfo(false, Note: "API key or Code Assist: sign in on first start") : new AccountInfo(true, email);
+    }
+
+    // Ollama's default address. Only GET /api/version is ever asked: nothing is downloaded, started or changed.
+    public const string OllamaUrl = "http://127.0.0.1:11434";
+
+    // A model in Ollama has no account, so this says whether Ollama answers, and else whether it is installed at all.
+    static async Task<AccountInfo> OllamaAsync()
+    {
+        var version = await OllamaVersionAsync(OllamaUrl);
+        if (version != null) return OllamaInfo(version, true);
+        // On PATH, or where OllamaSetup.exe puts it before PATH is read again.
+        var installed = Locator.FindOnPath("ollama") != null
+            || File.Exists(Environment.ExpandEnvironmentVariables(@"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"));
+        return OllamaInfo(null, installed);
+    }
+
+    // version: what Ollama answered ("" without a usable version), or null when nothing answered.
+    public static AccountInfo OllamaInfo(string? version, bool installed) => version switch
+    {
+        null when !installed => new AccountInfo(null, Note: "Ollama isn't installed: get it from ollama.com"),
+        null => new AccountInfo(null, Note: "Ollama isn't running: start it, then Check accounts again"),
+        "" => new AccountInfo(true, Plan: "Ollama"),
+        _ => new AccountInfo(true, Plan: "Ollama " + version),
+    };
+
+    // Ollama's {"version":"0.32.12"}, 3 s at most and without a proxy. null when nothing (or not Ollama) answered.
+    public static async Task<string?> OllamaVersionAsync(string baseUrl, int timeoutMs = 3000)
+    {
+        try
+        {
+            using var handler = new SocketsHttpHandler
+            {
+                UseProxy = false, UseCookies = false, AllowAutoRedirect = false, ConnectTimeout = TimeSpan.FromMilliseconds(timeoutMs),
+            };
+            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(timeoutMs), MaxResponseContentBufferSize = 64 * 1024 };
+            using var response = await http.GetAsync(baseUrl + "/api/version");
+            if (!response.IsSuccessStatusCode) return null;
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            if (doc.RootElement.ValueKind != JsonValueKind.Object || !doc.RootElement.TryGetProperty("version", out _)) return null;
+            var version = Json.Str(doc.RootElement, "version");
+            // It reaches the page and the phone, so only a plain version number is kept.
+            return Regex.IsMatch(version, @"^[0-9A-Za-z.+-]{1,32}\z") ? version : "";
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
 

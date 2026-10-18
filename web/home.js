@@ -81,6 +81,14 @@ const HomeData = (() => {
     return parts.join(' · ') || 'All quiet';
   }
 
+  // Home's project cards: the sidebar's workspaces, and Chats (Start without a project) first even before its first use,
+  // while C# hasn't made and listed it yet. Once listed it is one of them (C# lists it first).
+  function projectCards(workspaces, chatsFolder) {
+    const list = Array.isArray(workspaces) ? workspaces : [];
+    if (!chatsFolder || list.some(workspace => same(workspace.path, chatsFolder))) return list;
+    return [{ path: chatsFolder, name: 'Chats', exists: true, unity: false }, ...list];
+  }
+
   // A path under the user folder starts with ~, as in a terminal.
   const shortPath = path => String(path || '').replace(/^[A-Za-z]:\\Users\\[^\\]+(?=\\|$)/i, '~');
 
@@ -92,7 +100,7 @@ const HomeData = (() => {
     return words.every(word => text.includes(word));
   }
 
-  return { activity, sparkPoints, groupRecent, shortTime, ago, statusLine, shortPath, matches, daysBetween, activeOf };
+  return { activity, sparkPoints, groupRecent, shortTime, ago, statusLine, projectCards, shortPath, matches, daysBetween, activeOf };
 })();
 
 if (typeof module !== 'undefined') module.exports = HomeData;

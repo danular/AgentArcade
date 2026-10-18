@@ -38,6 +38,7 @@ const ICONS = {
   folder: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z"/>',
   'folder-plus': '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z"/><path d="M12 10.5v5M9.5 13h5"/>',
   cube: '<path d="M12 2.5 3.5 7.25v9.5L12 21.5l8.5-4.75v-9.5z"/><path d="M3.5 7.25 12 12l8.5-4.75M12 12v9.5"/>',
+  chat: '<path d="M20.5 14a2.5 2.5 0 0 1-2.5 2.5H9.5L4 20.5V6.5A2.5 2.5 0 0 1 6.5 4H18a2.5 2.5 0 0 1 2.5 2.5z"/>',
   doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
   terminal: '<path d="m5 17 5-5-5-5M12 19h7"/>',
@@ -89,6 +90,7 @@ let portraitMode = Layout.portrait(innerWidth, innerHeight);
 let drawerMode = Layout.drawer(innerWidth);
 let drawerOpen = false;
 let openMenu = null;
+let menuFrom = null; // the open menu's { anchor, focus }: its button, and what had focus before it opened
 let drag = null;
 let historyView = null;
 let pendingResume = null;
@@ -106,6 +108,9 @@ const same = (a, b) => (a || '').toLowerCase() === (b || '').toLowerCase();
 const accountOf = key => state.accounts.find(account => account.key === key);
 const agentOf = account => account && state.agents.find(agent => agent.name === account.agent);
 const workspaceOf = path => state.workspaces.find(workspace => same(workspace.path, path));
+// Start without a project: Chats, the folder C# keeps for agents outside any project (NoProject in Remote.cs).
+const isChats = path => !!state.chatsFolder && same(path, state.chatsFolder);
+const workspaceIcon = workspace => isChats(workspace?.path) ? 'chat' : workspace?.unity ? 'cube' : 'folder';
 const sessionsIn = path => [...sessions.values()].filter(session => same(session.workspace, path)).sort((a, b) => a.order - b.order);
 const runningFor = key => [...sessions.values()].filter(session => session.key === key && session.running).length;
 const shortVersion = version => (String(version).match(/\d+\.\d+(\.\d+)?/) || [version])[0];
@@ -167,10 +172,14 @@ function toast(text, kind = 'info') {
 
 // ---------- menus and dialogs ----------
 
-function menu(anchor, items) {
+// anchor: the button the menu belongs to; it opens under it, or at the pointer when at ({ x, y }, a right-click) is
+// given. An item's key (one letter, shown on its right) runs it while the menu has focus (menuKey).
+function menu(anchor, items, at = null) {
   closeMenu();
   const element = document.createElement('div');
   element.className = 'menu';
+  element.setAttribute('role', 'menu');
+  element.tabIndex = -1;
   for (const item of items) {
     if (item === '-') {
       element.insertAdjacentHTML('beforeend', '<div class="menu-sep"></div>');
@@ -182,9 +191,15 @@ function menu(anchor, items) {
     }
     const button = document.createElement('button');
     button.className = 'menu-item' + (item.danger ? ' danger' : '');
+    button.setAttribute('role', 'menuitem');
     button.disabled = !!item.disabled;
     button.innerHTML = (item.avatar || (item.icon ? icon(item.icon, 15) : '')) +
-      `<span class="menu-label"><span>${esc(item.label)}</span>${item.sub ? `<span class="menu-sub">${esc(item.sub)}</span>` : ''}</span>`;
+      `<span class="menu-label"><span>${esc(item.label)}</span>${item.sub ? `<span class="menu-sub">${esc(item.sub)}</span>` : ''}</span>` +
+      (item.key ? `<kbd aria-hidden="true">${esc(item.key.toUpperCase())}</kbd>` : '');
+    if (item.key) {
+      button.dataset.key = item.key;
+      button.setAttribute('aria-keyshortcuts', item.key.toUpperCase());
+    }
     button.addEventListener('click', event => {
       event.stopPropagation();
       closeMenu();
@@ -194,21 +209,60 @@ function menu(anchor, items) {
     });
     element.append(button);
   }
+  element.addEventListener('keydown', event => menuKey(element, event));
+  // The pointer picks an item for the keys too, so Down goes on from the item under it.
+  element.addEventListener('mouseover', event => event.target.closest('.menu-item:not(:disabled)')?.focus({ preventScroll: true }));
   document.body.append(element);
-  const rect = anchor.getBoundingClientRect();
+  // At a pointer (at, a right-click), the menu's top left corner goes there, or its bottom left when it doesn't fit
+  // below; under its anchor otherwise.
+  const rect = at ? { left: at.x, right: at.x, top: at.y, bottom: at.y } : anchor.getBoundingClientRect();
+  const gap = at ? 0 : 6;
   const width = element.offsetWidth;
   const height = element.offsetHeight;
-  const left = Math.max(8, Math.min(rect.right - width, innerWidth - width - 8));
-  let top = rect.bottom + 6;
-  if (top + height > innerHeight - 8) top = Math.max(8, rect.top - height - 6);
+  const left = Math.max(8, Math.min(at ? rect.left : rect.right - width, innerWidth - width - 8));
+  let top = rect.bottom + gap;
+  if (top + height > innerHeight - 8) top = Math.max(8, rect.top - height - gap);
   element.style.left = left + 'px';
   element.style.top = top + 'px';
   openMenu = element;
+  menuFrom = { anchor, focus: document.activeElement };
+  anchor.setAttribute('aria-expanded', 'true');
+  // Focus moves into the menu, so its keys work: onto the first item when it was opened from the keyboard, else onto
+  // the menu itself, where Down goes to the first item.
+  const first = element.querySelector('.menu-item:not(:disabled)');
+  (first && menuFrom.focus?.matches(':focus-visible') ? first : element).focus({ preventScroll: true });
 }
 
 function closeMenu() {
-  openMenu?.remove();
-  openMenu = null;
+  if (!openMenu) return;
+  const { anchor, focus } = menuFrom;
+  // Focus that is still in the menu goes back to where it was before it opened.
+  const back = openMenu.contains(document.activeElement) && focus?.isConnected && focus !== document.body ? focus : null;
+  anchor.removeAttribute('aria-expanded');
+  openMenu.remove();
+  openMenu = menuFrom = null;
+  back?.focus({ preventScroll: true });
+}
+
+// Keys in an open menu. They only reach it while focus is in the menu, never from a terminal or a text field. Up, Down,
+// Home and End move between the items, Enter or Space runs the focused one (the button's own click), an item's letter
+// runs that item at once, and Tab leaves the menu (Esc closes it, below).
+function menuKey(element, event) {
+  if (event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
+  const items = [...element.querySelectorAll('.menu-item:not(:disabled)')];
+  const index = items.indexOf(document.activeElement);
+  const letter = event.key?.length === 1 ? event.key.toLowerCase() : '';
+  if (event.key === 'Tab') return closeMenu();
+  let next = null;
+  if (event.key === 'ArrowDown') next = items[(index + 1) % items.length];
+  else if (event.key === 'ArrowUp') next = items.at(index <= 0 ? -1 : index - 1);
+  else if (event.key === 'Home') next = items[0];
+  else if (event.key === 'End') next = items.at(-1);
+  else if (!letter || letter === ' ') return;
+  // Handled here, so the letter doesn't also land in a field the item opens.
+  event.preventDefault();
+  if (next) next.focus({ preventScroll: true });
+  else items.find(item => item.dataset.key === letter)?.click();
 }
 
 document.addEventListener('mousedown', event => {
@@ -307,7 +361,7 @@ function renderWorkspaces() {
     const running = sessionsIn(workspace.path).filter(session => session.running);
     return `<div class="ws-row${active ? ' active' : ''}">` +
       `<button class="ws-main" type="button" data-path="${esc(workspace.path)}" title="${esc(workspace.path)}"${active ? ' aria-current="page"' : ''}>` +
-      `<span class="ws-icon">${icon(workspace.unity ? 'cube' : 'folder', 15)}</span>` +
+      `<span class="ws-icon">${icon(workspaceIcon(workspace), 15)}</span>` +
       `<span class="ws-name ellipsis">${esc(workspace.name)}</span>` +
       (workspace.exists ? '' : '<span class="tag-warn">missing</span>') + '</button>' +
       dotsHtml(running) +
@@ -404,7 +458,9 @@ function renderEmpty() {
   const recent = history.filter(chat => same(chat.workspace, state.workspace)).slice(0, 4);
   $('#empty').innerHTML =
     `<div class="hero"><div class="logo">${LOGO}</div><h1>What are we building today?</h1>` +
-    `<p>Start an agent in <b>${esc(workspace ? workspace.name : 'your project')}</b>. Each one gets its own pane, and you can run several side by side.</p></div>` +
+    (isChats(state.workspace)
+      ? '<p>Start an agent without a project. It works in <b>Chats</b>, the folder Agent Arcade keeps for that. Each one gets its own pane, and you can run several side by side.</p></div>'
+      : `<p>Start an agent in <b>${esc(workspace ? workspace.name : 'your project')}</b>. Each one gets its own pane, and you can run several side by side.</p></div>`) +
     `<div class="cards">${cards || `<p class="tip">${checking ? 'Looking for your agents…'
       : 'No agents installed yet. <button class="text-btn link" data-settings-tab="agents">Install one in Settings</button>.'}</p>`}</div>` +
     (recent.length
@@ -472,7 +528,7 @@ function recentRow(chat) {
   const project = workspaceOf(chat.workspace)?.name || folderName(chat.workspace);
   const problem = chat.open ? '' : resumeProblem(chat);
   const title = chat.title || 'Untitled chat';
-  const tip = chat.open ? `Show it in ${project}` : problem || `Resume in ${project}`;
+  const tip = chat.open ? `Show it in ${project}` : problem || `Resume in ${project}. ${resumeTip(chat)}`;
   return `<div class="chat-row${problem ? ' cant' : ''}">` +
     `<button class="chat-main" type="button" data-recent="${esc(chat.id)}" title="${esc(`${title} · ${project}\n${tip}`)}">` +
     avatar(agent, 'sm') +
@@ -509,7 +565,7 @@ function renderHome() {
   box.innerHTML = '<div class="home-inner">' +
     `<header class="hello"><h2>What are we building today?</h2><p id="home-counts">${esc(homeCounts(statusCounts()))}</p></header>` +
     `<div class="needs-list" id="home-needs">${needsHtml()}</div>` +
-    `<div class="project-grid">${state.workspaces.map(projectCard).join('')}` +
+    `<div class="project-grid">${HomeData.projectCards(state.workspaces, state.chatsFolder).map(projectCard).join('')}` +
     `<button class="project-card add" type="button" data-add-project aria-haspopup="menu">${icon('plus', 22)}<span>Add a folder or make a new project</span></button></div>` +
     (recent.length
       ? `<section class="pick-up" aria-labelledby="pick-up-title"><h3 id="pick-up-title">Pick up where you left off</h3><div class="pick-strip">${recent.map(pickUpCard).join('')}</div></section>`
@@ -520,7 +576,7 @@ function renderHome() {
 }
 
 function homeCounts({ needs, working }) {
-  const projects = state.workspaces.length;
+  const projects = state.workspaces.filter(workspace => !isChats(workspace.path)).length;
   return `${projects} project${projects === 1 ? '' : 's'} · ${working} agent${working === 1 ? '' : 's'} working · ${needs} waiting for you`;
 }
 
@@ -568,7 +624,7 @@ function projectCard(workspace) {
     `<span class="ellipsis">${esc(workspace.name)}</span></button>` +
     (workspace.exists ? '' : '<span class="tag-warn">missing</span>') +
     `<span class="git-chip" data-git="${esc(path.toLowerCase())}"${gitInfo.get(path.toLowerCase()) ? '' : ' hidden'}>${gitChipInner(gitInfo.get(path.toLowerCase()))}</span></h3>` +
-    `<div class="card-path ellipsis" title="${esc(path)}">${esc(HomeData.shortPath(path))}</div>` +
+    `<div class="card-path ellipsis" title="${esc(path)}">${esc((isChats(path) ? 'Without a project · ' : '') + HomeData.shortPath(path))}</div>` +
     `<div class="card-agents">${agents}</div>` +
     sparkline(counts) +
     `<div class="card-chats">${chats.slice(0, 2).map(chat => `<div class="ellipsis">${esc(chat.title || 'Untitled chat')}</div>`).join('') || '<div class="muted">No chats yet</div>'}</div>` +
@@ -593,7 +649,7 @@ function pickUpCard(chat) {
   const project = workspaceOf(chat.workspace)?.name || folderName(chat.workspace);
   const problem = chat.open ? '' : resumeProblem(chat);
   const title = chat.title || 'Untitled chat';
-  return `<button class="pick-chat" type="button" data-recent="${esc(chat.id)}" title="${esc(chat.open ? `Show it in ${project}` : problem || `Resume in ${project}`)}">` +
+  return `<button class="pick-chat" type="button" data-recent="${esc(chat.id)}" title="${esc(chat.open ? `Show it in ${project}` : problem || `Resume in ${project}. ${resumeTip(chat)}`)}">` +
     `${avatar(agent, 'sm')}<span class="pick-text"><span class="ellipsis">${esc(title)}</span>` +
     `<span class="pick-sub ellipsis">${esc(project)} · ${esc(chat.open ? 'open' : HomeData.shortTime(HomeData.activeOf(chat)))}</span></span></button>`;
 }
@@ -1576,15 +1632,24 @@ const imageSrc = image => `${image.url}?v=${image.version}`;
 
 // ---------- Images tab ----------
 
-// The side panel's Images tab: the images in the current project and in its agents' own image folders. Drag one
-// onto a pane to paste its path into that agent's prompt. The Images button in the top bar opens the tab, or
-// hides the panel when the tab already shows.
+// The side panel's Images tab: the images in the current project and in its agents' own image folders. Click one to
+// view it over the tab, right-click for more, or drag it onto a pane to paste its path into that agent's prompt.
+// The Images button in the top bar opens the tab, or hides the panel when the tab already shows.
 const IMAGE_DRAG = 'application/x-agent-arcade-image';
+const imagesView = $('.panel-view[data-view="images"]');
 // Each request is numbered; a scan that finishes late doesn't replace the answer to a newer one.
 let imagesAsked = 0;
 let imagesShown = 0;
 let imagesKey = '';
 let imagesTimer = 0;
+// How many of the newest images the tab asks for: Show more adds IMAGES_STEP, up to IMAGES_MOST. MainForm.ImagesLimit
+// clamps it the same way.
+const IMAGES_STEP = 300;
+const IMAGES_MOST = 3000;
+let imagesLimit = IMAGES_STEP;
+// The images listed, and the one the viewer over the tab shows (null when it is closed).
+let imagesItems = [];
+let tileViewing = null;
 
 function toggleImages() {
   if (panelShows('images')) return setPanel(false);
@@ -1595,7 +1660,7 @@ function toggleImages() {
 function loadImages() {
   if (!panelShows('images')) return;
   if (!state.workspace) return showImageList(null, []);
-  send({ type: 'listImages', workspace: state.workspace, seq: ++imagesAsked });
+  send({ type: 'listImages', workspace: state.workspace, seq: ++imagesAsked, limit: imagesLimit });
 }
 
 // New images come in bursts (a test run saving screenshots): one look once they stop.
@@ -1604,24 +1669,108 @@ function loadImagesSoon() {
   imagesTimer = setTimeout(loadImages, 800);
 }
 
+// The time is in the image URL: an image written again under the same name shows anew.
+const tileSrc = item => `${item.url}?v=${item.time || 0}`;
+
 // total: how many images there are; the C# side sends only the newest ones.
 function showImageList(workspace, items, total = items.length) {
   if (!panelShows('images') || (workspace && !same(workspace, state.workspace))) return;
-  // The time is in the key and the image URL: an image written again under the same name shows anew.
-  const key = JSON.stringify([total, items.map(item => [item.path, item.time])]);
+  // The limit is in the key, so Show more redraws even when it found nothing new.
+  const key = JSON.stringify([total, imagesLimit, items.map(item => [item.path, item.time])]);
   if (key === imagesKey) return;
   imagesKey = key;
+  imagesItems = items;
   const count = $('#images-count');
   count.textContent = !items.length ? '' : total > items.length ? `${items.length} of ${total}` : String(items.length);
   count.title = total > items.length ? `The ${items.length} newest of ${total} images` : '';
   const grid = $('#images-grid');
   const scroll = grid.scrollTop;
+  const more = total <= items.length ? ''
+    : imagesLimit < IMAGES_MOST ? `<button class="ghost-btn images-more" data-act="images-more">Show ${Math.min(IMAGES_STEP, total - items.length)} more</button>`
+    : `<p class="panel-empty">The tab lists the ${items.length} newest of ${total} images.</p>`;
   // Lazy: only the tiles scrolled into view load their (full-size) image.
   grid.innerHTML = items.length
-    ? items.map(item => `<figure class="image-tile" draggable="true" data-path="${esc(item.path)}" title="${esc(item.path)}">` +
-        `<img src="${esc(`${item.url}?v=${item.time || 0}`)}" alt="" draggable="false" loading="lazy" decoding="async"><figcaption>${esc(item.name)}</figcaption></figure>`).join('')
+    ? items.map((item, i) => `<figure class="image-tile" draggable="true" tabindex="0" data-index="${i}" data-path="${esc(item.path)}" title="${esc(item.path)}">` +
+        `<img src="${esc(tileSrc(item))}" alt="" draggable="false" loading="lazy" decoding="async"><figcaption>${esc(item.name)}</figcaption></figure>`).join('') + more
     : `<p class="panel-empty">${state.workspace ? 'No images in this project yet. Images that appear here show up on their own.' : 'Pick a project in the sidebar first.'}</p>`;
   grid.scrollTop = scroll;
+  if (!items.length) closeTile();
+  else if (tileViewing) tileCount();
+}
+
+// The viewer over the Images tab, like the one over a pane: arrows step through the listed images, Esc closes it, and
+// a click on the image switches between fit and actual size.
+function viewTile(item) {
+  if (!item) return;
+  tileViewing = item;
+  let view = imagesView.querySelector('.image-view');
+  if (!view) {
+    imagesView.insertAdjacentHTML('beforeend',
+      '<div class="image-view" tabindex="-1"><div class="image-bar">' +
+      `${icon('image', 15)}<span class="image-name ellipsis"></span><span class="image-count"></span>` +
+      `<button class="icon-btn small" data-act="tile-open" title="Open in the default app" aria-label="Open in the default app">${icon('external', 15)}</button>` +
+      `<button class="icon-btn small" data-act="tile-reveal" title="Show in folder" aria-label="Show in folder">${icon('folder', 15)}</button>` +
+      `<button class="icon-btn small" data-act="tile-close" title="Close (Esc)" aria-label="Close the image">${icon('close', 15)}</button>` +
+      '</div><div class="image-stage"><img alt="" draggable="false" title="Click to switch between fit and actual size"></div></div>');
+    view = imagesView.querySelector('.image-view');
+    view.addEventListener('keydown', tileKey);
+    view.querySelector('img').addEventListener('click', event => event.currentTarget.closest('.image-stage').classList.toggle('actual'));
+    view.querySelector('img').addEventListener('error', () => toast(`Can't show ${tileViewing?.name || 'that image'}.`, 'error'));
+  }
+  view.querySelector('.image-name').textContent = item.name;
+  view.querySelector('.image-name').title = item.path;
+  tileCount();
+  view.querySelector('.image-stage').classList.remove('actual');
+  view.querySelector('img').src = tileSrc(item);
+  view.focus();
+}
+
+// Where the viewed image is in the list, which a new image can change while the viewer is open.
+const tileIndex = () => imagesItems.findIndex(item => item.path === tileViewing?.path);
+
+function tileCount() {
+  const count = imagesView.querySelector('.image-view .image-count');
+  const i = tileIndex();
+  if (count) count.textContent = i >= 0 && imagesItems.length > 1 ? `${i + 1} / ${imagesItems.length}` : '';
+}
+
+function closeTile() {
+  const view = imagesView.querySelector('.image-view');
+  if (!view) return;
+  const i = tileIndex();
+  view.remove();
+  tileViewing = null;
+  if (i >= 0) $('#images-grid').querySelector(`.image-tile[data-index="${i}"]`)?.focus();
+}
+
+function tileKey(event) {
+  const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+  if (event.key === 'Escape') {
+    // A menu open over the viewer closes first.
+    if (openMenu) closeMenu();
+    else closeTile();
+  } else if (step && imagesItems.length) {
+    const i = tileIndex();
+    viewTile(imagesItems[i < 0 ? 0 : (i + step + imagesItems.length) % imagesItems.length]);
+  } else return;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+// A tile's right-click menu (or the viewed image's): under the tile (or image), or at the pointer (at) after a right-click.
+function tileMenu(item, anchor, viewing, at = null) {
+  menu(anchor, [
+    ...viewing ? [] : [{ label: 'Open', sub: 'Over this tab', icon: 'image', key: 'o', run: () => viewTile(item) }],
+    { label: 'Open in the default app', icon: 'external', key: 'd', run: () => send({ type: 'launchImage', url: item.url }) },
+    { label: 'Show in folder', icon: 'folder', key: 'f', run: () => send({ type: 'revealImage', url: item.url }) },
+    '-',
+    {
+      label: 'Copy path', icon: 'doc', key: 'c', run: () => {
+        send({ type: 'copy', text: item.path });
+        toast('Path copied.');
+      },
+    },
+  ], at);
 }
 
 function imageListArrived(message) {
@@ -1746,6 +1895,8 @@ function showPanelTab(tab) {
 function panelWorkspaceChanged() {
   if (previewFile) resetPreview();
   imagesKey = '';
+  imagesLimit = IMAGES_STEP;
+  closeTile();
   changesSelected = null;
   changesKey = '';
   diffShown = null;
@@ -1844,9 +1995,10 @@ function localUrl(text) {
   }
 }
 
+// An empty address clears the preview, like the Clear button.
 function openPreview(text) {
   const value = String(text || '').trim();
-  if (!value) return;
+  if (!value) return clearPreview();
   const url = localUrl(value);
   if (url) return showPreview(url, '');
   // A web address that isn't on this PC (C:\… is a path, not a scheme).
@@ -1879,6 +2031,13 @@ function resetPreview() {
   frame.hidden = true;
   $('#preview-empty').hidden = false;
   $('#preview-external').hidden = false;
+}
+
+// The Clear button: a blank panel, and no address to come back after a restart.
+function clearPreview() {
+  resetPreview();
+  $('#preview-address').value = '';
+  localStorage.removeItem('previewAddress');
 }
 
 function previewUrlArrived(message) {
@@ -1923,7 +2082,15 @@ function loadChanges(again = false) {
   if (!state.workspace) return changesArrived({ workspace: '', error: 'Pick a project in the sidebar first.' });
   if (again && changesWaiting && Date.now() - changesWaiting < LOST_MS) return;
   changesWaiting = Date.now();
-  send({ type: 'gitChanges', workspace: state.workspace, seq: ++changesAsked });
+  send({ type: 'gitChanges', workspace: state.workspace, seq: ++changesAsked, counts: true });
+}
+
+// "+12 −3": a file's lines added (green) and removed (red), as its diff shows them. A file without counts (binary,
+// too large, or a list too long to count) shows none.
+function lineCounts(added, removed) {
+  const plus = Number.isInteger(added) && added > 0 ? `<span class="lines-add">+${added}</span>` : '';
+  const minus = Number.isInteger(removed) && removed > 0 ? `<span class="lines-del">−${removed}</span>` : '';
+  return plus && minus ? `${plus} ${minus}` : plus || minus;
 }
 
 function changesArrived(message) {
@@ -1939,8 +2106,13 @@ function changesArrived(message) {
     changesFiles = files;
     changesTrust = message.trust?.config || '';
     $('#changes-branch').textContent = message.error ? '' : message.branch || '';
-    $('#changes-count').textContent = message.error || !files.length ? ''
-      : message.total > files.length ? `${files.length} of ${message.total} files` : `${files.length} file${files.length === 1 ? '' : 's'}`;
+    // The total of the files with counts, next to how many files: only for the whole list.
+    const counted = files.filter(file => Number.isInteger(file.added) && Number.isInteger(file.removed));
+    const totals = message.total > files.length ? ''
+      : lineCounts(counted.reduce((sum, file) => sum + file.added, 0), counted.reduce((sum, file) => sum + file.removed, 0));
+    $('#changes-count').innerHTML = message.error || !files.length ? ''
+      : esc(message.total > files.length ? `${files.length} of ${message.total} files` : `${files.length} file${files.length === 1 ? '' : 's'}`)
+        + (totals ? ` <span class="change-lines">${totals}</span>` : '');
     const list = $('#changes-list');
     if (message.trust) {
       // The repository's config makes git read other files or another folder (MainForm.TrustGit stores the answer).
@@ -1967,7 +2139,8 @@ function changesArrived(message) {
         `title="${esc(file.from ? `${file.from} → ${file.path}` : file.path)} (${esc(file.status)})">` +
         `<span class="change-status ${esc(file.status)}">${STATUS_LETTER[file.status] || 'M'}</span>` +
         `<span class="change-name ellipsis">${esc(file.path.slice(slash + 1))}</span>` +
-        `<span class="change-dir ellipsis">${esc(slash > 0 ? file.path.slice(0, slash) : '')}</span></button>`;
+        `<span class="change-dir ellipsis">${esc(slash > 0 ? file.path.slice(0, slash) : '')}</span>` +
+        `<span class="change-lines">${lineCounts(file.added, file.removed)}</span></button>`;
     }).join('');
     list.scrollTop = scroll;
     if (!changesSelected) {
@@ -1986,9 +2159,20 @@ function requestDiff(file, again = false) {
   send({ type: 'gitDiff', workspace: state.workspace, path: file.path, from: file.from || '', untracked: file.status === 'new' });
 }
 
-const diffClass = line =>
-  /^(diff |index |--- |\+\+\+ |new file|deleted file|similarity |rename |old mode|new mode|Binary files)/.test(line) ? 'meta'
-    : line.startsWith('@@') ? 'hunk' : line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : '';
+// The header lines (diff, index, ---, +++ …) come only before a file's first @@. Inside a hunk the first character
+// decides, so a removed line that read "-- a comment" (Lua, SQL) shows as removed, not as a header.
+function diffClasses(lines) {
+  let hunk = false;
+  return lines.map(line => {
+    if (line.startsWith('diff ')) hunk = false;
+    if (line.startsWith('@@')) {
+      hunk = true;
+      return 'hunk';
+    }
+    if (!hunk) return /^(diff |index |--- |\+\+\+ |new file|deleted file|similarity |dissimilarity |rename |copy |old mode|new mode|Binary files)/.test(line) ? 'meta' : '';
+    return line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : line.startsWith('\\') ? 'meta' : '';
+  });
+}
 
 function diffArrived(message) {
   diffWaiting = 0;
@@ -2010,8 +2194,9 @@ function diffArrived(message) {
     return;
   }
   if (message.cut) lines.push('… the rest is cut off: this diff is too long to show here.');
+  const classes = diffClasses(lines);
   box.innerHTML = '<div class="diff-lines">' +
-    lines.map(line => `<div class="diff-line ${diffClass(line)}">${esc(line) || ' '}</div>`).join('') + '</div>';
+    lines.map((line, i) => `<div class="diff-line ${classes[i]}">${esc(line) || ' '}</div>`).join('') + '</div>';
   box.scrollTop = scroll;
 }
 
@@ -2177,33 +2362,33 @@ function paneMenu(session, anchor) {
   const items = [];
   if (isChat(session)) {
     items.push(
-      { label: 'Rename chat…', sub: 'Or double-click the title', icon: 'pencil', run: () => editTitle(session) },
-      { label: 'Chat history', icon: 'history', run: () => openHistory() },
+      { label: 'Rename chat…', sub: 'Or double-click the title', icon: 'pencil', key: 'r', run: () => editTitle(session) },
+      { label: 'Chat history', icon: 'history', key: 'h', run: () => openHistory() },
       '-',
-      { label: 'Paste "save progress" prompt', sub: 'Writes HANDOFF.md for the next agent', icon: 'save', run: () => pastePrompt(session, SAVE_PROMPT) },
-      { label: 'Paste "continue" prompt', sub: 'Picks up from HANDOFF.md', icon: 'play', run: () => pastePrompt(session, CONTINUE_PROMPT) },
+      { label: 'Paste "save progress" prompt', sub: 'Writes HANDOFF.md for the next agent', icon: 'save', key: 's', run: () => pastePrompt(session, SAVE_PROMPT) },
+      { label: 'Paste "continue" prompt', sub: 'Picks up from HANDOFF.md', icon: 'play', key: 'c', run: () => pastePrompt(session, CONTINUE_PROMPT) },
       '-');
   }
   items.push(
     {
-      label: 'Clear screen', icon: 'eraser',
+      label: 'Clear screen', icon: 'eraser', key: 'l',
       run: () => {
         session.term.clear();
         screenChanged(session);
       },
     },
-    { label: 'Text size…', sub: `${fontSize} px · Ctrl+= / Ctrl+-`, icon: 'text', run: () => openSettings('general') },
+    { label: 'Text size…', sub: `${fontSize} px · Ctrl+= / Ctrl+-`, icon: 'text', key: 't', run: () => openSettings('general') },
     {
       label: notifyOn ? 'Turn off Windows notifications' : 'Turn on Windows notifications',
-      sub: 'When an agent is done or needs you, for every pane', icon: 'bell',
+      sub: 'When an agent is done or needs you, for every pane', icon: 'bell', key: 'n',
       run: () => {
         setNotify(!notifyOn);
         toast(notifyOn ? 'Windows tells you when an agent is done or needs you, unless you are looking at it.' : 'No more Windows notifications. Panes still turn red when an agent needs you.');
       },
     },
-    { label: session.running ? 'Restart' : 'Start again', sub: session.mode === 'resume' ? 'Continues the same chat' : isChat(session) ? 'Starts a new chat' : null, icon: 'refresh', run: () => restart(session) });
+    { label: session.running ? 'Restart' : 'Start again', sub: session.mode === 'resume' ? 'Continues the same chat' : isChat(session) ? 'Starts a new chat' : null, icon: 'refresh', key: 'a', run: () => restart(session) });
   if (isChat(session)) {
-    items.push({ label: 'Open in Windows Terminal', icon: 'external', run: () => send({ type: 'external', account: session.key }) });
+    items.push({ label: 'Open in Windows Terminal', icon: 'external', key: 'w', run: () => send({ type: 'external', account: session.key }) });
   }
   menu(anchor, items);
 }
@@ -2366,18 +2551,29 @@ async function newProject() {
 async function addAccount(agentName) {
   const choices = state.agents.filter(agent => agent.multi && agent.installed);
   if (!choices.length) return toast('Install Claude Code, Codex or Gemini first.', 'error');
+  // The suggested name is the agent's next free one (second, third, …).
+  let suggested = AccountsData.nextName(state.accounts, (choices.find(agent => agent.name === agentName) || choices[0]).name);
   const result = await modal({
     title: 'Add account',
     body: `<label>Agent<select name="agent">${choices.map(agent =>
         `<option${agent.name === agentName ? ' selected' : ''}>${esc(agent.name)}</option>`).join('')}</select></label>` +
-      '<label>Short name<input name="name" value="second" maxlength="31" spellcheck="false" autocomplete="off"></label>' +
-      '<p class="muted">The account gets its own folder and signs in with its own login. You can run it next to your other accounts.</p>',
+      `<label>Short name<input name="name" value="${esc(suggested)}" maxlength="31" spellcheck="false" autocomplete="off"></label>` +
+      '<p class="muted">The account gets its own folder and signs in with its own login. You can run it next to your other accounts. ' +
+      'Sign it in with a different login: the same login in two folders is still one subscription.</p>',
     confirm: 'Add and sign in',
+    // Another agent gets its own next free name, unless the user typed a name of their own.
+    opened: root => {
+      const name = root.querySelector('[name="name"]');
+      root.querySelector('[name="agent"]').addEventListener('change', event => {
+        if (name.value.trim() !== suggested) return;
+        suggested = AccountsData.nextName(state.accounts, event.target.value);
+        name.value = suggested;
+      });
+    },
     validate: values => {
       const name = values.name.trim();
       if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,30}$/.test(name)) return 'Use letters, digits, dot, _ or - (no spaces).';
-      if (name.toLowerCase() === 'main' || state.accounts.some(account => account.agent === values.agent && account.name.toLowerCase() === name.toLowerCase()))
-        return 'That name is already used for this agent.';
+      if (AccountsData.taken(state.accounts, values.agent, name)) return 'That name is already used for this agent.';
       return null;
     },
   });
@@ -2388,13 +2584,17 @@ function accountMenu(account, anchor) {
   const agent = agentOf(account);
   if (!account || !agent) return;
   menu(anchor, [
-    { label: 'New session', icon: 'terminal', disabled: !agent.installed, run: () => openSession(account.key) },
-    { label: 'Sign in', sub: account.main ? 'Or switch the account it uses' : null, icon: 'login', disabled: !agent.installed, run: () => confirmSignIn(account) },
-    { label: 'Open in Windows Terminal', icon: 'external', disabled: !agent.installed, run: () => send({ type: 'external', account: account.key }) },
-    { label: 'Install / update', icon: 'download', run: () => askInstall(agent) },
+    { label: 'New session', icon: 'terminal', key: 'n', disabled: !agent.installed, run: () => openSession(account.key) },
+    { label: 'Sign in', sub: account.main ? 'Or switch the account it uses' : null, icon: 'login', key: 's', disabled: !agent.installed, run: () => confirmSignIn(account) },
+    { label: 'Open in Windows Terminal', icon: 'external', key: 'w', disabled: !agent.installed, run: () => send({ type: 'external', account: account.key }) },
+    { label: 'Install / update', icon: 'download', key: 'i', run: () => askInstall(agent) },
+    ...(agent.remoteControl ? [{
+      label: 'Also open in the Claude app', sub: account.remoteControl ? 'On (Remote Control). Click to turn off' : 'Remote Control, to follow chats on an iPhone',
+      icon: 'phone', key: 'c', run: () => askRemoteControl(account, agent),
+    }] : []),
     '-',
     {
-      label: 'Remove account', icon: 'trash', danger: true, disabled: account.main,
+      label: 'Remove account', icon: 'trash', key: 'd', danger: true, disabled: account.main,
       sub: account.main ? 'The main account always stays' : null,
       run: async () => {
         const ok = await modal({
@@ -2409,15 +2609,36 @@ function accountMenu(account, anchor) {
   ]);
 }
 
-function workspaceMenu(path, anchor) {
+// Claude Code's own Remote Control for one account (AccountStore.SetRemoteControl and ChatArgs in C#): its new and
+// resumed chats also show in the Claude app, the way to follow them on an iPhone. Turning it on says first what it means.
+async function askRemoteControl(account, agent) {
+  const on = !account.remoteControl;
+  if (on) {
+    const ok = await modal({
+      title: 'Also open in the Claude app?',
+      body: `<p>New and resumed chats of ${esc(agent.name)} (${esc(account.name)}) start with Claude Code's Remote Control, so they also show ` +
+        'in the Claude app (iPhone, iPad, Android) and at claude.ai/code, where you can follow and drive them. Chats that already run stay as they are.</p>' +
+        "<p>The chat then <b>goes through Anthropic's servers</b>. It needs a Claude Pro, Max, Team or Enterprise plan (on Team and Enterprise an Owner " +
+        'turns Remote Control on first); it doesn\'t work with an API key, Amazon Bedrock or Google Vertex AI.</p>' +
+        '<p>It covers Claude Code only. Agent Arcade Remote on Android shows every agent.</p>',
+      confirm: 'Turn on',
+    });
+    if (!ok) return;
+  }
+  send({ type: 'remoteControl', account: account.key, on });
+}
+
+function workspaceMenu(path, anchor, at) {
   const running = sessionsIn(path).filter(session => session.running).length;
   const chats = history.filter(chat => same(chat.workspace, path)).length;
+  // Chats always stays: agents started without a project work there (MainForm.RemoveWorkspace refuses it too).
+  const kept = isChats(path) || state.workspaces.length <= 1;
   menu(anchor, [
-    { label: 'Chat history', sub: chats ? `${chats} chat${chats === 1 ? '' : 's'}` : 'No chats yet', icon: 'history', run: () => openHistory('project', path) },
+    { label: 'Chat history', sub: chats ? `${chats} chat${chats === 1 ? '' : 's'}` : 'No chats yet', icon: 'history', key: 'h', run: () => openHistory('project', path) },
     '-',
     {
-      label: 'Remove from list', icon: 'trash', danger: true, disabled: state.workspaces.length <= 1,
-      sub: state.workspaces.length <= 1 ? 'Add another workspace first' : 'The folder itself stays',
+      label: 'Remove from list', icon: 'trash', key: 'd', danger: true, disabled: kept,
+      sub: isChats(path) ? 'Chats always stays' : kept ? 'Add another workspace first' : 'The folder itself stays',
       run: async () => {
         const ok = await modal({
           title: `Remove ${workspaceOf(path)?.name || path}?`,
@@ -2431,7 +2652,7 @@ function workspaceMenu(path, anchor) {
         send({ type: 'removeWorkspace', path });
       },
     },
-  ]);
+  ], at);
 }
 
 function newAgentMenu(anchor) {
@@ -2439,11 +2660,36 @@ function newAgentMenu(anchor) {
   for (const account of state.accounts) {
     const agent = agentOf(account);
     if (!agent?.installed) continue;
-    items.push({ label: `${agent.name} · ${account.name}`, sub: accountLine(account), avatar: avatar(agent, 'sm'), run: () => openSession(account.key) });
+    const sub = accountLine(account) + (account.remoteControl && agent.remoteControl ? ' · also in the Claude app' : '');
+    items.push({ label: `${agent.name} · ${account.name}`, sub, avatar: avatar(agent, 'sm'), run: () => openSession(account.key) });
   }
   if (items.length === 1) items.push({ label: 'No agents installed yet', disabled: true, run: () => {} });
+  else if (state.chatsFolder && !isChats(state.workspace)) {
+    // A menu picked from the sidebar drawer closes the drawer, so the second menu opens at the top bar's New agent.
+    const at = drawerMode && anchor.closest?.('.sidebar') ? $('#new-agent') : anchor;
+    items.push('-', { label: 'Start without a project…', sub: 'In Chats, a folder outside your projects', icon: 'chat', run: () => noProjectMenu(at) });
+  }
   items.push('-', { label: 'Add account…', icon: 'plus', run: () => addAccount() });
   menu(anchor, items);
+}
+
+// The New agent menu's Start without a project: the same agents, started in Chats.
+function noProjectMenu(anchor) {
+  const items = [{ title: 'Start without a project' }];
+  for (const account of state.accounts) {
+    const agent = agentOf(account);
+    if (!agent?.installed) continue;
+    items.push({ label: `${agent.name} · ${account.name}`, sub: accountLine(account), avatar: avatar(agent, 'sm'), run: () => startWithoutProject(account.key) });
+  }
+  menu(anchor, items);
+}
+
+// Chats opens like a project (C# makes and lists it the first time, before the agent's start reaches it), then the
+// agent starts there.
+function startWithoutProject(key) {
+  if (!state.chatsFolder) return;
+  openProject(state.chatsFolder);
+  return openSession(key);
 }
 
 // The top bar's ⋯: the project's folder, images, shared instructions, Windows Terminal, Unity and chat history.
@@ -2452,14 +2698,14 @@ function projectMenu(anchor) {
   const name = workspace?.name || 'this project';
   const chats = history.filter(chat => same(chat.workspace, state.workspace)).length;
   const items = [
-    { label: 'Open folder', sub: 'In File Explorer', icon: 'folder', run: () => send({ type: 'openFolder' }) },
-    { label: 'Images', sub: 'In the side panel, to drag onto a pane', icon: 'image', run: toggleImages },
-    { label: 'Shared instructions…', sub: 'The same instructions for every agent', icon: 'doc', run: () => openSettings('instructions') },
-    { label: 'Open in Windows Terminal…', sub: 'An agent outside Agent Arcade', icon: 'external', run: () => terminalMenu(anchor) },
+    { label: 'Open folder', sub: 'In File Explorer', icon: 'folder', key: 'o', run: () => send({ type: 'openFolder' }) },
+    { label: 'Images', sub: 'In the side panel, to drag onto a pane', icon: 'image', key: 'i', run: toggleImages },
+    { label: 'Shared instructions…', sub: 'The same instructions for every agent', icon: 'doc', key: 's', run: () => openSettings('instructions') },
+    { label: 'Open in Windows Terminal…', sub: 'An agent outside Agent Arcade', icon: 'external', key: 'w', run: () => terminalMenu(anchor) },
   ];
-  if (workspace?.unity) items.push({ label: 'Open in Unity', sub: 'The editor this project uses', icon: 'cube', run: () => send({ type: 'openUnity' }) });
+  if (workspace?.unity) items.push({ label: 'Open in Unity', sub: 'The editor this project uses', icon: 'cube', key: 'u', run: () => send({ type: 'openUnity' }) });
   items.push('-', {
-    label: 'Chat history', sub: chats ? `${chats} chat${chats === 1 ? '' : 's'} in ${name}` : `No chats in ${name} yet`, icon: 'history',
+    label: 'Chat history', sub: chats ? `${chats} chat${chats === 1 ? '' : 's'} in ${name}` : `No chats in ${name} yet`, icon: 'history', key: 'h',
     run: () => openHistory('project', state.workspace),
   });
   menu(anchor, items);
@@ -2480,10 +2726,10 @@ function terminalMenu(anchor) {
 // The sidebar's + next to Projects and Home's last card: a folder you have, or a new empty one.
 function addProjectMenu(anchor) {
   menu(anchor, [
-    { label: 'Add a project folder…', sub: 'A folder you already have', icon: 'folder', run: () => send({ type: 'addWorkspace' }) },
+    { label: 'Add a project folder…', sub: 'A folder you already have', icon: 'folder', key: 'a', run: () => send({ type: 'addWorkspace' }) },
     {
       label: 'New project…', sub: state.projectsFolder ? `An empty folder in ${state.projectsFolder}` : 'An empty folder for a new project',
-      icon: 'folder-plus', run: () => newProject(),
+      icon: 'folder-plus', key: 'n', run: () => newProject(),
     },
   ]);
 }
@@ -2510,10 +2756,16 @@ function resumeProblem(chat) {
   return '';
 }
 
+// What Resume does: exact reopens this very chat (Claude Code, and Codex once its chat id is known); agent opens the
+// agent's own resume list.
+function resumeTip(chat) {
+  return chat.resume === 'agent' ? `Opens ${chatAgent(chat).name}'s own resume list, which may ask which chat` : 'Continues exactly this chat';
+}
+
 function chatRow(chat) {
   const agent = chatAgent(chat);
   const problem = resumeProblem(chat);
-  const tip = chat.resume === 'agent' ? `Opens ${agent.name}'s own resume, which may ask which chat` : 'Continue this chat';
+  const tip = resumeTip(chat);
   const action = chat.open
     ? `<button class="ghost-btn small" data-show-chat="${esc(chat.id)}">Show</button>`
     : `<button class="ghost-btn small" data-resume="${esc(chat.id)}" title="${esc(problem || tip)}"${problem ? ' disabled' : ''}>${icon('play', 12)}<span>Resume</span></button>`;
@@ -2550,9 +2802,10 @@ function resumeChat(chat) {
 function selectWorkspace(path) {
   state.workspace = path;
   view = 'project';
+  // C# hears it before the side panel asks about the project: Chats is only made and listed by its first pick.
+  send({ type: 'selectWorkspace', path });
   render();
   panelWorkspaceChanged();
-  send({ type: 'selectWorkspace', path });
 }
 
 function renameChat(chat) {
@@ -2572,17 +2825,17 @@ function renameChat(chat) {
   });
 }
 
-function chatMenu(chat, anchor) {
+function chatMenu(chat, anchor, at) {
   menu(anchor, [
-    { label: 'Rename…', icon: 'pencil', run: () => renameChat(chat) },
-    { label: 'Copy title', icon: 'doc', disabled: !chat.title, run: () => send({ type: 'copy', text: chat.title }) },
+    { label: 'Rename…', icon: 'pencil', key: 'r', run: () => renameChat(chat) },
+    { label: 'Copy title', icon: 'doc', key: 'c', disabled: !chat.title, run: () => send({ type: 'copy', text: chat.title }) },
     '-',
     {
-      label: 'Remove from history', icon: 'trash', danger: true, disabled: chat.open,
+      label: 'Remove from history', icon: 'trash', key: 'd', danger: true, disabled: chat.open,
       sub: chat.open ? 'Close its pane first' : `The chat itself stays in ${chat.agent}`,
       run: () => send({ type: 'removeChat', chat: chat.id }),
     },
-  ]);
+  ], at);
 }
 
 // scope: 'project' (one folder) or 'all' (every project, also ones no longer in the sidebar).
@@ -2672,7 +2925,7 @@ function renderHistory() {
       : current ? '<span class="hist-current">current</span>'
         : `<button class="text-btn" data-open-workspace="${esc(group.path)}">Open project</button>`;
     const head = scope === 'all'
-      ? `<div class="hist-project"><span class="ws-icon">${icon(workspace?.unity ? 'cube' : 'folder', 15)}</span>` +
+      ? `<div class="hist-project"><span class="ws-icon">${icon(workspaceIcon(workspace || { path: group.path }), 15)}</span>` +
         `<span class="hist-project-name">${esc(workspace?.name || folderName(group.path))}</span>` +
         `<span class="hist-project-path ellipsis" title="${esc(group.path)}">${esc(group.path)}</span>` +
         `<span class="count">${group.chats.length}</span>${action}</div>`
@@ -3551,6 +3804,8 @@ function generalHtml() {
 
 // Today's agent list with versions, every account with its email, and the ways to add, install and sign in.
 function agentsHtml() {
+  // Two accounts of one agent with the same email are one subscription; both rows say so.
+  const sameLogins = AccountsData.sameLogins(state.accounts);
   const rows = state.agents.map(agent => {
     const version = agent.checking
       ? '<span class="muted">checking…</span>'
@@ -3561,11 +3816,17 @@ function agentsHtml() {
       const running = runningFor(account.key);
       const [dot, said] = account.checking ? ['wait', 'Checking'] : account.signedIn === true ? ['on', 'Signed in']
         : account.signedIn === false ? ['off', 'Not signed in'] : ['idle', 'Check inside the agent'];
+      const twins = sameLogins[account.key];
       return `<div class="acc-row${agent.installed ? '' : ' disabled'}"><span class="dot ${dot}" role="img" title="${said}" aria-label="${said}"></span>` +
         `<span class="acc-text"><span class="acc-top"><span class="acc-name">${esc(account.name)}</span>` +
         (account.plan ? `<span class="plan">${esc(account.plan)}</span>` : '') +
+        (account.remoteControl && agent.remoteControl
+          ? '<span class="plan" title="New and resumed chats also open in the Claude app (Remote Control). Change it in ⋯.">Claude app</span>' : '') +
         (running ? `<span class="count live" title="Running">${running} running</span>` : '') +
-        `</span><span class="acc-sub ellipsis">${esc(accountLine(account))}</span></span>` +
+        `</span><span class="acc-sub ellipsis">${esc(accountLine(account))}</span>` +
+        (twins ? `<span class="acc-same" title="The same email is one subscription with one usage limit, shared. For another subscription, sign one of them in with another login (⋯ → Sign in).">` +
+          `${esc(AccountsData.sameLoginText(twins))}</span>` : '') +
+        '</span>' +
         `<button class="icon-btn small" type="button" data-account-menu="${esc(account.key)}" data-key="account-${esc(account.key)}" ` +
         `title="New session, sign in, install, Windows Terminal, remove" aria-label="More for ${esc(agent.name)} (${esc(account.name)})" aria-haspopup="menu">${icon('more', 15)}</button></div>`;
     }).join('');
@@ -3585,7 +3846,79 @@ function agentsHtml() {
     '<button class="ghost-btn" type="button" data-edit-agents data-key="edit-agents">Edit agent list</button>' +
     '<button class="ghost-btn" type="button" data-add-account data-key="add-account">Add account…</button>' +
     `<button class="ghost-btn" type="button" data-refresh data-key="refresh">${icon('refresh', 14)}<span>Check accounts again</span></button></div>` +
-    '<p class="note">An account\'s ⋯ starts a session, signs in (or switches the account it uses), opens it in Windows Terminal, installs or updates the agent, or removes the account.</p>';
+    '<p class="note">An account\'s ⋯ starts a session, signs in (or switches the account it uses), opens it in Windows Terminal, installs or updates the agent, or removes the account. ' +
+    'For Claude Code it can also open the account\'s chats in the Claude app (Remote Control), to follow them on an iPhone.</p>' +
+    setupHtml();
+}
+
+// ---------- Settings → Agents and accounts → New sessions start with ----------
+
+// Per agent: a permission mode, a model and an effort, as the options its own CLI takes (AgentSetup in Backend.cs, which
+// checks them again). An agent whose CLI has none of them (setupOptions null) isn't listed.
+const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$/;
+
+function setupHtml() {
+  const agents = state.agents.filter(agent => agent.setupOptions);
+  if (!agents.length) return '';
+  return '<h4 class="settings-sub">New sessions start with</h4>' +
+    '<p class="note">For every account of the agent, in new and resumed chats, also the ones your phone starts. Sign-in panes and panes that already run keep theirs. ' +
+    "Only what the agent's own --help lists is offered.</p>" +
+    '<div>' + agents.map(agent => field(esc(agent.name), setupSummary(agent),
+      `<button class="ghost-btn small" type="button" data-setup="${esc(agent.name)}" data-key="setup-${esc(agent.name)}">Change…</button>`)).join('') + '</div>';
+}
+
+function setupSummary(agent) {
+  const setup = agent.setup || {};
+  const permission = agent.setupOptions.permissions.find(item => item.id === setup.permission);
+  const parts = [permission?.label, setup.model, setup.effort && `${setup.effort} effort`].filter(Boolean);
+  return parts.length ? esc(parts.join(' · ')) + `<span class="path-text">${esc(setup.args)}</span>` : "The agent's own settings.";
+}
+
+// The options a choice adds, as AgentSetup.Args builds them: permission mode, model, effort.
+function setupFlags(options, values) {
+  return [
+    options.permissions.find(item => item.id === values.permission)?.args,
+    options.model && values.model ? `${options.model} ${values.model}` : '',
+    options.effort && values.effort ? options.effort.replace('{0}', values.effort) : '',
+  ].filter(Boolean).join(' ');
+}
+
+async function editSetup(agentName) {
+  const agent = state.agents.find(item => item.name === agentName);
+  const options = agent?.setupOptions;
+  if (!options) return;
+  const setup = agent.setup || {};
+  const choose = (name, label, items, current) => `<label>${label}<select name="${name}"><option value="">Agent's default</option>` +
+    items.map(([value, text]) => `<option value="${esc(value)}"${value === current ? ' selected' : ''}>${esc(text)}</option>`).join('') + '</select></label>';
+  const result = await modal({
+    title: `${agent.name}: new sessions start with`,
+    body: (options.permissions.length ? choose('permission', 'Permissions', options.permissions.map(item => [item.id, item.label]), setup.permission) : '') +
+      (options.model
+        ? `<label>Model<input name="model" value="${esc(setup.model || '')}" placeholder="Agent's default" maxlength="100" spellcheck="false" autocomplete="off"></label>` +
+          `<p class="muted">${esc(options.modelHint || `The name ${agent.name}'s own ${options.model} option takes.`)} Letters, digits and . _ : / - only.</p>`
+        : '') +
+      (options.efforts.length ? choose('effort', 'Effort', options.efforts.map(level => [level, level]), setup.effort) : '') +
+      '<p class="setup-risk" hidden>The agent then edits files and runs commands without asking you, with your Windows permissions. ' +
+      'Agents your phone starts get this too.</p>' +
+      '<p class="muted">Adds to its command line: <span class="mono setup-line"></span></p>',
+    confirm: 'Save',
+    opened: root => {
+      const line = root.querySelector('.setup-line');
+      const risk = root.querySelector('.setup-risk');
+      const show = () => {
+        const values = Object.fromEntries([...root.querySelectorAll('[name]')].map(item => [item.name, item.value.trim()]));
+        line.textContent = setupFlags(options, values) || 'nothing';
+        risk.hidden = !options.permissions.find(item => item.id === values.permission)?.risky;
+      };
+      root.addEventListener('input', show);
+      root.addEventListener('change', show);
+      show();
+    },
+    validate: values => values.model && !MODEL_NAME.test(values.model.trim())
+      ? 'A model name has only letters, digits and . _ : / -, and starts with a letter or digit.'
+      : null,
+  });
+  if (result) send({ type: 'agentSetup', agent: agent.name, permission: result.permission || '', model: (result.model || '').trim(), effort: result.effort || '' });
 }
 
 function phoneTabHtml() {
@@ -3680,7 +4013,22 @@ function aboutHtml() {
     `<div class="about-links">${links.map(([key, label]) =>
       `<button class="ghost-btn small" type="button" data-link-to="${key}" data-key="link-${key}">${icon('external', 13)}<span>${label}</span></button>`).join('')}` +
     '<button class="ghost-btn small" type="button" data-releases data-key="releases">All releases</button></div>' +
+    aboutDataHtml() +
     (window.Mascot ? '<p class="note">Click the robot. Then click it five times, fast.</p>' : '') + '</div>';
+}
+
+// Your data lives apart from the app, so deleting or replacing the app's folder keeps it. Open folder shows it (C#
+// picks the folder, the page names none). startMenuCopy: the other copy the Start menu's Agent Arcade starts.
+function aboutDataHtml() {
+  const folder = appInfo?.dataFolder;
+  if (!folder) return '';
+  const pathText = path => `<span class="path-text" title="${esc(path)}">${esc(HomeData.shortPath(path))}</span>`;
+  return '<div class="about-data">' +
+    `<p>Settings, agents, chat history and paired phones are kept in ${pathText(folder)}` +
+    `${appInfo.dataFolderSet ? ' (AGENT_ARCADE_HOME)' : ''}, apart from the app. Deleting or replacing the app's folder keeps them.</p>` +
+    '<button class="ghost-btn small" type="button" data-open-data data-key="open-data">Open folder</button>' +
+    (appInfo.startMenuCopy ? `<p>Agent Arcade in the Start menu starts the copy in ${pathText(appInfo.startMenuCopy)}.</p>` : '') +
+    '</div>';
 }
 
 // The mascot (web/mascot.js) in slot; the app icon when that file is missing or fails. The button takes focus only
@@ -3727,6 +4075,7 @@ function settingsClick(event) {
       if (target.closest('[data-mcp-again]')) refreshMcp();
       return;
     case 'about': {
+      if (target.closest('[data-open-data]')) return send({ type: 'openDataFolder' });
       const link = target.closest('[data-link-to]');
       if (link && LINKS[link.dataset.linkTo]) send({ type: 'openUrl', url: LINKS[link.dataset.linkTo] });
     }
@@ -3772,6 +4121,8 @@ function agentsClick(target) {
   if (install) return askInstall(state.agents.find(agent => agent.name === install.dataset.install));
   const add = target.closest('[data-add]');
   if (add) return addAccount(add.dataset.add);
+  const setup = target.closest('[data-setup]');
+  if (setup) return editSetup(setup.dataset.setup);
   if (target.closest('[data-add-account]')) return addAccount();
   if (target.closest('[data-edit-agents]')) return send({ type: 'editAgents' });
   if (target.closest('[data-refresh]')) send({ type: 'refresh' });
@@ -3851,6 +4202,20 @@ $('#workspaces').addEventListener('click', event => {
   if (dot && sessions.has(dot.dataset.dot)) return showSession(dot.dataset.dot);
   const row = event.target.closest('[data-path]');
   if (row) openProject(row.dataset.path);
+});
+
+// A right-click on a chat in Recent or History, or on a project in the sidebar, opens its ⋯ menu at the pointer (from
+// the keyboard's menu key, under its ⋯). Everywhere else the browser's own menu stays off (above).
+document.addEventListener('contextmenu', event => {
+  const row = event.target.closest('#recent .chat-row, .hist-row, #workspaces .ws-row');
+  const more = row?.querySelector('[data-chat-menu], [data-workspace-menu]');
+  if (!more) return;
+  event.preventDefault();
+  const box = row.getBoundingClientRect();
+  const inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+  const at = inside ? { x: event.clientX, y: event.clientY } : null;
+  if (more.dataset.workspaceMenu) return workspaceMenu(more.dataset.workspaceMenu, more, at);
+  if (chatOf(more.dataset.chatMenu)) chatMenu(chatOf(more.dataset.chatMenu), more, at);
 });
 
 // A chat in Recent or Home's "Pick up where you left off": continued like History's Resume, or its pane shown.
@@ -3997,6 +4362,7 @@ document.addEventListener('keydown', event => {
 
 $('#toggle-panel').innerHTML = icon('panel', 16);
 $('#panel-close').innerHTML = icon('close', 14);
+$('#preview-clear').innerHTML = icon('close', 14);
 $('#preview-reload').innerHTML = icon('refresh', 14);
 $('#preview-external').innerHTML = icon('external', 14);
 $('#changes-refresh').innerHTML = icon('refresh', 14);
@@ -4010,6 +4376,10 @@ panel.querySelector('.panel-tabs').addEventListener('click', event => {
 $('#preview-form').addEventListener('submit', event => {
   event.preventDefault();
   openPreview($('#preview-address').value);
+});
+$('#preview-clear').addEventListener('click', () => {
+  clearPreview();
+  $('#preview-address').focus();
 });
 $('#preview-reload').addEventListener('click', () => {
   if (previewUrl) showPreview(previewUrl, previewFile);
@@ -4034,6 +4404,38 @@ $('#images-grid').addEventListener('dragstart', event => {
   // Only the path travels; the pane's drop handler pastes it like a dropped file.
   event.dataTransfer.setData(IMAGE_DRAG, tile.dataset.path);
   event.dataTransfer.effectAllowed = 'copy';
+});
+// A click opens the viewer (a drag onto a pane fires no click), as do Enter and Space on a focused tile.
+imagesView.addEventListener('click', event => {
+  const act = event.target.closest('[data-act]')?.dataset.act;
+  if (act === 'images-more') {
+    imagesLimit = Math.min(imagesLimit + IMAGES_STEP, IMAGES_MOST);
+    event.target.closest('button').disabled = true;
+    return loadImages();
+  }
+  if (act === 'tile-close') return closeTile();
+  if (act === 'tile-open' && tileViewing) return send({ type: 'launchImage', url: tileViewing.url });
+  if (act === 'tile-reveal' && tileViewing) return send({ type: 'revealImage', url: tileViewing.url });
+  const tile = event.target.closest('.image-tile');
+  if (tile) viewTile(imagesItems[Number(tile.dataset.index)]);
+});
+$('#images-grid').addEventListener('keydown', event => {
+  const tile = event.target.closest('.image-tile');
+  if (!tile || (event.key !== 'Enter' && event.key !== ' ')) return;
+  event.preventDefault();
+  viewTile(imagesItems[Number(tile.dataset.index)]);
+});
+// The page's own menu stays off (the contextmenu handler near menu()); tiles and the viewed image get this one.
+imagesView.addEventListener('contextmenu', event => {
+  const tile = event.target.closest('.image-tile');
+  const shown = !tile && event.target.closest('.image-stage img');
+  const item = tile ? imagesItems[Number(tile.dataset.index)] : shown && tileViewing;
+  if (!item) return;
+  event.preventDefault();
+  // The menu key (or Shift+F10) puts its point outside the element: then the menu opens under it.
+  const box = (tile || shown).getBoundingClientRect();
+  const pointer = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+  tileMenu(item, tile || shown, !tile, pointer ? { x: event.clientX, y: event.clientY } : null);
 });
 render();
 

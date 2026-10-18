@@ -130,6 +130,9 @@ static class SelfCheck
         var web = Path.Combine(AppContext.BaseDirectory, "web");
         Check("web-page", File.Exists(Path.Combine(web, "index.html")) && File.Exists(Path.Combine(web, "vendor", "xterm.js")) && File.Exists(Path.Combine(web, "icon.png")), web);
 
+        // The Start menu entry's rules, on a shortcut in a temp folder (the self-check never touches the real Start menu).
+        StartMenuCheck.Run(Check);
+
         using (var awake = new KeepAwake())
         {
             var held = awake.Set("Agent Arcade self-check") && awake.Reason == "Agent Arcade self-check";
@@ -177,6 +180,7 @@ static class SelfCheck
             "the old built-in hint becomes the API key / Code Assist one; an edited hint is kept");
 
         AgentCatalogueCheck.Run(Check, lines.Add);
+        AgentSetupCheck.Run(Check);
 
         try
         {
@@ -301,15 +305,22 @@ static class SelfCheck
             var chat = new ChatRecord { Id = "11111111-2222-3333-4444-555555555555", Agent = claudeDef.Name, Account = "main" };
             var started = ChatArgs.New(claudeDef, chat);
             var codexChat = new ChatRecord { Id = "x", Agent = codexDef.Name, Account = "main" };
-            ChatArgs.New(codexDef, codexChat);
+            var codexNew = ChatArgs.New(codexDef, codexChat);
+            var codexPicker = codexChat.ChatId.Length == 0 && ChatArgs.Resume(codexDef, codexChat) == "resume" && ChatArgs.Kind(codexDef, codexChat) == "agent";
+            // A Codex id learned from its chat file (SessionFiles) opens exactly that chat.
+            codexChat.ChatId = "01a14326-10e9-7e81-9cda-eeecb9c3b0b2";
             Check(
                 "chat-args",
                 started == "--session-id " + chat.Id && chat.ChatId == chat.Id
                     && ChatArgs.Resume(claudeDef, chat) == "--resume " + chat.Id
-                    && codexChat.ChatId.Length == 0 && ChatArgs.Resume(codexDef, codexChat) == "resume"
+                    && codexNew.Length == 0 && codexPicker
+                    && ChatArgs.Resume(codexDef, codexChat) == "resume " + codexChat.ChatId && ChatArgs.Kind(codexDef, codexChat) == "exact"
                     && defaults.Any(agent => agent.Command == "cursor-agent" && agent.Login == "login"),
-                "new chats get an id where the agent allows it; resume uses it");
+                "new chats get an id where the agent allows it; resume uses it; Codex opens its own list until its id is learned, then that chat");
         }
+
+        SessionFilesCheck.Run(Check);
+        RemoteControlCheck.Run(Check);
 
         {
             // Made up here, never real keys: each kind is hidden wherever it sits in a line, and prose stays as it is.
@@ -441,12 +452,14 @@ static class SelfCheck
                 File.SetLastWriteTimeUtc(generated, now.AddMinutes(-2));
                 var (first, total) = ProjectFiles.Newest([images, agentImages], ImageServer.IsImage, 1);
                 var (all, _) = ProjectFiles.Newest([images, agentImages], ImageServer.IsImage, 10);
+                var limits = new[] { 0, -5, 299, 600, 750, 3000, int.MaxValue, int.MinValue }.Select(MainForm.ImagesLimit);
                 Check(
                     "image-box",
                     total == 4 && first.Select(file => file.Path).SequenceEqual([newer]) && all.Select(file => file.Path).SequenceEqual([newer, generated, copied, made])
-                        && ImageWatcher.Skipped(images, Path.Combine(deepest, "too-deep", "skip.png")) && !ImageWatcher.Skipped(images, newer),
+                        && ImageWatcher.Skipped(images, Path.Combine(deepest, "too-deep", "skip.png")) && !ImageWatcher.Skipped(images, newer)
+                        && limits.SequenceEqual([300, 300, 300, 600, 600, 3000, 3000, 300]),
                     "the newest images come first (copied ones by when they arrived), the list is cut with the total kept, "
-                        + "an agent's image folder counts, and build, hidden and too-deep folders are skipped");
+                        + "an agent's image folder counts, build, hidden and too-deep folders are skipped, and Show more asks for whole steps of 300 up to 3000");
             }
             catch (Exception ex)
             {
@@ -550,6 +563,8 @@ static class SelfCheck
 
         GitSafetyCheck.Run(Check, lines.Add);
 
+        ChangeCountsCheck.Run(Check, lines.Add);
+
         McpCheck.Run(Check);
 
         RemoteSelfCheck.Run(Check);
@@ -605,6 +620,280 @@ static class SelfCheck
     static extern bool AttachConsole(uint dwProcessId);
 }
 
+// Settings → an account's ⋯ → Also open in the Claude app. Claude Code's Remote Control flags go last on the new and
+// resumed chats of an account that opted in, and nowhere else; the project name can't break the command line. The choice
+// is kept in accounts.json, the main account's too, while accounts come and go. Nothing here starts Claude Code.
+static class RemoteControlCheck
+{
+    public static void Run(Action<string, bool, string> check)
+    {
+        var defaults = AgentStore.Defaults();
+        var claude = defaults.First(agent => agent.Command == "claude");
+        var codex = defaults.First(agent => agent.Command == "codex");
+        var on = new AgentAccount { Agent = claude.Name, Name = "main", RemoteControl = true };
+        var off = new AgentAccount { Agent = claude.Name, Name = "main" };
+        const string Flags = " --remote-control-session-name-prefix My-Game --remote-control";
+        var chat = new ChatRecord { Id = "11111111-2222-3333-4444-555555555555", Agent = claude.Name, Account = "main", Workspace = @"C:\Projects\My Game" };
+        var withArgs = new AgentDef { Name = claude.Name, Command = "claude", Args = "--model opus", NewChatArgs = claude.NewChatArgs, RemoteControlArgs = claude.RemoteControlArgs };
+        var args = ChatArgs.New(claude, chat, on) == "--session-id " + chat.Id + Flags
+            && ChatArgs.Resume(claude, chat, on) == "--resume " + chat.Id + Flags
+            && ChatArgs.New(claude, chat, off) == "--session-id " + chat.Id && ChatArgs.Resume(claude, chat, off) == "--resume " + chat.Id
+            // A chat without an id of its own opens Claude Code's resume list, with Remote Control too.
+            && ChatArgs.Resume(claude, new ChatRecord { Id = "x", Workspace = chat.Workspace }, on) == "--resume" + Flags
+            && ChatArgs.New(withArgs, chat, on) == "--model opus --session-id " + chat.Id + Flags
+            // New sessions start with goes before Remote Control, whose optional name would otherwise take what follows.
+            && ChatArgs.New(claude, chat, on, "--permission-mode plan --effort max") == "--session-id " + chat.Id + " --permission-mode plan --effort max" + Flags
+            && ChatArgs.Resume(claude, chat, on, "--model opus") == "--resume " + chat.Id + " --model opus" + Flags
+            && ChatArgs.New(codex, new ChatRecord { Id = "x", Workspace = chat.Workspace }, new AgentAccount { Agent = codex.Name, Name = "main", RemoteControl = true }) == "";
+        var prefixes = ChatArgs.SessionPrefix(@"C:\Projects\--rf & %PATH% ^!") == "rf-PATH"
+            && ChatArgs.SessionPrefix("\\\\server\\share\\Café app\\") == "Café-app"
+            && ChatArgs.SessionPrefix(@"C:\") == "AgentArcade" && ChatArgs.SessionPrefix("") == "AgentArcade"
+            && ChatArgs.SessionPrefix(@"C:\" + new string('a', 60)).Length == 40;
+
+        var before = Environment.GetEnvironmentVariable("AGENT_ARCADE_HOME");
+        var home = Path.Combine(Path.GetTempPath(), "AgentArcade-remote-control-" + Environment.ProcessId);
+        var kept = false;
+        try
+        {
+            Directory.CreateDirectory(home);
+            Environment.SetEnvironmentVariable("AGENT_ARCADE_HOME", home);
+            var agents = new List<AgentDef> { claude, codex };
+            AccountStore.Add(claude, "work");
+            var first = AccountStore.All(agents);
+            var allOff = first.Count == 3 && first.All(account => account.RemoteControl == null);
+            AccountStore.SetRemoteControl(first.First(account => account.Agent == claude.Name && account.IsMain), true);
+            AccountStore.SetRemoteControl(first.First(account => account.Name == "work"), true);
+            var second = AccountStore.All(agents);
+            var bothOn = second.Count == 3 && second.Where(account => account.Agent == claude.Name).All(account => account.RemoteControl == true)
+                && second.Single(account => account.Agent == codex.Name).RemoteControl == null;
+            // Adding and removing an extra account keeps the main account's choice.
+            AccountStore.Add(claude, "third");
+            AccountStore.Remove(second.First(account => account.Name == "work"));
+            var third = AccountStore.All(agents);
+            var mainKept = third.First(account => account.Agent == claude.Name && account.IsMain).RemoteControl == true
+                && third.Single(account => account.Name == "third").RemoteControl == null && third.All(account => account.Name != "work");
+            // Off leaves nothing behind: no record for the main account, no field for the others.
+            AccountStore.SetRemoteControl(third.First(account => account.Agent == claude.Name && account.IsMain), false);
+            var text = File.ReadAllText(AccountStore.FilePath);
+            kept = allOff && bothOn && mainKept && AccountStore.All(agents).All(account => account.RemoteControl == null)
+                && !text.Contains("RemoteControl", StringComparison.Ordinal) && !text.Contains("\"main\"", StringComparison.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            check("remote-control-args", false, ex.Message);
+            return;
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AGENT_ARCADE_HOME", before);
+            try { Directory.Delete(home, true); } catch { /* temp folder */ }
+        }
+        check("remote-control-args", args && prefixes && kept,
+            "an opted-in Claude Code account's new and resumed chats end in --remote-control, with the project name as session-name prefix "
+                + "(letters, digits, . _ -; never a leading -); other accounts and agents get nothing; the choice is kept in accounts.json, the main account's too"
+                + (args ? "" : " [arguments wrong]") + (prefixes ? "" : " [prefix wrong]") + (kept ? "" : " [not kept]"));
+    }
+}
+
+// A Codex chat's id, learned from the names of Codex's chat files (SessionFiles): the chat that began just after its pane,
+// not a helper that began later; none when another start of the account was close, when it began too late or too early,
+// when two began at once or another chat has the id. An older agents.json gets Codex's exact resume. Made-up names in a
+// temp folder; no real Codex folder is listed.
+static class SessionFilesCheck
+{
+    public static void Run(Action<string, bool, string> check)
+    {
+        var temp = Path.Combine(Path.GetTempPath(), "AgentArcade-sessions-" + Environment.ProcessId);
+        try
+        {
+            var matching = Matching();
+            var listing = Listing(Path.Combine(temp, "sessions"));
+            var fallback = Fallback(Path.Combine(temp, "home"));
+            check("codex-chat-id", matching && listing && fallback,
+                matching && listing && fallback
+                    ? "the chat that began within 30 s after its pane, from the file name only; none when another start of the account was within 60 s; an older agents.json resumes Codex chats exactly"
+                    : (matching ? "" : "matching failed; ") + (listing ? "" : "listing the date folders failed; ") + (fallback ? "" : "an older agents.json didn't get the Codex defaults"));
+        }
+        catch (Exception ex)
+        {
+            check("codex-chat-id", false, ex.Message);
+        }
+        finally
+        {
+            try { Directory.Delete(temp, true); } catch { /* temp folder */ }
+        }
+    }
+
+    // A version 7 UUID that began at the given time; fill (a hex digit) tells ids apart.
+    static string Id(DateTimeOffset began, char fill)
+    {
+        var hex = began.ToUnixTimeMilliseconds().ToString("x12");
+        return hex[..8] + "-" + hex[8..] + "-7" + new string(fill, 3) + "-9" + new string(fill, 3) + "-" + new string(fill, 12);
+    }
+
+    static string FileName(DateTimeOffset began, string id, string extension = ".jsonl")
+        => "rollout-" + began.ToLocalTime().ToString("yyyy-MM-dd'T'HH-mm-ss", System.Globalization.CultureInfo.InvariantCulture) + "-" + id + extension;
+
+    static bool Matching()
+    {
+        var start = new DateTimeOffset(2026, 10, 18, 9, 30, 0, 250, TimeSpan.FromHours(2));
+        var own = Id(start.AddSeconds(3), 'a');
+        string[] names =
+        [
+            FileName(start.AddSeconds(-90), Id(start.AddSeconds(-90), 'c')),
+            // A helper the chat started during its first turn.
+            FileName(start.AddSeconds(20), Id(start.AddSeconds(20), 'b')),
+            FileName(start.AddSeconds(3), own),
+            FileName(start.AddMinutes(5), Id(start.AddMinutes(5), 'd')),
+            "rollout-2026-10-18T09-30-01-not-an-id.jsonl", "history.jsonl",
+        ];
+        var none = new HashSet<string>();
+        var older = "6f0c2b8e-5d1e-4f7a-9a43-2b1f7c9d0e11";
+        return SessionFiles.Match(start, [], names, none) == own
+            && SessionFiles.Match(start, [start.AddSeconds(61), start.AddSeconds(-61)], names, none) == own
+            && SessionFiles.Match(start, [start.AddSeconds(25)], names, none) == null
+            && SessionFiles.Match(start, [start.AddSeconds(-45)], names, none) == null
+            && SessionFiles.Match(start, [], names, new HashSet<string> { own }) == null
+            && SessionFiles.Match(start, [], [FileName(start.AddSeconds(35), Id(start.AddSeconds(35), 'e'))], none) == null
+            && SessionFiles.Match(start, [], [FileName(start.AddSeconds(-5), Id(start.AddSeconds(-5), 'e'))], none) == null
+            && SessionFiles.Match(start, [], [FileName(start.AddSeconds(4), Id(start.AddSeconds(4), 'e')), FileName(start.AddSeconds(4), Id(start.AddSeconds(4), 'f'))], none) == null
+            && SessionFiles.Match(start, [], [FileName(start.AddSeconds(3), own, ".jsonl.zst"), FileName(start.AddSeconds(3), own)], none) == own
+            && SessionFiles.Match(start, [], [FileName(start.AddSeconds(3), own.ToUpperInvariant())], none) == own
+            && SessionFiles.Match(start, [], [FileName(start.AddSeconds(3), own, ".jsonl.bak"), FileName(start.AddSeconds(3), own) + ".tmp"], none) == null
+            // Times no date can hold match nothing and throw nothing.
+            && SessionFiles.Parse("rollout-2026-10-18T09-30-03-ffffffff-ffff-7fff-9fff-ffffffffffff.jsonl") == null
+            && SessionFiles.Match(start, [], ["rollout-0001-01-01T00-00-00-" + older + ".jsonl", "rollout-9999-12-31T23-59-59-" + older + ".jsonl"], none) == null
+            // An older Codex with random ids: the time in the name counts.
+            && SessionFiles.Match(start, [], [FileName(start.AddSeconds(2), older)], none) == older
+            && SessionFiles.Match(start, [], [FileName(start.AddSeconds(40), older)], none) == null;
+    }
+
+    // Only the date folders around the start are listed, and a folder that isn't there lists nothing.
+    static bool Listing(string folder)
+    {
+        var start = DateTimeOffset.Now;
+        var own = Id(start.AddSeconds(3), 'a');
+        string Dated(DateTimeOffset at)
+        {
+            var local = at.ToLocalTime();
+            var path = Path.Combine(folder, local.ToString("yyyy", System.Globalization.CultureInfo.InvariantCulture),
+                local.ToString("MM", System.Globalization.CultureInfo.InvariantCulture), local.ToString("dd", System.Globalization.CultureInfo.InvariantCulture));
+            Directory.CreateDirectory(path);
+            return path;
+        }
+        var empty = SessionFiles.Names(folder, start).Count == 0;
+        File.WriteAllBytes(Path.Combine(Dated(start), FileName(start.AddSeconds(3), own)), []);
+        var old = FileName(start.AddDays(-3), Id(start.AddDays(-3), 'b'));
+        File.WriteAllBytes(Path.Combine(Dated(start.AddDays(-3)), old), []);
+        var names = SessionFiles.Names(folder, start);
+        return empty && names.Contains(FileName(start.AddSeconds(3), own)) && !names.Contains(old)
+            && SessionFiles.Match(start, [], names, new HashSet<string>()) == own;
+    }
+
+    // An agents.json from before: Codex without the new settings gets them; one where they were turned off ("") keeps that.
+    static bool Fallback(string home)
+    {
+        var before = Environment.GetEnvironmentVariable("AGENT_ARCADE_HOME");
+        try
+        {
+            Directory.CreateDirectory(home);
+            Environment.SetEnvironmentVariable("AGENT_ARCADE_HOME", home);
+            File.WriteAllText(AgentStore.FilePath,
+                "[{\"name\":\"Codex\",\"command\":\"codex\",\"resumeArgs\":\"resume\",\"newChatArgs\":null,\"resumeChatArgs\":null}," +
+                "{\"name\":\"Codex off\",\"command\":\"codex\",\"resumeArgs\":\"resume\",\"resumeChatArgs\":\"\",\"sessionsFolder\":\"\"}]");
+            var loaded = AgentStore.Load();
+            var codex = loaded.First(agent => agent.Name == "Codex");
+            var off = loaded.First(agent => agent.Name == "Codex off");
+            var main = new AgentAccount { Agent = codex.Name, Name = "main" };
+            var work = new AgentAccount { Agent = codex.Name, Name = "work", Home = @"C:\Accounts\codex-work" };
+            var chat = new ChatRecord { Id = "x", Agent = off.Name, Account = "main", ChatId = "01a14326-10e9-7e81-9cda-eeecb9c3b0b2" };
+            return codex.ResumeChatArgs == "resume {id}" && codex.SessionsFolder == "sessions"
+                && off.SessionsFolder == "" && SessionFiles.FolderFor(off, main) == null && ChatArgs.Kind(off, chat) == "agent"
+                && SessionFiles.FolderFor(codex, main) == Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex", "sessions")
+                && SessionFiles.FolderFor(codex, work) == @"C:\Accounts\codex-work\sessions"
+                && SessionFiles.FolderFor(AgentStore.Defaults().First(agent => agent.Command == "claude"), main) == null;
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AGENT_ARCADE_HOME", before);
+        }
+    }
+}
+
+// Settings → Agents and accounts → New sessions start with (AgentSetup): each choice becomes the agent's own options, after
+// Codex's resume subcommand; what an agent doesn't take is refused when saved and left out when settings.json was edited by
+// hand; every option it can add is plain text that cmd /c passes on unchanged.
+static class AgentSetupCheck
+{
+    public static void Run(Action<string, bool, string> check)
+    {
+        try
+        {
+            var defaults = AgentStore.Defaults();
+            AgentDef Agent(string command) => defaults.First(agent => agent.Command == command);
+            var (claude, codex, gemini, copilot, cursor, agy) = (Agent("claude"), Agent("codex"), Agent("gemini"), Agent("copilot"), Agent("cursor-agent"), Agent("agy"));
+
+            // settings.json keys them by agent name, whatever its case.
+            var setups = new Dictionary<string, AgentSetupChoice>
+            {
+                [claude.Name] = AgentSetup.Check(claude, "plan", " opus ", "max"),
+                [codex.Name.ToUpperInvariant()] = AgentSetup.Check(codex, "full-access", "gpt-5.6-sol", "high"),
+                [copilot.Name] = AgentSetup.Check(copilot, "allow-all-tools", "auto", "xhigh"),
+                [cursor.Name] = AgentSetup.Check(cursor, "force", "", ""),
+                [gemini.Name] = AgentSetup.Check(gemini, "", "gemini-2.5-pro", ""),
+            };
+            var claudeChat = new ChatRecord { Id = "11111111-2222-3333-4444-555555555555", Agent = claude.Name, Account = "main" };
+            var codexChat = new ChatRecord { Id = "x", Agent = codex.Name, Account = "main" };
+            var built = AgentSetup.Add(ChatArgs.New(claude, claudeChat), claude, setups) == "--session-id " + claudeChat.Id + " --permission-mode plan --model opus --effort max"
+                && AgentSetup.Add(ChatArgs.Resume(claude, claudeChat)!, claude, setups) == "--resume " + claudeChat.Id + " --permission-mode plan --model opus --effort max"
+                && AgentSetup.Add(ChatArgs.Resume(codex, codexChat)!, codex, setups)
+                    == "resume --sandbox danger-full-access --ask-for-approval never --model gpt-5.6-sol -c model_reasoning_effort=high"
+                && AgentSetup.Add("", copilot, setups) == "--allow-all-tools --model auto --reasoning-effort xhigh"
+                && AgentSetup.Add("--resume", cursor, setups) == "--resume --force"
+                && AgentSetup.Add("--resume", gemini, setups) == "--resume --model gemini-2.5-pro"
+                && AgentSetup.Add("--continue", agy, setups) == "--continue" && AgentSetup.Add("--resume", claude, null) == "--resume";
+
+            static bool Refused(Func<AgentSetupChoice> save)
+            {
+                try
+                {
+                    save();
+                    return false;
+                }
+                catch (InvalidOperationException)
+                {
+                    return true;
+                }
+            }
+            string[] badModels = ["--dangerously-skip-permissions", "-m", ".opus", "a b", "opus&calc", "opus|calc", "opus\"", "opus^", "op%PATH%", "op(s)", "op<s>",
+                "opus[1m]", "ópus", "opus\nx", "a" + new string('b', 100)];
+            var refused = badModels.All(model => Refused(() => AgentSetup.Check(claude, "", model, "")))
+                && Refused(() => AgentSetup.Check(claude, "yolo", "", "")) && Refused(() => AgentSetup.Check(claude, "Plan", "", ""))
+                && Refused(() => AgentSetup.Check(gemini, "", "", "high")) && Refused(() => AgentSetup.Check(cursor, "", "", "high"))
+                && Refused(() => AgentSetup.Check(codex, "", "", "ultra")) && Refused(() => AgentSetup.Check(agy, "plan", "", ""))
+                && Refused(() => AgentSetup.Check(agy, "", "gpt-5", "")) && AgentSetup.Check(agy, "", " ", "").IsEmpty;
+
+            // A hand-edited settings.json: only the parts the agent takes are used.
+            var edited = new AgentSetupChoice { Permission = "bypassPermissions & calc", Model = "opus\n", Effort = "high" };
+            var dropped = AgentSetup.Args(claude, edited) == "--effort high" && AgentSetup.Args(gemini, edited).Length == 0;
+
+            // Every option any choice can add: letters, digits, space and - = _ only, or a model name.
+            var plain = new Regex(@"^[A-Za-z0-9 =_-]+\z");
+            var safe = defaults.Select(AgentSetup.For).OfType<AgentSetup.Options>().All(options =>
+                options.Permissions.All(item => plain.IsMatch(item.Args))
+                && options.Efforts.All(level => options.Effort != null && plain.IsMatch(options.Effort.Replace("{0}", level, StringComparison.Ordinal)))
+                && (options.Model == null || plain.IsMatch(options.Model)));
+            check("agent-setup", built && refused && dropped && safe && AgentSetup.For(agy) == null,
+                "permission mode, model and effort become each agent's own options, after Codex's resume; other modes, levels and model names are refused or left out"
+                + (built ? "" : " (built wrong)") + (refused ? "" : " (one was accepted)") + (dropped ? "" : " (an edited value was used)") + (safe ? "" : " (an option has other characters)"));
+        }
+        catch (Exception ex)
+        {
+            check("agent-setup", false, ex.Message);
+        }
+    }
+}
+
 // The built-in agents on a clean PC: Antigravity CLI offered once, the vendors' own installers, finding a tool whose
 // installer didn't put it on PATH, what an Install needs first, and the golden-screen status tests (tests/status).
 // Everything runs in temp folders with fake tools; nothing is installed and no agent starts.
@@ -616,7 +905,9 @@ static class AgentCatalogueCheck
         try
         {
             Catalogue(check, Path.Combine(temp, "home"));
+            Ollama(check, Path.Combine(temp, "ollama-home"));
             Known(check, temp);
+            Order(check, Path.Combine(temp, "order"));
             Needs(check, info);
         }
         catch (Exception ex)
@@ -679,6 +970,111 @@ static class AgentCatalogueCheck
                 + "an Install that is exactly an old built-in npm command follows them, an edited one stays");
     }
 
+    // Codex (Ollama) is Codex with Ollama's flags, reaches an agent list that has Codex once (not one that already starts
+    // Codex that way under another name), and resumes like Codex, from Codex's own sessions folder. Its account line comes from Ollama's
+    // version, read here from a fake Ollama on a free port and from that port closed: the real Ollama isn't asked.
+    static void Ollama(Action<string, bool, string> check, string home)
+    {
+        const string name = "Codex (Ollama)", flags = "--oss --local-provider ollama";
+        var defaults = AgentStore.Defaults();
+        var codex = defaults.First(agent => agent.Command == "codex");
+        var local = defaults.FirstOrDefault(agent => agent.Name == name);
+        var chat = new ChatRecord { Id = "x", Agent = name, Account = "main" };
+        var builtIn = local != null && local.Command == "codex" && local.Args == flags && local.AccountCheck == "ollama"
+            && local.HomeVar.Length == 0 && local.Login.Length == 0 && local.Install == codex.Install && local.AltPath == codex.AltPath
+            && defaults.IndexOf(codex) < defaults.IndexOf(local)
+            && ChatArgs.New(local, chat) == flags && chat.ChatId.Length == 0 && ChatArgs.Resume(local, chat) == flags + " resume"
+            // Its chats are in Codex's sessions folder, so a learned id resumes exactly and the two agents' starts are seen together.
+            && SessionFiles.FolderFor(local, new AgentAccount { Agent = name, Name = "main" }) is { } sessions
+            && sessions == SessionFiles.FolderFor(codex, new AgentAccount { Agent = codex.Name, Name = "main" })
+            && ChatArgs.Resume(local, new ChatRecord { Id = "y", Agent = name, Account = "main", ChatId = "019a0000-0000-7000-8000-000000000000" }) == flags + " resume 019a0000-0000-7000-8000-000000000000";
+
+        // An agents.json from 1.6.0 (every other built-in, all offered), in its own data folder.
+        var before = Environment.GetEnvironmentVariable("AGENT_ARCADE_HOME");
+        bool offeredOnce, ownKept;
+        try
+        {
+            Directory.CreateDirectory(home);
+            Environment.SetEnvironmentVariable("AGENT_ARCADE_HOME", home);
+            var old = defaults.Where(agent => agent.Name != name).ToList();
+            void Write(IEnumerable<AgentDef> agents)
+            {
+                File.WriteAllText(AgentStore.FilePath, JsonSerializer.Serialize(agents, Json.Options));
+                File.WriteAllText(Path.Combine(home, "agents-offered.json"), JsonSerializer.Serialize(old.Select(agent => agent.Name), Json.Options));
+            }
+            static int Count(List<AgentDef> agents) => agents.Count(agent => agent.Name == name);
+            Write(old);
+            var first = AgentStore.Load();
+            var again = AgentStore.Load();
+            // Deleted by the user after it was offered: it stays deleted.
+            File.WriteAllText(AgentStore.FilePath, JsonSerializer.Serialize(again.Where(agent => agent.Name != name), Json.Options));
+            var deleted = AgentStore.Load();
+            var added = first.FirstOrDefault(agent => agent.Name == name);
+            offeredOnce = Count(first) == 1 && Count(again) == 1 && Count(deleted) == 0 && first.Count == old.Count + 1
+                && first.First(agent => agent.Command == "codex").Name == codex.Name && added?.Args == flags && added.AccountCheck == "ollama";
+
+            // The user's own entry that starts Codex the same way keeps it from being offered. An entry from before ResumeArgs
+            // takes the built-in Codex (Ollama)'s, and not Codex's images folder (no image tool runs on a local model).
+            Write(old.Append(new AgentDef { Name = "Codex local", Command = "codex", Args = " " + flags }));
+            var own = AgentStore.Load();
+            Write(old.Append(new AgentDef { Name = name, Command = "codex", Args = flags + " -m qwen3-coder" }));
+            var older = AgentStore.Load().FirstOrDefault(agent => agent.Name == name);
+            ownKept = Count(own) == 0 && own.Any(agent => agent.Name == "Codex local")
+                && older?.ResumeArgs == "resume" && older.ImagesFolder == null && older.Args == flags + " -m qwen3-coder";
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("AGENT_ARCADE_HOME", before);
+        }
+
+        // A fake Ollama answers three times: its version, a page that isn't Ollama, and a version with markup in it.
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var url = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port;
+        string? version, page, markup, closed;
+        try
+        {
+            var serve = Task.Run(async () =>
+            {
+                foreach (var body in new[] { "{\"version\":\"9.9.9\"}", "<html>not Ollama</html>", "{\"version\":\"<b>9</b>\"}" })
+                {
+                    using var client = await listener.AcceptTcpClientAsync();
+                    using var stream = client.GetStream();
+                    var request = new StringBuilder();
+                    var buffer = new byte[1024];
+                    while (!request.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
+                    {
+                        var read = await stream.ReadAsync(buffer);
+                        if (read == 0) break;
+                        request.Append(Encoding.ASCII.GetString(buffer, 0, read));
+                    }
+                    var bytes = Encoding.UTF8.GetBytes(body);
+                    await stream.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + bytes.Length +
+                        "\r\nConnection: close\r\n\r\n"));
+                    await stream.WriteAsync(bytes);
+                }
+            });
+            version = Probe.OllamaVersionAsync(url).GetAwaiter().GetResult();
+            page = Probe.OllamaVersionAsync(url).GetAwaiter().GetResult();
+            markup = Probe.OllamaVersionAsync(url).GetAwaiter().GetResult();
+            serve.Wait(5000);
+        }
+        finally
+        {
+            listener.Stop();
+        }
+        closed = Probe.OllamaVersionAsync(url).GetAwaiter().GetResult();
+        var answers = version == "9.9.9" && page == null && markup == "" && closed == null;
+        var info = Probe.OllamaInfo("0.32.12", true) is { SignedIn: true, Email: "", Plan: "Ollama 0.32.12" }
+            && Probe.OllamaInfo("", true) is { SignedIn: true, Plan: "Ollama" }
+            && Probe.OllamaInfo(null, true) is { SignedIn: null } stopped && stopped.Note.Contains("isn't running", StringComparison.Ordinal)
+            && Probe.OllamaInfo(null, false) is { SignedIn: null } missing && missing.Note.Contains("isn't installed", StringComparison.Ordinal);
+        check("ollama-agent", builtIn && offeredOnce && ownKept && answers && info,
+            "Codex (Ollama) runs codex " + flags + ", reaches an older agents.json once and resumes like Codex (same sessions folder); "
+                + "its account line says Ollama's version, or that Ollama isn't running or isn't installed"
+                + (answers ? "" : " (fake Ollama: " + (version ?? "null") + ", " + (page ?? "null") + ", " + (markup ?? "null") + ", " + (closed ?? "null") + ")"));
+    }
+
     // Claude Code, Codex, Copilot and Antigravity CLI are found where their installers put them even when that folder
     // isn't on PATH, also for an agents.json entry without AltPath. A fake user folder stands in for the real one.
     static void Known(Action<string, bool, string> check, string temp)
@@ -713,6 +1109,55 @@ static class AgentCatalogueCheck
         }
         check("locator-known", found && notThere && viaAgent == claude,
             @"off PATH, claude is found in %USERPROFILE%\.local\bin, agy in %LOCALAPPDATA%\agy\bin and copilot in WinGet's links, keyed by command");
+    }
+
+    // Which Codex a new pane starts: the one on PATH, else the one from OpenAI's installer, else the newest one inside the
+    // Codex desktop app (AltPath). So a Codex just installed with Install / update wins over the app's older one. And when
+    // that exe isn't the one Settings checked (another path, or rewritten in place), the pane checks the tool again.
+    static void Order(Action<string, bool, string> check, string temp)
+    {
+        var env = new Dictionary<string, string> { ["USERPROFILE"] = Path.Combine(temp, "profile"), ["LOCALAPPDATA"] = Path.Combine(temp, "local") };
+        string Fake(params string[] parts)
+        {
+            var file = Path.Combine([temp, .. parts]);
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            File.WriteAllBytes(file, []);
+            return file;
+        }
+        var codex = AgentStore.Defaults().First(agent => agent.Command == "codex");
+        var path = Environment.GetEnvironmentVariable("PATH");
+        bool order;
+        try
+        {
+            Environment.SetEnvironmentVariable("PATH", Path.Combine(temp, "empty"));
+            var none = Locator.FindAgent(codex, env);
+            var older = Fake("local", "OpenAI", "Codex", "bin", "0a1b2c3d4e5f6071", "codex.exe");
+            var app = Fake("local", "OpenAI", "Codex", "bin", "e78bad9887fa50cf", "codex.exe");
+            File.SetLastWriteTimeUtc(older, DateTime.UtcNow.AddDays(-30));
+            var appOnly = Locator.FindAgent(codex, env);
+            var standalone = Fake("local", "Programs", "OpenAI", "Codex", "bin", "codex.exe");
+            var both = Locator.FindAgent(codex, env);
+            var npm = Fake("npm", "codex.cmd");
+            Environment.SetEnvironmentVariable("PATH", Path.GetDirectoryName(npm));
+            var onPath = Locator.FindAgent(codex, env);
+            order = none == null && appOnly == app && both == standalone && onPath == npm;
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PATH", path);
+        }
+        check("locator-order", order,
+            @"Codex on PATH wins, then %LOCALAPPDATA%\Programs\OpenAI\Codex\bin from OpenAI's installer, then the newest one inside the Codex desktop app");
+
+        var exe = Path.Combine(temp, "local", "Programs", "OpenAI", "Codex", "bin", "codex.exe");
+        var tool = new ToolStatus(codex, exe, "codex-cli 0.160.1", Locator.WriteTime(exe));
+        var same = tool.Is(exe) && tool.Is(exe.ToUpperInvariant());
+        var otherPath = !tool.Is(Path.Combine(temp, "npm", "codex.cmd"));
+        File.SetLastWriteTimeUtc(exe, tool.Written.AddMinutes(5));
+        var rewritten = !tool.Is(exe);
+        var notInstalled = !new ToolStatus(codex, null, "").Is(exe);
+        check("tool-recheck", same && otherPath && rewritten && notInstalled,
+            "a pane that starts another exe than Settings checked, or the same one rewritten by an update, checks that tool again");
     }
 
     // What an Install needs first, with fake tool paths: npm and Node.js (22+ for Copilot, 20+ for Gemini), PowerShell 7
@@ -880,6 +1325,7 @@ static class GitSafetyCheck
             ["includeIf"] = Outcome(Repo(root, "includeif", "[includeIf \"gitdir:C:/\"]\n\tpath = //aa-selfcheck.invalid/share/y\n")),
             ["core.worktree"] = Outcome(Repo(root, "worktree", "[core]\n\tworktree = " + Quote(Server + @"\w") + "\n")),
             ["core.excludesFile"] = Outcome(Repo(root, "excludes", "[core]\n\texcludesFile = " + Quote(Server + @"\ignore") + "\n")),
+            ["diff.orderFile"] = Outcome(Repo(root, "orderfile", "[diff]\n\torderFile = " + Quote(Server + @"\order") + "\n")),
             [".git file"] = Outcome(gitFile),
             ["alternates"] = Outcome(alternates),
             ["nested include"] = Outcome(nested),
@@ -891,7 +1337,7 @@ static class GitSafetyCheck
             refused.Count > 0 ? "not refused: " + string.Join("; ", refused)
                 : GitChanges.Started != before ? "git started anyway"
                 : !paths ? "a network path wasn't recognised"
-                : "includeIf, core.worktree, core.excludesFile, a .git file, alternates and a nested include on another computer are refused before git starts; "
+                : "includeIf, core.worktree, core.excludesFile, diff.orderFile, a .git file, alternates and a nested include on another computer are refused before git starts; "
                     + "image paths like \\\\server\\share and //server/share are recognised");
     }
 
@@ -953,12 +1399,14 @@ static class GitSafetyCheck
             return ran;
         }
 
-        var (_, files, _) = GitChanges.Status(repo);
+        // With the tab's line counts, so git diff --numstat is covered too.
+        var (_, files, _) = GitChanges.Status(repo, counts: true);
         var modified = files.Where(file => file.Status == "modified").Select(file => file.Path).Order().ToList();
         var diffs = modified.Select(path => GitChanges.Diff(repo, path, null, false).Text).ToList();
         var ranProtected = Ran();
         var listed = modified.SequenceEqual(["second.txt", "tracked.txt"]) && files.Any(file => file.Path == ".gitattributes")
-            && diffs.All(diff => diff.Contains("-one") && diff.Contains("+two"));
+            && diffs.All(diff => diff.Contains("-one") && diff.Contains("+two"))
+            && files.Where(file => file.Status == "modified").All(file => file is { Added: 1, Removed: 1 });
 
         // A network include in the same repository is refused before any git process starts.
         File.AppendAllText(Path.Combine(repo, ".git", "config"), "[include]\n\tpath = " + Quote(Server + @"\x") + "\n");
@@ -984,7 +1432,7 @@ static class GitSafetyCheck
                 + "plain git ran: " + (ranControl.Count == 0 ? "none of them either" : string.Join(", ", ranControl)));
     }
 
-    static void Git(string git, string folder, bool mustWork, params string[] args)
+    public static void Git(string git, string folder, bool mustWork, params string[] args)
     {
         var start = new System.Diagnostics.ProcessStartInfo(git) { WorkingDirectory = folder, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true };
         foreach (var arg in args) start.ArgumentList.Add(arg);
@@ -999,6 +1447,108 @@ static class GitSafetyCheck
         }
         Task.WaitAll(output, error);
         if (mustWork && process.ExitCode != 0) throw new InvalidOperationException("git " + args[0] + " failed");
+    }
+}
+
+// The Changes tab's lines added and removed, in a temp repository: before the first commit (staged plus unstaged), a
+// rename, a binary file, a deleted file, a new file, a project inside the repository, git diff not run again while
+// nothing changed, and no counts for a list longer than the limit.
+static class ChangeCountsCheck
+{
+    public static void Run(Action<string, bool, string> check, Action<string> info)
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "AgentArcade-counts-" + Environment.ProcessId);
+        try
+        {
+            var parsed = GitChanges.ParseNumstat("2\t1\ta.txt\0-\t-\tpic.bin\0" + "3\t0\t\0old name.txt\0new\tname.txt\0" + "0\t4\tgone.txt\0");
+            (int?, int?) Parsed(string path, string? from) => parsed.TryGetValue(GitChanges.CountKey(path, from), out var count) ? count : (-1, -1);
+            var parser = parsed.Count == 4 && Parsed("a.txt", null) == (2, 1) && Parsed("pic.bin", null) == (null, null)
+                && Parsed("new\tname.txt", "old name.txt") == (3, 0) && Parsed("gone.txt", null) == (0, 4)
+                && GitChanges.CountLines("a\r\nb"u8.ToArray()) == 2 && GitChanges.CountLines("a\nb\n"u8.ToArray()) == 2
+                && GitChanges.CountLines([]) == 0 && GitChanges.CountLines([65, 0, 66]) == null;
+            if (Locator.FindOnPath("git") is not { } git || !git.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                check("changes-counts", parser, "git --numstat output and a new file's lines are read right");
+                info("INFO changes-counts-git — git.exe isn't on PATH, so the counts weren't checked in a repository");
+                return;
+            }
+            Directory.CreateDirectory(repo);
+            void Git(params string[] args) => GitSafetyCheck.Git(git, repo, true, ["-c", "user.name=Self check", "-c", "user.email=self-check@localhost", "-c", "commit.gpgsign=false", .. args]);
+            void Write(string name, string text)
+            {
+                var path = Path.Combine(repo, name);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, text);
+            }
+            static string Shown(List<GitChanges.Change> files) => string.Join(", ", files.Select(file => file.Path + " " + file.Added + "/" + file.Removed));
+            static GitChanges.Change? Find(List<GitChanges.Change> files, string path) => files.FirstOrDefault(file => file.Path == path);
+
+            Git("init", "-q");
+            Write("a.txt", "one\ntwo\n");
+            Git("add", "a.txt");
+            Write("a.txt", "one\ntwo\nthree\n");
+            Write("new.txt", "x\r\ny");
+            File.WriteAllBytes(Path.Combine(repo, "pic.bin"), [1, 0, 2]);
+            var (_, unborn, _) = GitChanges.Status(repo, counts: true);
+            var first = Find(unborn, "a.txt") is { Added: 3, Removed: 0 } && Find(unborn, "new.txt") is { Status: "new", Added: 2, Removed: 0 }
+                && Find(unborn, "pic.bin") is { Added: null, Removed: null };
+
+            Write("app/b.txt", "b1\nb2\nb3\nb4\n");
+            Write("outside.txt", "o\n");
+            Git("add", "-A");
+            Git("commit", "-q", "-m", "first");
+            Write("a.txt", "one\n2\nthree\nfour\n");
+            Git("mv", "app/b.txt", "app/c.txt");
+            File.AppendAllText(Path.Combine(repo, "app", "c.txt"), "b5\n");
+            Git("mv", "outside.txt", "app/inside.txt");
+            File.WriteAllBytes(Path.Combine(repo, "pic.bin"), [1, 0, 3, 4]);
+            File.Delete(Path.Combine(repo, "new.txt"));
+            var (_, files, _) = GitChanges.Status(repo, counts: true);
+            var (_, appFiles, _) = GitChanges.Status(Path.Combine(repo, "app"), counts: true);
+            var later = Find(files, "a.txt") is { Added: 2, Removed: 1 } && Find(files, "app/c.txt") is { From: "app/b.txt", Added: 1, Removed: 0 }
+                && Find(files, "pic.bin") is { Added: null, Removed: null } && Find(files, "new.txt") is { Status: "deleted", Added: 0, Removed: 2 }
+                && Find(appFiles, "c.txt") is { From: "b.txt", Added: 1, Removed: 0 } && Find(appFiles, "inside.txt") is { From: null, Added: 1, Removed: 0 };
+
+            // Nothing changed: rev-parse and status only. A changed file: git diff again.
+            var before = GitChanges.Started;
+            var (_, again, _) = GitChanges.Status(repo, counts: true);
+            var keptRuns = GitChanges.Started - before;
+            var kept = keptRuns == 2 && Find(again, "a.txt") is { Added: 2, Removed: 1 };
+            Write("a.txt", "one\n2\nthree\nfour\nfive\n");
+            before = GitChanges.Started;
+            var (_, changed, _) = GitChanges.Status(repo, counts: true);
+            var rerun = GitChanges.Started - before == 3 && Find(changed, "a.txt") is { Added: 3, Removed: 1 };
+
+            for (var i = 0; i <= 500; i++) Write("many/" + i + ".txt", "x\n");
+            var (_, many, manyTotal) = GitChanges.Status(repo, counts: true);
+            var limit = manyTotal > 500 && many.All(file => file.Added == null && file.Removed == null);
+
+            check(
+                "changes-counts",
+                parser && first && later && kept && rerun && limit,
+                !parser ? "git --numstat output or a new file's lines were read wrong"
+                    : !first ? "before the first commit: " + Shown(unborn)
+                    : !later ? "after it: " + Shown(files) + "; in app: " + Shown(appFiles)
+                    : !kept ? "git diff ran again while nothing changed (" + keptRuns + " git runs)"
+                    : !rerun ? "a changed file wasn't counted again: " + Shown(changed)
+                    : !limit ? "a list over the limit still got counts"
+                    : "lines added and removed per file: staged plus unstaged before the first commit, renames (also into a project), "
+                        + "binary files without, new files by their lines; git diff runs again only when something changed, and not over 500 files");
+        }
+        catch (Exception ex)
+        {
+            check("changes-counts", false, ex.GetType().Name + ": " + ex.Message);
+        }
+        finally
+        {
+            try
+            {
+                // git makes its object files read-only.
+                foreach (var file in Directory.EnumerateFiles(repo, "*", SearchOption.AllDirectories)) File.SetAttributes(file, FileAttributes.Normal);
+                Directory.Delete(repo, true);
+            }
+            catch { /* temp folder */ }
+        }
     }
 }
 
@@ -1165,6 +1715,27 @@ static class RemoteSelfCheck
                 && Json.Str(pickedState, "projectsFolder") == picked
                 && older is { NewProjectsFolder: null, MascotAnimations: null },
             "a folder picked for new projects wins while it is there; a missing, relative or network one falls back to the rule; older settings have neither field");
+
+        // Start without a project: one Chats folder in the user folder, outside the app's data (the extra accounts' sign-ins),
+        // known in any spelling, listed first and once, named Chats for the sidebar and the phone. New projects never go
+        // next to it. Nothing here makes the real folder.
+        var chats = NoProject.Folder;
+        var chatsListed = new List<string> { Path.Combine(projects, "First") };
+        var chatsFirst = NoProject.Listed(chatsListed);
+        var chatsAgain = NoProject.Listed(chatsListed);
+        var chatsSpelled = new List<string> { Path.Combine(projects, "First"), chats.ToUpperInvariant() + Path.DirectorySeparatorChar };
+        var chatsName = JsonSerializer.SerializeToElement(RemoteModel.Workspaces([chats], _ => true, _ => false)[0], RemoteModel.Wire);
+        check(
+            "no-project",
+            chats == Path.Combine(profile, "AgentArcade", "Chats") && !ProjectFiles.IsInside(AppSettings.Folder, chats)
+                && NoProject.Is(chats.ToLowerInvariant() + Path.DirectorySeparatorChar) && !NoProject.Is(Path.GetDirectoryName(chats))
+                && !NoProject.Is(Path.Combine(chats, "x")) && !NoProject.Is(@"AgentArcade\Chats") && !NoProject.Is("") && !NoProject.Is(null)
+                && chatsFirst == chats && chatsAgain == chats && chatsListed.SequenceEqual([chats, Path.Combine(projects, "First")])
+                && NoProject.Listed(chatsSpelled) == chatsSpelled[1] && chatsSpelled.Count == 2
+                && Json.Str(chatsName, "name") == "Chats"
+                && NewProject.Folder(chats, [chats, Path.Combine(projects, "First")]) == projects
+                && NewProject.Folder(chats, [chats], repos) == repos && NewProject.Folder(chats, [chats]) == null,
+            "%USERPROFILE%\\AgentArcade\\Chats, outside the app's data; listed first and once; named Chats; new projects never go next to it");
 
         // The window: the first start takes about 85% of the primary work area; a saved place stays on a screen that is
         // there (moved and shrunk into the one it overlaps most), or centred on the primary one when its screen is gone.

@@ -21,7 +21,7 @@ nav: download
       <ol class="steps">
         <li><div><b>Download the zip.</b> If Microsoft Edge says it isn't commonly downloaded, open the download's <b>⋯</b> menu, choose <b>Keep</b>, then <b>Show more</b> → <b>Keep anyway</b>.</div></li>
         <li><div><b>Extract it to a folder of your choice,</b> for example <code>%LOCALAPPDATA%\Programs\AgentArcade</code>. <code>AgentArcade.exe</code> is at the top of the zip. Keep the files together: the app needs the <code>web</code> folder next to it. No administrator rights needed.</div></li>
-        <li><div><b>Start <code>AgentArcade.exe</code>.</b> Windows may warn you the first time; see <a href="#smartscreen">SmartScreen</a> below.</div></li>
+        <li><div><b>Start <code>AgentArcade.exe</code>.</b> Windows may warn you the first time; see <a href="#smartscreen">SmartScreen</a> below. The first start adds <b>Agent Arcade</b> to your Start menu, so from then on Start and Windows search find it.</div></li>
         <li><div><b>Add a project folder</b> with the <b>+</b> next to <i>Projects</i> in the sidebar, and start an agent with <b>New agent</b>. A new install opens in your Documents folder until you add one.</div></li>
       </ol>
 
@@ -44,9 +44,11 @@ nav: download
         <li><div><b>Extract the new zip over the old folder</b> (the one that holds <code>AgentArcade.exe</code>) and replace the files.</div></li>
         <li><div><b>Start <code>AgentArcade.exe</code>.</b> Settings, history and paired phones stay where they are, in <code>%LOCALAPPDATA%\AgentArcade</code>.</div></li>
       </ol>
+      <p>Your data never lives in the app's folder, so deleting or moving that folder keeps it; Settings → About shows where it is, with <b>Open folder</b>. After a move, start <code>AgentArcade.exe</code> from its new folder once and the Start menu's <i>Agent Arcade</i> follows it.</p>
 
       <h2 id="uninstall">Uninstall</h2>
-      <p><b>1. The app and its data.</b> Close Agent Arcade, then delete its folder (the one that holds <code>AgentArcade.exe</code>) and <code>%LOCALAPPDATA%\AgentArcade</code>, which holds your settings, agent list, history, paired phones, the log and the window's WebView2 data. If you installed it with <code>install.ps1</code>, also delete the <i>Agent Arcade</i> shortcut in the Start menu.</p>
+      <p><b>1. The app and its data.</b> Close Agent Arcade, then delete its folder (the one that holds <code>AgentArcade.exe</code>) and <code>%LOCALAPPDATA%\AgentArcade</code>, which holds your settings, agent list, history, paired phones, the log and the window's WebView2 data. Also delete the <i>Agent Arcade</i> shortcut the app put in your Start menu:</p>
+      <div class="codeblock"><pre>Remove-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Agent Arcade.lnk"</pre></div>
       <p><b>2. The phone remote's certificate.</b> If you ever turned Phone remote on, Agent Arcade made a certificate in your Windows user certificate store. Delete it in <code>certmgr.msc</code> (Personal → Certificates → <i>Agent Arcade Remote</i>), or with its private key in PowerShell:</p>
       <div class="codeblock"><pre>Get-ChildItem Cert:\CurrentUser\My | Where-Object Subject -eq 'CN=Agent Arcade Remote' | Remove-Item -DeleteKey</pre></div>
       <p><b>3. The firewall rule.</b> When you allowed Agent Arcade at the Windows firewall prompt, Windows made inbound rules for <code>AgentArcade.exe</code>. Remove them in Windows Security → Firewall &amp; network protection → <i>Allow an app through firewall</i> → <b>Change settings</b> → <i>agentarcade.exe</i> → <b>Remove</b>, or in PowerShell run as administrator:</p>
@@ -88,7 +90,7 @@ nav: download
       <div class="codeblock"><pre>git clone {{github}}.git
 cd AgentArcade
 powershell -ExecutionPolicy Bypass -File install.ps1</pre></div>
-      <p>This publishes the app to <code>%LOCALAPPDATA%\Programs\AgentArcade</code> and adds a Start menu shortcut. <code>AgentArcade.exe --self-check</code> runs the built-in checks.</p>
+      <p>This publishes the app to <code>%LOCALAPPDATA%\Programs\AgentArcade</code> and points the Start menu's <i>Agent Arcade</i> at it. <code>AgentArcade.exe --self-check</code> runs the built-in checks.</p>
     </div>
   </div>
 </section>

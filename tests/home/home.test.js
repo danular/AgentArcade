@@ -69,6 +69,17 @@ test('the footer status line', () => {
   assert.equal(HomeData.statusLine({}), 'All quiet');
 });
 
+test('Home shows Chats (Start without a project) first, also before it is listed, and only once', () => {
+  const chats = 'C:\\Users\\ana\\AgentArcade\\Chats';
+  const river = { path: 'C:\\Repos\\River', name: 'River', exists: true, unity: false };
+  assert.deepEqual(HomeData.projectCards([river], chats), [{ path: chats, name: 'Chats', exists: true, unity: false }, river]);
+  const listed = [{ path: 'c:\\users\\ana\\agentarcade\\chats', name: 'Chats', exists: false, unity: false }, river];
+  assert.equal(HomeData.projectCards(listed, chats), listed);
+  // Before C#'s first state the page has no chatsFolder.
+  assert.deepEqual(HomeData.projectCards([river], undefined), [river]);
+  assert.deepEqual(HomeData.projectCards(undefined, chats).map(card => card.name), ['Chats']);
+});
+
 test('short paths start with ~ under the user folder', () => {
   assert.equal(HomeData.shortPath('C:\\Users\\ana\\source\\repos\\River'), '~\\source\\repos\\River');
   assert.equal(HomeData.shortPath('c:\\users\\ana'), '~');

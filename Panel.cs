@@ -177,6 +177,8 @@ static class ProjectFiles
 // git never runs a program the repository's own config names, and never reaches a network share it names: before the
 // first git call GitConfigCheck reads the config, and git runs with fsmonitor and every filter off, diffs without
 // textconv or an external diff, and without looking inside submodules (each has a config of its own).
+// The list also gets the lines added and removed per file (git diff --numstat), kept per project until a changed file
+// or the list changes, so the tab's 5 s refresh doesn't run git diff over and over.
 // trusted: the config hash the user said "Run git here anyway" for, when the config includes files or names a work tree.
 static class GitChanges
 {
@@ -184,6 +186,12 @@ static class GitChanges
     const int MaxStatusChars = 4_000_000;
     const int MaxDiffChars = 400_000;
     const long MaxNewFileBytes = 512 * 1024;
+    // Line counts (Change.Added, Removed) only for a project with at most this many changes, and at most this much of
+    // new files read for them per look; the rest are read on the next looks. The tab looks every 5 seconds.
+    const int MaxCountFiles = 500;
+    const long MaxCountBytes = 8 * 1024 * 1024;
+    // git diff runs for the counts again only when a changed file's size or time, or the list, changed, or after this.
+    static readonly TimeSpan CountsAge = TimeSpan.FromSeconds(60);
 
     // Variables that would point git at another repository than the one GitConfigCheck read.
     static readonly string[] RepositoryVariables =
@@ -194,10 +202,20 @@ static class GitChanges
     // How many git processes this app started; the self-check sees from it that a refused repository started none.
     public static int Started => Volatile.Read(ref _started);
 
-    public sealed record Change(string Path, string? From, string Status);
+    // Added, Removed: lines, as the file's diff shows them; null for a binary file, a new file too large to show, or a
+    // list without counts.
+    public sealed record Change(string Path, string? From, string Status, int? Added = null, int? Removed = null);
 
-    // branch: the line git prints after "## " (branch, upstream, ahead/behind).
-    public static (string? Branch, List<Change> Files, int Total) Status(string folder, string? trusted = null)
+    // Per project: the counts git diff gave, for which changed files (Key: their paths, sizes and times) and when; and
+    // new files' line counts with the size and time they were read at.
+    sealed record Counted(string Key, DateTime At, IReadOnlyDictionary<string, (int? Added, int? Removed)> Tracked,
+        IReadOnlyDictionary<string, (long Length, DateTime Time, int? Lines)> New);
+
+    static readonly ConcurrentDictionary<string, Counted> _counted = new(StringComparer.OrdinalIgnoreCase);
+
+    // branch: the line git prints after "## " (branch, upstream, ahead/behind). counts: the Changes tab's list, with
+    // the lines added and removed per file.
+    public static (string? Branch, List<Change> Files, int Total) Status(string folder, string? trusted = null, bool counts = false)
     {
         var check = Checked(folder, trusted);
         var place = Run(folder, check, MaxStatusChars, "rev-parse", "--show-prefix");
@@ -239,7 +257,147 @@ static class GitChanges
             total++;
             if (files.Count < MaxFiles) files.Add(new Change(path, from, status));
         }
+        if (counts && !cut && total <= MaxCountFiles) files = WithCounts(folder, check, branch, files);
         return (branch, files, total);
+    }
+
+    // The files with the lines added and removed: git diff --numstat against the last commit, for a new file its lines.
+    // Counts are an extra: when they can't be had, the list shows without them.
+    static List<Change> WithCounts(string folder, GitCheck check, string? branch, List<Change> files)
+    {
+        try
+        {
+            var root = Path.GetFullPath(folder);
+            var last = _counted.TryGetValue(root, out var found) ? found : null;
+            var key = new StringBuilder(branch).Append('\n');
+            foreach (var file in files.Where(file => file.Status != "new"))
+            {
+                var info = new FileInfo(Path.Combine(root, file.Path));
+                var inside = ProjectFiles.IsInside(root, info.FullName);
+                key.Append(file.Path).Append('\0').Append(file.From).Append('\0').Append(file.Status).Append('\0')
+                    .Append(inside && info.Exists ? info.Length + ":" + info.LastWriteTimeUtc.Ticks : "-").Append('\n');
+            }
+            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key.ToString())));
+            var now = DateTime.UtcNow;
+            var reuse = last != null && last.Key == hash && now - last.At < CountsAge;
+            var tracked = reuse ? last!.Tracked
+                : files.Any(file => file.Status != "new") ? Numstat(folder, check) : new Dictionary<string, (int? Added, int? Removed)>();
+            var at = reuse ? last!.At : now;
+            var known = new Dictionary<string, (long Length, DateTime Time, int? Lines)>(StringComparer.Ordinal);
+            var budget = MaxCountBytes;
+            var result = new List<Change>(files.Count);
+            foreach (var file in files)
+            {
+                if (file.Status != "new")
+                {
+                    result.Add(tracked.TryGetValue(CountKey(file.Path, file.From), out var count) ? file with { Added = count.Added, Removed = count.Removed } : file);
+                    continue;
+                }
+                var lines = NewLines(root, file.Path, last?.New, ref budget, out var seen);
+                if (seen != null) known[file.Path] = seen.Value;
+                result.Add(lines == null ? file : file with { Added = lines, Removed = 0 });
+            }
+            // A handful of projects at most; the cache never grows with them.
+            if (_counted.Count > 32) _counted.Clear();
+            _counted[root] = new Counted(hash, at, tracked, known);
+            return result;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return files;
+        }
+    }
+
+    // git diff --numstat for the whole project (paths relative to it, as Status gives them), against the last commit.
+    // Without a commit yet: what is staged plus what isn't, as Diff shows it. Empty when git diff fails or takes too
+    // long; that answer is kept too, so a slow repository isn't asked again every 5 seconds.
+    static Dictionary<string, (int? Added, int? Removed)> Numstat(string folder, GitCheck check)
+    {
+        string[] options = ["--numstat", "-z", "--relative", "--no-ext-diff", "--no-textconv", "--ignore-submodules=dirty", "--", "."];
+        try
+        {
+            var head = Run(folder, check, MaxStatusChars, ["diff", "HEAD", "-M", .. options]);
+            if (head.Code == 0) return ParseNumstat(head.Output);
+            if (head.Cut) return new();
+            var staged = Run(folder, check, MaxStatusChars, ["diff", "--cached", .. options]);
+            var unstaged = Run(folder, check, MaxStatusChars, ["diff", .. options]);
+            if (staged.Code != 0 || unstaged.Code != 0) return new();
+            var counts = ParseNumstat(staged.Output);
+            foreach (var (path, (added, removed)) in ParseNumstat(unstaged.Output))
+                counts[path] = counts.TryGetValue(path, out var before) ? (before.Added + added, before.Removed + removed) : (added, removed);
+            return counts;
+        }
+        catch (InvalidOperationException)
+        {
+            return new();
+        }
+    }
+
+    // git's --numstat -z output: "added\tremoved\tpath\0", for a rename "added\tremoved\t\0from\0path\0", and "-" for
+    // both numbers of a binary file. Keyed by CountKey.
+    public static Dictionary<string, (int? Added, int? Removed)> ParseNumstat(string output)
+    {
+        var counts = new Dictionary<string, (int? Added, int? Removed)>(StringComparer.Ordinal);
+        var parts = output.Split('\0');
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var fields = parts[i].Split('\t', 3);
+            if (fields.Length < 3) continue;
+            string path;
+            string? from = null;
+            if (fields[2].Length > 0) path = fields[2];
+            else if (i + 2 < parts.Length)
+            {
+                from = parts[++i];
+                path = parts[++i];
+            }
+            else break;
+            counts[CountKey(path, from)] = (int.TryParse(fields[0], out var added) ? added : null, int.TryParse(fields[1], out var removed) ? removed : null);
+        }
+        return counts;
+    }
+
+    public static string CountKey(string path, string? from) => path + "\0" + from;
+
+    // A new file's lines, as NewFile shows them: none for a folder, a link, a binary file or one larger than
+    // MaxNewFileBytes. A file read before is read again only when its size or time changed; seen is what to remember.
+    static int? NewLines(string root, string path, IReadOnlyDictionary<string, (long Length, DateTime Time, int? Lines)>? known, ref long budget,
+        out (long Length, DateTime Time, int? Lines)? seen)
+    {
+        seen = null;
+        var info = new FileInfo(Path.Combine(root, path));
+        // A link can point anywhere, also to another computer, so it isn't opened.
+        if (!info.Exists || (info.Attributes & FileAttributes.ReparsePoint) != 0 || info.Length > MaxNewFileBytes || !ProjectFiles.IsInside(root, info.FullName)) return null;
+        if (known != null && known.TryGetValue(path, out var before) && before.Length == info.Length && before.Time == info.LastWriteTimeUtc)
+        {
+            seen = before;
+            return before.Lines;
+        }
+        if (info.Length > budget) return null;
+        budget -= info.Length;
+        try
+        {
+            // An agent may be writing it.
+            using var stream = new FileStream(info.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            if (stream.Length > MaxNewFileBytes) return null;
+            var bytes = new byte[stream.Length];
+            stream.ReadExactly(bytes);
+            var lines = CountLines(bytes);
+            seen = (info.Length, info.LastWriteTimeUtc, lines);
+            return lines;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    // The lines NewFile shows: one per \n, and a last line without one; none for binary (a NUL in the first 8000 bytes).
+    public static int? CountLines(byte[] bytes)
+    {
+        if (bytes.AsSpan(0, Math.Min(bytes.Length, 8000)).IndexOf((byte)0) >= 0) return null;
+        var lines = bytes.AsSpan().Count((byte)'\n');
+        return bytes.Length > 0 && bytes[^1] != '\n' ? lines + 1 : lines;
     }
 
     // The diff of one changed file against the last commit; an untracked file shows as all new lines.
@@ -546,6 +704,10 @@ static class GitConfigCheck
                         break;
                     case ("core", "excludesfile" or "attributesfile") when entry.Subsection == null && value != null:
                         Refuse(AwayPath(value, Expand(value, top)), "This repository's git config (core." + entry.Key + ") points to a network path.");
+                        break;
+                    // git diff reads it to sort its files.
+                    case ("diff", "orderfile") when entry.Subsection == null && value != null:
+                        Refuse(AwayPath(value, Expand(value, top)), "This repository's git config (diff.orderFile) points to a network path.");
                         break;
                 }
             }
